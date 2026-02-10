@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Strata{% endblock %}
+
+{% block content %}
+<article>
+    <header>
+        <h1>Login to Strata</h1>
+    </header>
+
+    {% if not login_url %}
+    <p>Login is not configured.</p>
+    <p>Set <code>GATEKEEPER_DB</code> environment variable to enable SSO login.</p>
+    {% endif %}
+</article>
+{% endblock %}

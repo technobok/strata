@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Schedules — {{ report.name }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>Schedules</h2>
+    <p>{{ report.name }}</p>
+</hgroup>
+
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+    <button type="button" onclick="location.href='{{ url_for('schedules.new', uuid=report.uuid) }}'">New Schedule</button>
+    <button type="button" class="outline secondary" onclick="location.href='{{ url_for('reports.edit', uuid=report.uuid) }}'">Back to Report</button>
+</div>
+
+{% if schedules %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Enabled</th>
+            <th>Next Run</th>
+            <th>Last Run</th>
+            <th>Recipients</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in schedules %}
+        <tr>
+            <td><a href="{{ url_for('schedules.edit', schedule_uuid=s.uuid) }}">{{ s.name }}</a></td>
+            <td><code>{{ s.schedule_definition.get('type', '?') }}</code></td>
+            <td>
+                {% if s.enabled %}
+                <span class="status-badge status-completed">Active</span>
+                {% else %}
+                <span class="status-badge status-failed">Disabled</span>
+                {% endif %}
+            </td>
+            <td>{{ s.next_run_at|localdatetime }}</td>
+            <td>{{ s.last_run_at|localdatetime }}</td>
+            <td>{{ s.get_recipients()|join(', ') }}</td>
+            <td>
+                <div style="display:flex;gap:0.25rem;">
+                    <button type="button" class="outline" onclick="location.href='{{ url_for('schedules.edit', schedule_uuid=s.uuid) }}'">Edit</button>
+                    <form method="post" action="{{ url_for('schedules.delete', schedule_uuid=s.uuid) }}" onsubmit="return confirm('Delete this schedule?')">
+                        <button type="submit" class="outline secondary">Delete</button>
+                    </form>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No schedules configured for this report.</p>
+{% endif %}
+{% endblock %}

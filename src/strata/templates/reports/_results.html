@@ -1,0 +1,28 @@
+{% if result and result.columns %}
+<table>
+    <thead>
+        <tr>
+            {% for col in result.columns %}
+            <th hx-post="{{ url_for('reports.run_results', uuid=report.uuid) }}"
+                hx-target="#results-table"
+                hx-include="closest form"
+                hx-vals='{"sort_col": "{{ col }}", "sort_dir": "{% if sort_col == col and sort_dir == 'asc' %}desc{% else %}asc{% endif %}"}'
+                class="{% if sort_col == col %}sort-{{ sort_dir }}{% endif %}">
+                {{ col }}
+            </th>
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in result.rows %}
+        <tr>
+            {% for cell in row %}
+            <td>{{ cell if cell is not none else '' }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% elif result %}
+<p>Query returned no results.</p>
+{% endif %}

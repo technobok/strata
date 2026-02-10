@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}{% if schedule %}Edit Schedule{% else %}New Schedule{% endif %} — Strata{% endblock %}
+
+{% block head %}
+<style>
+    .schedule-fields { display: none; }
+    .schedule-fields.active { display: block; }
+    .weekday-checks { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .weekday-checks label { display: flex; align-items: center; gap: 0.25rem; }
+    #preview-runs { margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>{% if schedule %}Edit Schedule{% else %}New Schedule{% endif %}</h2>
+    <p>{{ report.name }}</p>
+</hgroup>
+
+<form method="post" id="schedule-form">
+    <label for="name">Schedule Name</label>
+    <input type="text" id="name" name="name" value="{{ form.get('name', '') }}" required placeholder="e.g. Daily morning report">
+
+    <label for="recipients">Recipients (comma-separated emails)</label>
+    <input type="text" id="recipients" name="recipients" value="{{ form.get('recipients', '') }}" required placeholder="user@example.com, another@example.com">
+
+    <label for="schedule_type">Schedule Type</label>
+    <select id="schedule_type" name="schedule_type" onchange="updateScheduleFields()">
+        <option value="">-- Select --</option>
+        <option value="interval" {{ 'selected' if form.get('schedule_type') == 'interval' }}>Interval (every N minutes/hours/days)</option>
+        <option value="daily" {{ 'selected' if form.get('schedule_type') == 'daily' }}>Daily</option>
+        <option value="weekly" {{ 'selected' if form.get('schedule_type') == 'weekly' }}>Weekly</option>
+        <option value="monthly_day" {{ 'selected' if form.get('schedule_type') == 'monthly_day' }}>Monthly (specific day)</option>
+        <option value="monthly_pattern" {{ 'selected' if form.get('schedule_type') == 'monthly_pattern' }}>Monthly (pattern)</option>
+        <option value="one_time" {{ 'selected' if form.get('schedule_type') == 'one_time' }}>One-time</option>
+    </select>
+
+    <!-- Interval fields -->
+    <div class="schedule-fields" id="fields-interval">
+        <fieldset>
+            <legend>Interval Settings</legend>
+            <div class="grid">
+                <div>
+                    <label for="interval_every">Every</label>
+                    <input type="number" id="interval_every" name="interval_every" min="1" value="{{ form.get('interval_every', '1') }}">
+                </div>
+                <div>
+                    <label for="interval_unit">Unit</label>
+                    <select id="interval_unit" name="interval_unit">
+                        <option value="minutes" {{ 'selected' if form.get('interval_unit') == 'minutes' }}>Minutes</option>
+                        <option value="hours" {{ 'selected' if form.get('interval_unit') == 'hours' }}>Hours</option>
+                        <option value="days" {{ 'selected' if form.get('interval_unit') == 'days' }}>Days</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="interval_at">At time (for daily intervals)</label>
+                    <input type="time" id="interval_at" name="interval_at" value="{{ form.get('interval_at', '') }}">
+                </div>
+            </div>
+        </fieldset>
+    </div>
+
+    <!-- Daily fields -->
+    <div class="schedule-fields" id="fields-daily">
+        <fieldset>
+            <legend>Daily Settings</legend>
+            <label for="daily_at">Run at</label>
+            <input type="time" id="daily_at" name="daily_at" value="{{ form.get('daily_at', '08:00') }}">
+        </fieldset>
+    </div>
+
+    <!-- Weekly fields -->
+    <div class="schedule-fields" id="fields-weekly">
+        <fieldset>
+            <legend>Weekly Settings</legend>
+            <label>Days of the week</label>
+            <div class="weekday-checks">
+                {% set weekly_days = schedule.schedule_definition.get('days', []) if schedule else [] %}
+                {% for day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] %}
+                <label>
+                    <input type="checkbox" name="weekly_days" value="{{ day }}" {{ 'checked' if day in weekly_days }}>
+                    {{ day|capitalize }}
+                </label>
+                {% endfor %}
+            </div>
+            <label for="weekly_at">Run at</label>
+            <input type="time" id="weekly_at" name="weekly_at" value="{{ form.get('weekly_at', '08:00') }}">
+        </fieldset>
+    </div>
+
+    <!-- Monthly day fields -->
+    <div class="schedule-fields" id="fields-monthly_day">
+        <fieldset>
+            <legend>Monthly (Day) Settings</legend>
+            <div class="grid">
+                <div>
+                    <label for="monthly_day_day">Day of month</label>
+                    <select id="monthly_day_day" name="monthly_day_day">
+                        {% for d in range(1, 32) %}
+                        <option value="{{ d }}" {{ 'selected' if form.get('monthly_day_day', '1')|string == d|string }}>{{ d }}</option>
+                        {% endfor %}
+                        <option value="-1" {{ 'selected' if form.get('monthly_day_day') == '-1' }}>Last day</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="monthly_day_at">Run at</label>
+                    <input type="time" id="monthly_day_at" name="monthly_day_at" value="{{ form.get('monthly_day_at', '08:00') }}">
+                </div>
+            </div>
+        </fieldset>
+    </div>
+
+    <!-- Monthly pattern fields -->
+    <div class="schedule-fields" id="fields-monthly_pattern">
+        <fieldset>
+            <legend>Monthly (Pattern) Settings</legend>
+            <div class="grid">
+                <div>
+                    <label for="monthly_pattern_type">Pattern</label>
+                    <select id="monthly_pattern_type" name="monthly_pattern_type">
+                        <option value="first_working_day" {{ 'selected' if form.get('monthly_pattern_type') == 'first_working_day' }}>First working day</option>
+                        <option value="last_working_day" {{ 'selected' if form.get('monthly_pattern_type') == 'last_working_day' }}>Last working day</option>
+                        <option value="first_day" {{ 'selected' if form.get('monthly_pattern_type') == 'first_day' }}>First day</option>
+                        <option value="last_day" {{ 'selected' if form.get('monthly_pattern_type') == 'last_day' }}>Last day</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="monthly_pattern_at">Run at</label>
+                    <input type="time" id="monthly_pattern_at" name="monthly_pattern_at" value="{{ form.get('monthly_pattern_at', '08:00') }}">
+                </div>
+            </div>
+        </fieldset>
+    </div>
+
+    <!-- One-time fields -->
+    <div class="schedule-fields" id="fields-one_time">
+        <fieldset>
+            <legend>One-time Settings</legend>
+            <label for="one_time_datetime">Date and time</label>
+            <input type="datetime-local" id="one_time_datetime" name="one_time_datetime" value="{{ form.get('one_time_datetime', '') }}">
+        </fieldset>
+    </div>
+
+    <details>
+        <summary>Advanced Options</summary>
+        <label for="max_inline_rows">Max inline rows in email</label>
+        <input type="number" id="max_inline_rows" name="max_inline_rows" min="0" max="10000" value="{{ form.get('max_inline_rows', '100') }}">
+
+        <label for="parameters_json">Fixed parameters (JSON)</label>
+        <textarea id="parameters_json" name="parameters_json" rows="3" placeholder='{"company": "ACME", "date_from": "2026-01-01"}'>{{ form.get('parameters_json', '') }}</textarea>
+
+        {% if schedule %}
+        <label>
+            <input type="checkbox" name="enabled" {{ 'checked' if form.get('enabled') == 'on' or (schedule and schedule.enabled) }}>
+            Enabled
+        </label>
+        {% endif %}
+    </details>
+
+    <!-- Preview -->
+    <div id="preview-runs">
+        <button type="button" class="outline" hx-post="{{ url_for('schedules.preview_form') }}" hx-include="#schedule-form" hx-target="#preview-results">Preview Next 5 Runs</button>
+        <div id="preview-results"></div>
+    </div>
+
+    <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+        <button type="submit">{% if schedule %}Save{% else %}Create Schedule{% endif %}</button>
+        <button type="button" class="outline secondary" onclick="location.href='{{ url_for('schedules.index', uuid=report.uuid) }}'">Cancel</button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateScheduleFields() {
+    document.querySelectorAll('.schedule-fields').forEach(el => el.classList.remove('active'));
+    const type = document.getElementById('schedule_type').value;
+    if (type) {
+        const fields = document.getElementById('fields-' + type);
+        if (fields) fields.classList.add('active');
+    }
+}
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', updateScheduleFields);
+</script>
+{% endblock %}

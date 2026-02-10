@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}{% if report %}Edit {{ report.name }}{% else %}New Report{% endif %} - Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{% if report %}Edit Report{% else %}New Report{% endif %}</h1>
+    <p>{% if report %}Modify the report definition and parameters{% else %}Create a new SQL report{% endif %}</p>
+</hgroup>
+
+<form method="post" action="{% if report %}{{ url_for('reports.edit', uuid=report.uuid) }}{% else %}{{ url_for('reports.new') }}{% endif %}">
+    <input type="hidden" name="action" value="save">
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ name }}" required placeholder="Report name">
+
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="2" placeholder="What does this report do?">{{ description }}</textarea>
+
+    <label for="sql_template">SQL Template</label>
+    <div class="sql-editor">
+        <textarea id="sql_template" name="sql_template" rows="12" placeholder="SELECT * FROM {{ table_name }} WHERE date >= $date_from" spellcheck="false">{{ sql_template }}</textarea>
+    </div>
+    <small>Use <code>{{ '{{' }} var {{ '}}' }}</code> for structural parameters (table names, schemas) and <code>$var</code> for value parameters (dates, filters).</small>
+
+    <div class="form-actions">
+        <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>
+        {% if report %}
+        <a href="{{ url_for('reports.run', uuid=report.uuid) }}" role="button" class="outline">Run</a>
+        {% endif %}
+        <a href="{{ url_for('reports.index') }}" role="button" class="outline secondary">Cancel</a>
+    </div>
+</form>
+
+{% if report and params %}
+<hr>
+<h2>Parameters</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Data Type</th>
+            <th>Default</th>
+            <th>Required</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for param in params %}
+        <tr>
+            <td>
+                <strong>{{ param.name }}</strong>
+                {% if param.description %}<br><small>{{ param.description }}</small>{% endif %}
+            </td>
+            <td><span class="status-badge {% if param.param_type == 'structural' %}status-running{% else %}status-completed{% endif %}">{{ param.param_type }}</span></td>
+            <td>
+                <form method="post" action="{{ url_for('reports.edit', uuid=report.uuid) }}" style="display:inline">
+                    <input type="hidden" name="action" value="update_param">
+                    <input type="hidden" name="param_id" value="{{ param.id }}">
+                    <select name="data_type" onchange="this.form.submit()" style="margin:0; padding:0.2rem 0.4rem; min-width:auto;">
+                        {% for dt in ['string', 'integer', 'float', 'decimal', 'date', 'boolean'] %}
+                        <option value="{{ dt }}" {% if param.data_type == dt %}selected{% endif %}>{{ dt }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="default_value" value="{{ param.default_value or '' }}">
+                    <input type="hidden" name="param_description" value="{{ param.description }}">
+                    {% if param.required %}<input type="hidden" name="required" value="on">{% endif %}
+                </form>
+            </td>
+            <td>{{ param.default_value or '-' }}</td>
+            <td>{% if param.required %}Yes{% else %}No{% endif %}</td>
+            <td>
+                <form method="post" action="{{ url_for('reports.edit', uuid=report.uuid) }}" style="display:inline">
+                    <input type="hidden" name="action" value="delete_param">
+                    <input type="hidden" name="param_id" value="{{ param.id }}">
+                    <button type="submit" class="small outline secondary" onclick="return confirm('Delete parameter {{ param.name }}?')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if report %}
+<hr>
+<details>
+    <summary>Danger Zone</summary>
+    <form method="post" action="{{ url_for('reports.delete', uuid=report.uuid) }}">
+        <button type="submit" class="secondary" onclick="return confirm('Delete this report? This cannot be undone.')">Delete Report</button>
+    </form>
+</details>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,444 @@
+/* Strata custom styles - compact and utilitarian */
+
+/* Make Pico more compact */
+:root {
+    --pico-font-size: 15px;
+    --pico-line-height: 1.4;
+    --pico-spacing: 0.75rem;
+    --pico-form-element-spacing-vertical: 0.5rem;
+    --pico-form-element-spacing-horizontal: 0.75rem;
+
+    /* Light/dark mode toggle dimensions (px to avoid sub-pixel snapping) */
+    --mode-slot-width: 72px;
+    --mode-slot-height: 32px;
+    --mode-button-size: 29px;
+    --mode-button-translatey: 2px;
+    --mode-button-translatex: 40px;
+    --mode-button-translatex-checked: 3px;
+    --mode-sun-translatey: 2px;
+    --mode-sun-translatex: 3px;
+    --mode-sun-translatex-checked: 40px;
+    --mode-moon-translatey: 2px;
+    --mode-moon-translatex: 3px;
+    --mode-moon-translatex-checked: 40px;
+}
+
+/* Tighter nav */
+header nav {
+    padding: 0.5rem 0;
+}
+
+header nav ul li {
+    padding: 0.25rem 0.5rem;
+}
+
+.brand {
+    font-size: 1.1rem;
+}
+
+/* Compact buttons */
+button,
+input[type="submit"],
+input[type="button"] {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+}
+
+/* Compact form elements */
+input,
+select,
+textarea {
+    padding: 0.4rem 0.6rem;
+}
+
+/* Compact tables */
+table th,
+table td {
+    padding: 0.5rem 0.75rem;
+}
+
+/* Flash messages */
+.flash {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: var(--pico-border-radius);
+}
+
+.flash-error {
+    background: var(--pico-del-color);
+    color: white;
+}
+
+.flash-success {
+    background: var(--pico-ins-color);
+    color: white;
+}
+
+.flash-info {
+    background: var(--pico-primary);
+    color: white;
+}
+
+/* Theme transition (applied via JS on toggle) */
+html.trans,
+html.trans body,
+html.trans header,
+html.trans main,
+html.trans footer {
+    transition: background-color 500ms, color 500ms;
+}
+
+/* Light/dark mode toggle */
+.theme-toggle {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+}
+
+.mode-checkbox {
+    all: unset;
+    position: absolute;
+    opacity: 0;
+    height: 0;
+    width: 0;
+}
+
+.mode-slot {
+    position: relative;
+    height: var(--mode-slot-height);
+    width: var(--mode-slot-width);
+    border: 5px solid #e4e7ec;
+    border-radius: 999px;
+    background-color: white;
+    box-shadow: 1px 2px 5px #eeeeef;
+    transition: background-color 250ms !important;
+    cursor: pointer;
+    box-sizing: content-box;
+}
+
+.mode-checkbox:checked ~ .mode-slot {
+    background-color: #374151;
+}
+
+.mode-button {
+    transform: translate(var(--mode-button-translatex), var(--mode-button-translatey));
+    position: absolute;
+    height: var(--mode-button-size);
+    width: var(--mode-button-size);
+    border-radius: 50%;
+    background-color: #ffeccf;
+    box-shadow: inset 0px 0px 0px 3px #ffbb52;
+    transition: background-color 250ms, border-color 250ms, transform 500ms cubic-bezier(.19,1.66,.56,.87) !important;
+}
+
+.mode-checkbox:checked ~ .mode-slot .mode-button {
+    background-color: #485367;
+    box-shadow: inset 0px 0px 0px 3px white;
+    transform: translate(var(--mode-button-translatex-checked), var(--mode-button-translatey));
+}
+
+.sun-icon {
+    position: absolute;
+    height: var(--mode-button-size);
+    width: var(--mode-button-size);
+    color: #ffbb52;
+}
+
+.sun-icon-wrapper {
+    position: absolute;
+    height: var(--mode-button-size);
+    width: var(--mode-button-size);
+    opacity: 1;
+    transform: translate(var(--mode-sun-translatex), var(--mode-sun-translatey)) rotate(15deg);
+    transform-origin: 50% 50%;
+    transition: opacity 400ms, transform 500ms cubic-bezier(.19,1.66,.56,.87) !important;
+}
+
+.mode-checkbox:checked ~ .mode-slot .sun-icon-wrapper {
+    opacity: 0;
+    transform: translate(var(--mode-sun-translatex-checked), var(--mode-sun-translatey)) rotate(0deg);
+}
+
+.moon-icon {
+    position: absolute;
+    height: var(--mode-button-size);
+    width: var(--mode-button-size);
+    color: white;
+}
+
+.moon-icon-wrapper {
+    position: absolute;
+    height: var(--mode-button-size);
+    width: var(--mode-button-size);
+    opacity: 0;
+    transform: translate(var(--mode-moon-translatex), var(--mode-moon-translatey)) rotate(0deg);
+    transition: opacity 400ms ease-in, transform 500ms cubic-bezier(.19,1.66,.56,.87) !important;
+}
+
+.mode-checkbox:checked ~ .mode-slot .moon-icon-wrapper {
+    opacity: 1;
+    transform: translate(var(--mode-moon-translatex-checked), var(--mode-moon-translatey)) rotate(-15deg);
+}
+
+/* Footer */
+footer {
+    margin-top: 2rem;
+    padding: 1rem 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
+
+footer small {
+    color: var(--pico-muted-color);
+}
+
+/* HTMX loading indicator */
+.htmx-request {
+    opacity: 0.7;
+    transition: opacity 200ms;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+.htmx-indicator {
+    display: none;
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+}
+
+.status-running {
+    background: #f59e0b;
+    color: white;
+}
+
+.status-completed {
+    background: var(--pico-ins-color);
+    color: white;
+}
+
+.status-failed {
+    background: var(--pico-del-color);
+    color: white;
+}
+
+/* Reports page */
+.reports-page header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.reports-page header hgroup {
+    margin-bottom: 0;
+}
+
+/* Form actions */
+.form-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-start;
+}
+
+.form-actions button {
+    width: auto;
+}
+
+/* Tag badges */
+.tag-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: white;
+}
+
+.tag-badge[data-light="true"] {
+    color: #1f2937;
+}
+
+/* Tag list display */
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.tag-list-inline {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+/* Results table */
+.results-container {
+    overflow-x: auto;
+    margin: 1rem 0;
+}
+
+.results-container table {
+    width: 100%;
+}
+
+.results-container th {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.results-container th:hover {
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+}
+
+.sort-asc::after {
+    content: " \25B2";
+    font-size: 0.7em;
+}
+
+.sort-desc::after {
+    content: " \25BC";
+    font-size: 0.7em;
+}
+
+/* SQL editor */
+.sql-editor textarea {
+    font-family: monospace;
+    font-size: 0.9rem;
+    min-height: 200px;
+    white-space: pre;
+    tab-size: 2;
+}
+
+/* Parameter form */
+.param-form {
+    margin: 1rem 0;
+}
+
+.param-form .grid {
+    gap: 0.5rem;
+}
+
+/* Run info */
+.run-info {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin: 0.5rem 0 1rem;
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+}
+
+/* Small buttons */
+table button.small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    margin: 0 0.25rem 0 0;
+    min-width: 5rem;
+    text-align: center;
+}
+
+/* Tom Select - PicoCSS Theme */
+.ts-wrapper {
+    margin-bottom: 0;
+}
+
+.ts-wrapper.single .ts-control,
+.ts-wrapper.multi .ts-control {
+    background-color: var(--pico-form-element-background-color) !important;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color) !important;
+    border-radius: var(--pico-border-radius);
+    padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
+    min-height: calc(1rem * var(--pico-line-height) + var(--pico-form-element-spacing-vertical) * 2 + var(--pico-border-width) * 2);
+    color: var(--pico-form-element-color);
+    font-size: var(--pico-font-size);
+    line-height: var(--pico-line-height);
+    box-shadow: none !important;
+}
+
+.ts-wrapper.focus .ts-control {
+    border-color: var(--pico-form-element-active-border-color) !important;
+    box-shadow: 0 0 0 var(--pico-outline-width) var(--pico-form-element-focus-color) !important;
+}
+
+.ts-dropdown,
+.ts-dropdown.single,
+.ts-dropdown.multi {
+    background-color: var(--pico-form-element-background-color) !important;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color) !important;
+    border-top: none !important;
+    border-radius: 0 0 var(--pico-border-radius) var(--pico-border-radius);
+    box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.15);
+    color: var(--pico-color);
+}
+
+.ts-dropdown .option,
+.ts-dropdown .optgroup-header,
+.ts-dropdown .no-results,
+.ts-dropdown .create {
+    padding: var(--pico-form-element-spacing-vertical) var(--pico-form-element-spacing-horizontal);
+    color: var(--pico-color) !important;
+}
+
+.ts-dropdown .option.active,
+.ts-dropdown .option:hover {
+    background-color: var(--pico-primary-background) !important;
+    color: var(--pico-primary-inverse) !important;
+}
+
+/* Tags control (Tom Select wrapper) */
+.tags-control {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+    width: 100%;
+}
+
+.tags-control .ts-wrapper.multi .ts-control {
+    min-height: 2.5rem;
+    padding: 0.25rem 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Tag badges in Tom Select */
+.tags-control .ts-wrapper.multi .ts-control > .tag-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem !important;
+    margin: 0.15rem 0.25rem 0.15rem 0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* Schedule preview */
+.schedule-preview {
+    margin: 1rem 0;
+    padding: 0.75rem 1rem;
+    background: var(--pico-card-background-color);
+    border-radius: var(--pico-border-radius);
+    font-size: 0.9rem;
+}
+
+.schedule-preview h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+}
+
+.schedule-preview ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+.schedule-preview li {
+    padding: 0.1rem 0;
+}

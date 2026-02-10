@@ -1,0 +1,21 @@
+{% for param in params %}
+<label>
+    {{ param.name }}
+    {% if param.description %}<small>({{ param.description }})</small>{% endif %}
+    {% if param.data_type == 'date' %}
+    <input type="date" name="param_{{ param.name }}"
+           value="{{ param_values.get('param_' ~ param.name, param.default_value or '') }}"
+           {% if param.required %}required{% endif %}>
+    {% elif param.data_type == 'boolean' %}
+    <select name="param_{{ param.name }}">
+        <option value="true">True</option>
+        <option value="false">False</option>
+    </select>
+    {% else %}
+    <input type="text" name="param_{{ param.name }}"
+           value="{{ param_values.get('param_' ~ param.name, param.default_value or '') }}"
+           {% if param.required %}required{% endif %}
+           placeholder="{{ param.default_value or '' }}">
+    {% endif %}
+</label>
+{% endfor %}

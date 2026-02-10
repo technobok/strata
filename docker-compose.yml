@@ -1,0 +1,46 @@
+# Strata - Docker Compose configuration
+# Usage: docker compose up -d
+
+services:
+  app:
+    build: .
+    container_name: strata-app
+    volumes:
+      - ./instance:/app/instance
+      - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
+      - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-UTC}
+      - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      - OUTBOX_DB=/data/outbox.sqlite3
+    networks:
+      - platform-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build: .
+    container_name: strata-worker
+    command: ["python", "-m", "worker.schedule_worker"]
+    volumes:
+      - ./instance:/app/instance
+      - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
+      - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-UTC}
+      - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      - OUTBOX_DB=/data/outbox.sqlite3
+    networks:
+      - platform-net
+    restart: unless-stopped
+
+networks:
+  platform-net:
+    external: true

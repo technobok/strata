@@ -1,0 +1,7 @@
+{% if tags %}
+<div class="tag-list-inline">
+    {% for tag in tags %}
+    <span class="tag-badge" style="background-color: {{ tag.color }}" data-light="{{ tag.is_light()|lower }}">{{ tag.name }}</span>
+    {% endfor %}
+</div>
+{% endif %}

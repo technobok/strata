@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Strata{% endblock %}
+
+{% block content %}
+<h2>Admin</h2>
+
+<div class="grid">
+    <article>
+        <header>System Stats</header>
+        <table>
+            <tbody>
+                <tr><td>Reports</td><td>{{ stats.report }}</td></tr>
+                <tr><td>Report Runs</td><td>{{ stats.report_run }}</td></tr>
+                <tr><td>Schedules (total)</td><td>{{ stats.schedule }}</td></tr>
+                <tr><td>Schedules (active)</td><td>{{ stats.active_schedules }}</td></tr>
+                <tr><td>API Links</td><td>{{ stats.api_link }}</td></tr>
+                <tr><td>Tags</td><td>{{ stats.tag }}</td></tr>
+            </tbody>
+        </table>
+    </article>
+    <article>
+        <header>Quick Links</header>
+        <nav>
+            <ul>
+                <li><button type="button" class="outline" onclick="location.href='{{ url_for('admin.config') }}'">Configuration</button></li>
+                <li style="margin-top:0.5rem;"><button type="button" class="outline" onclick="location.href='{{ url_for('admin.sql_console') }}'">SQL Console</button></li>
+                <li style="margin-top:0.5rem;"><button type="button" class="outline" onclick="location.href='{{ url_for('reports.index') }}'">All Reports</button></li>
+            </ul>
+        </nav>
+    </article>
+</div>
+{% endblock %}

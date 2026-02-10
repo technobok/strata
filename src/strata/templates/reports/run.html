@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Run {{ report.name }} - Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ report.name }}</h1>
+    {% if report.description %}<p>{{ report.description }}</p>{% endif %}
+</hgroup>
+
+<div class="form-actions" style="margin-bottom: 1rem;">
+    <a href="{{ url_for('reports.edit', uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
+    <a href="{{ url_for('reports.runs', uuid=report.uuid) }}" role="button" class="outline secondary small">Run History</a>
+</div>
+
+{% if params %}
+<form method="post" action="{{ url_for('reports.run', uuid=report.uuid) }}">
+    <fieldset>
+        <legend>Parameters</legend>
+        <div class="grid">
+            {% for param in params %}
+            <label>
+                {{ param.name }}
+                {% if param.description %}<small>({{ param.description }})</small>{% endif %}
+                {% if param.param_type == 'structural' %}<small class="status-badge status-running">structural</small>{% endif %}
+                {% if param.data_type == 'date' %}
+                <input type="date" name="param_{{ param.name }}"
+                       value="{{ param_values.get('param_' ~ param.name, param.default_value or '') }}"
+                       {% if param.required %}required{% endif %}>
+                {% elif param.data_type == 'boolean' %}
+                <select name="param_{{ param.name }}">
+                    <option value="true" {% if param_values.get('param_' ~ param.name, param.default_value or '') == 'true' %}selected{% endif %}>True</option>
+                    <option value="false" {% if param_values.get('param_' ~ param.name, param.default_value or '') == 'false' %}selected{% endif %}>False</option>
+                </select>
+                {% elif param.data_type in ('integer', 'float', 'decimal') %}
+                <input type="number" name="param_{{ param.name }}"
+                       value="{{ param_values.get('param_' ~ param.name, param.default_value or '') }}"
+                       {% if param.data_type == 'integer' %}step="1"{% else %}step="any"{% endif %}
+                       {% if param.required %}required{% endif %}>
+                {% else %}
+                <input type="text" name="param_{{ param.name }}"
+                       value="{{ param_values.get('param_' ~ param.name, param.default_value or '') }}"
+                       {% if param.required %}required{% endif %}
+                       placeholder="{{ param.default_value or '' }}">
+                {% endif %}
+            </label>
+            {% endfor %}
+        </div>
+    </fieldset>
+    <button type="submit">Run Report</button>
+</form>
+{% else %}
+<form method="post" action="{{ url_for('reports.run', uuid=report.uuid) }}">
+    <button type="submit">Run Report</button>
+</form>
+{% endif %}
+
+{% if result %}
+<hr>
+{% if result.error %}
+<article class="flash flash-error">{{ result.error }}</article>
+{% else %}
+<div class="run-info">
+    <span>{{ result.row_count }} row{{ 's' if result.row_count != 1 else '' }}</span>
+    <span>{{ result.duration_ms|duration }}</span>
+    {% if run_record and run_record.result_hash %}
+    <a href="{{ url_for('reports.download_run', run_uuid=run_record.uuid) }}" role="button" class="small outline">Download XLSX</a>
+    {% endif %}
+</div>
+<div id="results-table" class="results-container">
+    {% include "reports/_results.html" %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

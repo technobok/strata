@@ -1,0 +1,17 @@
+{% if runs %}
+<table>
+    <thead>
+        <tr><th>#</th><th>Next Run (UTC)</th></tr>
+    </thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ run.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No upcoming runs calculated.</p>
+{% endif %}

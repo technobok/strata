@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration — Admin — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>Configuration</h2>
+    <p>Application settings stored in the database.</p>
+</hgroup>
+
+<form method="post">
+    <table>
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>Value</th>
+                <th>Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in registry %}
+            <tr>
+                <td><code>{{ entry.key }}</code></td>
+                <td>
+                    <input type="text" name="config_{{ entry.key }}" value="{{ config_values.get(entry.key, '') }}" placeholder="{{ entry.default }}">
+                </td>
+                <td><small>{{ entry.description }} (type: {{ entry.type }})</small></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div style="display:flex;gap:0.5rem;">
+        <button type="submit">Save Configuration</button>
+        <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back</button>
+    </div>
+</form>
+{% endblock %}

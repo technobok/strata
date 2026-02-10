@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: strata
+Version: 0.1.0
+Summary: A reporting system with DuckDB query engine
+Requires-Python: >=3.14
+Requires-Dist: flask>=3.0
+Requires-Dist: apsw>=3.45
+Requires-Dist: duckdb>=1.0
+Requires-Dist: gatekeeper
+Requires-Dist: outbox
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: gunicorn>=23.0
+Requires-Dist: click>=8.0
+Provides-Extra: dev
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: ty; extra == "dev"
+Requires-Dist: pytest; extra == "dev"

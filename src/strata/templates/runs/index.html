@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Run History - {{ report.name }} - Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ report.name }} - Run History</h1>
+    <p><a href="{{ url_for('reports.run', uuid=report.uuid) }}">Back to report</a></p>
+</hgroup>
+
+{% if runs %}
+<table>
+    <thead>
+        <tr>
+            <th>Started</th>
+            <th>Status</th>
+            <th>Rows</th>
+            <th>Duration</th>
+            <th>Run By</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td>{{ run.started_at|localdatetime }}</td>
+            <td><span class="status-badge status-{{ run.status }}">{{ run.status }}</span></td>
+            <td>{{ run.row_count if run.row_count is not none else '-' }}</td>
+            <td>{{ run.duration_ms|duration }}</td>
+            <td>{{ run.run_by }}</td>
+            <td>
+                {% if run.status == 'completed' and run.result_hash %}
+                <a href="{{ url_for('reports.view_run', run_uuid=run.uuid) }}" role="button" class="small outline">View</a>
+                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid) }}" role="button" class="small outline">XLSX</a>
+                {% elif run.error_message %}
+                <small title="{{ run.error_message }}">{{ run.error_message[:50] }}{% if run.error_message|length > 50 %}...{% endif %}</small>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No runs yet. <a href="{{ url_for('reports.run', uuid=report.uuid) }}">Run the report</a>.</p>
+{% endif %}
+{% endblock %}

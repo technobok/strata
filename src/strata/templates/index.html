@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Strata - Reporting System{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Strata</h1>
+    <p>Reporting system</p>
+</hgroup>
+
+{% if g.user %}
+<div class="grid">
+    <article>
+        <header><strong>Reports</strong></header>
+        <p>Create, run, and manage parameterised SQL reports.</p>
+        <footer>
+            <a href="{{ url_for('reports.index') }}" role="button">View Reports</a>
+        </footer>
+    </article>
+</div>
+{% else %}
+<p>Please <a href="{{ url_for('auth.login') }}">log in</a> to access reports.</p>
+{% endif %}
+{% endblock %}

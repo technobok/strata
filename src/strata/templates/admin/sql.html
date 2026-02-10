@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}SQL Console — Admin — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>SQL Console</h2>
+    <p>Execute read-only queries against the metadata database.</p>
+</hgroup>
+
+<form method="post">
+    <label for="query">SQL Query (SELECT, PRAGMA, EXPLAIN only)</label>
+    <textarea id="query" name="query" rows="5" class="sql-editor" placeholder="SELECT * FROM report LIMIT 10;">{{ query }}</textarea>
+
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+        <button type="submit">Execute</button>
+        <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back</button>
+    </div>
+</form>
+
+{% if error %}
+<article class="flash flash-error">{{ error }}</article>
+{% endif %}
+
+{% if columns %}
+<p>{{ row_count }} row{{ 's' if row_count != 1 }} returned.</p>
+<div class="results-table-wrapper">
+    <table class="results-table">
+        <thead>
+            <tr>
+                {% for col in columns %}
+                <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                {% for cell in row %}
+                <td>{{ cell if cell is not none else '' }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

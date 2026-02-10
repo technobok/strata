@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{% if tag %}Edit Tag{% else %}New Tag{% endif %} - Strata{% endblock %}
+
+{% block content %}
+<h1>{% if tag %}Edit Tag{% else %}New Tag{% endif %}</h1>
+
+<form method="post">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ tag.name if tag else '' }}" required>
+
+    <label>Color</label>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem;">
+        {% for color in colors %}
+        <label style="cursor: pointer; margin: 0;">
+            <input type="radio" name="color" value="{{ color }}"
+                   {% if (tag and tag.color == color) or (not tag and loop.index == 1) %}checked{% endif %}
+                   style="display: none;">
+            <span class="tag-badge" style="background-color: {{ color }}; padding: 0.5rem 0.75rem; border: 3px solid transparent;"
+                  onclick="this.previousElementSibling.checked=true; document.querySelectorAll('.tag-badge').forEach(b => b.style.borderColor='transparent'); this.style.borderColor='var(--pico-primary)';">
+                Aa
+            </span>
+        </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-actions">
+        <button type="submit">{% if tag %}Save{% else %}Create{% endif %}</button>
+        <a href="{{ url_for('tags.index') }}" role="button" class="outline secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var checked = document.querySelector('input[name="color"]:checked');
+    if (checked) {
+        checked.nextElementSibling.style.borderColor = 'var(--pico-primary)';
+    }
+});
+</script>
+{% endblock %}

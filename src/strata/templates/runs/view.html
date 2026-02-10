@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Run {{ run.uuid[:8] }} - {{ report.name }} - Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ report.name }}</h1>
+    <p>Run from {{ run.started_at|localdatetime }}</p>
+</hgroup>
+
+<div class="run-info">
+    <span class="status-badge status-{{ run.status }}">{{ run.status }}</span>
+    {% if run.row_count is not none %}<span>{{ run.row_count }} row{{ 's' if run.row_count != 1 else '' }}</span>{% endif %}
+    <span>{{ run.duration_ms|duration }}</span>
+    <span>by {{ run.run_by }}</span>
+    {% if run.result_hash %}
+    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid) }}" role="button" class="small outline">Download XLSX</a>
+    {% endif %}
+</div>
+
+<div class="form-actions" style="margin-bottom: 1rem;">
+    <a href="{{ url_for('reports.runs', uuid=report.uuid) }}" role="button" class="outline secondary small">Run History</a>
+    <a href="{{ url_for('reports.run', uuid=report.uuid) }}" role="button" class="outline small">Run Again</a>
+</div>
+
+{% if run.error_message %}
+<article class="flash flash-error">{{ run.error_message }}</article>
+{% endif %}
+
+{% if columns %}
+<div class="results-container">
+    <table>
+        <thead>
+            <tr>
+                {% for col in columns %}
+                <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                {% for cell in row %}
+                <td>{{ cell if cell is not none else '' }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% elif run.status == 'completed' %}
+<p>Cached results not available (may have been cleaned up).</p>
+{% endif %}
+{% endblock %}
