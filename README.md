@@ -6,12 +6,12 @@ A reporting system that uses DuckDB as its query engine, allowing users to autho
 
 - **Two-layer SQL templating** -- `{{ var }}` for Jinja2 structural parts (table names, connection strings), `$var` for DuckDB bind parameters (dates, codes, filter values)
 - **Automatic parameter extraction** -- Jinja AST parsing and regex scanning detect parameters from SQL templates
-- **Parquet result cache** -- query results cached as Parquet files, enabling fast re-sorting, filtering, and XLSX export without re-execution
+- **DuckDB result cache** -- query results cached as DuckDB files, enabling fast re-sorting, filtering, and export without re-execution
 - **HTMX results table** -- sort and filter cached results inline without page reload
-- **XLSX export** -- download results as formatted Excel tables (openpyxl)
+- **Multi-format export** -- download results as XLSX (formatted Excel tables via openpyxl) or Parquet, with a `?format=` parameter on all download endpoints
 - **Custom scheduling** -- user-friendly JSON schedule definitions with business-day awareness (first/last working day of month), no cron syntax
 - **Email delivery** -- scheduled reports sent via Outbox with inline HTML tables and XLSX attachments
-- **PowerQuery API links** -- GUID-based URLs for Excel/Power BI to pull report data directly as XLSX or JSON
+- **PowerQuery API links** -- GUID-based URLs for Excel/Power BI to pull report data directly as XLSX, Parquet, or JSON
 - **Programmatic API** -- JSON endpoints for running reports and retrieving results
 - **Client library** -- `StrataClient` with local (direct DB) and HTTP (remote API) backends
 - **Tag system** -- 32-colour palette for organising reports
@@ -122,8 +122,9 @@ Missed runs are skipped (no catch-up). The worker calculates the next future occ
 API links provide GUID-based URLs that require no login:
 
 ```
-GET /api/v1/link/<uuid>         # Returns XLSX
-GET /api/v1/link/<uuid>/json    # Returns JSON
+GET /api/v1/link/<uuid>?format=xlsx      # Returns XLSX
+GET /api/v1/link/<uuid>?format=parquet   # Returns Parquet
+GET /api/v1/link/<uuid>/json             # Returns JSON
 ```
 
 Links support fixed parameters (baked in) and parameterised params (supplied via query string). Links can be rotated (new UUID) or expired.
@@ -133,9 +134,9 @@ Links support fixed parameters (baked in) and parameterised params (supplied via
 Authenticated JSON API for integration:
 
 ```
-POST /api/v1/reports/<uuid>/run     # Run a report, returns JSON results
-GET  /api/v1/runs/<run_uuid>        # Get a run's results
-GET  /api/v1/runs/<run_uuid>/download  # Download XLSX
+POST /api/v1/reports/<uuid>/run              # Run a report, returns JSON results
+GET  /api/v1/runs/<run_uuid>                 # Get a run's results
+GET  /api/v1/runs/<run_uuid>/download?format=xlsx  # Download (xlsx or parquet)
 ```
 
 ## Client Library
