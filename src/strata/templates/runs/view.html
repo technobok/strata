@@ -14,7 +14,8 @@
     <span>{{ run.duration_ms|duration }}</span>
     <span>by {{ run.run_by }}</span>
     {% if run.result_hash %}
-    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid) }}" role="button" class="small outline">Download XLSX</a>
+    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}">XLSX</a>
+    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}">Parquet</a>
     {% endif %}
 </div>
 

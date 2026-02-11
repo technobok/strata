@@ -31,7 +31,8 @@
             <td>
                 {% if run.status == 'completed' and run.result_hash %}
                 <a href="{{ url_for('reports.view_run', run_uuid=run.uuid) }}" role="button" class="small outline">View</a>
-                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid) }}" role="button" class="small outline">XLSX</a>
+                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}">XLSX</a>
+                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}">Parquet</a>
                 {% elif run.error_message %}
                 <small title="{{ run.error_message }}">{{ run.error_message[:50] }}{% if run.error_message|length > 50 %}...{% endif %}</small>
                 {% endif %}

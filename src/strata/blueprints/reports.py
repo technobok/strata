@@ -230,7 +230,7 @@ def run(uuid: str) -> str | Response:
             run_record.mark_failed(result.error, result.duration_ms)
             flash(result.error, "error")
         else:
-            # Cache result as Parquet
+            # Cache result
             result_hash = compute_result_hash(report.id, result.rendered_sql, value_params)
             cache_service.write_result(result_hash, result.columns, result.types, result.rows)
             column_info = [
@@ -305,8 +305,12 @@ def view_run(run_uuid: str) -> str:
 @bp.route("/runs/<run_uuid>/download")
 @login_required
 def download_run(run_uuid: str) -> FlaskResponse:
-    """Download run results as XLSX."""
-    from strata.services.export_service import generate_xlsx_from_cache
+    """Download run results in the requested format."""
+    from strata.services.export_service import generate_download
+
+    fmt = request.args.get("format")
+    if not fmt:
+        return FlaskResponse("Missing required 'format' parameter", status=400)
 
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record or not run_record.result_hash:
@@ -315,15 +319,20 @@ def download_run(run_uuid: str) -> FlaskResponse:
     report = Report.get_by_id(run_record.report_id)
     sheet_name = report.name[:31] if report else "Results"
 
-    xlsx_bytes = generate_xlsx_from_cache(run_record.result_hash, sheet_name)
-    if not xlsx_bytes:
+    try:
+        result = generate_download(run_record.result_hash, fmt, sheet_name)
+    except ValueError as e:
+        return FlaskResponse(str(e), status=400)
+
+    if not result:
         abort(404)
 
-    filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}.xlsx"
+    data, mimetype, extension = result
+    filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}{extension}"
 
     return FlaskResponse(
-        xlsx_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        data,
+        mimetype=mimetype,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

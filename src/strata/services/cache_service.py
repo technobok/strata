@@ -1,4 +1,4 @@
-"""Parquet-based result cache service."""
+"""DuckDB-based result cache service."""
 
 import logging
 from pathlib import Path
@@ -25,7 +25,7 @@ def cache_path(result_hash: str) -> Path:
     cache_dir = _get_cache_dir()
     subdir = cache_dir / result_hash[:2]
     subdir.mkdir(parents=True, exist_ok=True)
-    return subdir / f"{result_hash}.parquet"
+    return subdir / f"{result_hash}.duckdb"
 
 
 def write_result(
@@ -34,15 +34,14 @@ def write_result(
     types: list[str],
     rows: list[tuple[Any, ...]],
 ) -> Path:
-    """Write query results to a Parquet file."""
+    """Write query results to a DuckDB file."""
     path = cache_path(result_hash)
 
     if path.exists():
         return path
 
-    conn = duckdb.connect(":memory:")
+    conn = duckdb.connect(str(path))
     try:
-        # Create table from results
         col_defs = ", ".join(f'"{col}" VARCHAR' for col in columns)
         conn.execute(f"CREATE TABLE results ({col_defs})")
 
@@ -50,8 +49,6 @@ def write_result(
             placeholders = ", ".join("?" for _ in columns)
             for row in rows:
                 conn.execute(f"INSERT INTO results VALUES ({placeholders})", list(row))
-
-        conn.execute(f"COPY results TO '{path}' (FORMAT PARQUET)")
     finally:
         conn.close()
 
@@ -66,7 +63,7 @@ def read_result(
     limit: int | None = None,
     offset: int = 0,
 ) -> tuple[list[str], list[tuple[Any, ...]], int]:
-    """Read cached results from Parquet, optionally sorted/filtered.
+    """Read cached results from DuckDB, optionally sorted/filtered.
 
     Returns (columns, rows, total_count).
     """
@@ -74,18 +71,15 @@ def read_result(
     if not path.exists():
         return [], [], 0
 
-    conn = duckdb.connect(":memory:")
+    conn = duckdb.connect(str(path), read_only=True)
     try:
-        # Get total count
-        count_result = conn.execute(f"SELECT COUNT(*) FROM read_parquet('{path}')").fetchone()
+        count_result = conn.execute("SELECT COUNT(*) FROM results").fetchone()
         total_count = int(count_result[0]) if count_result else 0
 
-        # Build query
-        sql = f"SELECT * FROM read_parquet('{path}')"
+        sql = "SELECT * FROM results"
 
         if filter_text:
-            # Filter across all columns using CAST to VARCHAR
-            rel = conn.execute(f"SELECT * FROM read_parquet('{path}') LIMIT 0")
+            rel = conn.execute("SELECT * FROM results LIMIT 0")
             cols = [desc[0] for desc in rel.description]
             filter_clauses = [f'CAST("{col}" AS VARCHAR) ILIKE ?' for col in cols]
             sql += " WHERE " + " OR ".join(filter_clauses)
@@ -105,7 +99,7 @@ def read_result(
         rows = result.fetchall()
 
         if filter_text:
-            count_sql = f"SELECT COUNT(*) FROM read_parquet('{path}')"
+            count_sql = "SELECT COUNT(*) FROM results"
             count_sql += " WHERE " + " OR ".join(filter_clauses)
             count_result = conn.execute(count_sql, filter_params).fetchone()
             total_count = int(count_result[0]) if count_result else 0
@@ -140,10 +134,10 @@ def purge_old_cache(valid_hashes: set[str]) -> int:
     for subdir in cache_dir.iterdir():
         if not subdir.is_dir():
             continue
-        for parquet_file in subdir.glob("*.parquet"):
-            file_hash = parquet_file.stem
+        for cache_file in subdir.glob("*.duckdb"):
+            file_hash = cache_file.stem
             if file_hash not in valid_hashes:
-                parquet_file.unlink()
+                cache_file.unlink()
                 deleted += 1
 
     return deleted

@@ -13,7 +13,7 @@ from strata.models.parameter import Parameter
 from strata.models.report import Report
 from strata.models.report_run import ReportRun
 from strata.services import cache_service
-from strata.services.export_service import generate_xlsx_from_cache
+from strata.services.export_service import generate_download
 from strata.services.query_service import compute_result_hash, execute_report
 
 log = logging.getLogger(__name__)
@@ -26,12 +26,20 @@ bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 @bp.route("/link/<link_uuid>")
 def link_download(link_uuid: str) -> FlaskResponse:
-    """Public endpoint: download report results as XLSX via API link.
+    """Public endpoint: download report results via API link.
 
     No login required — authentication is via the link UUID itself.
     Supports fixed parameters from the link and query-string overrides
-    for parameterised params.
+    for parameterised params. Requires ?format=xlsx or ?format=parquet.
     """
+    fmt = request.args.get("format")
+    if not fmt:
+        return FlaskResponse(
+            json.dumps({"error": "Missing required 'format' parameter"}),
+            status=400,
+            mimetype="application/json",
+        )
+
     link = ApiLink.get_by_uuid(link_uuid)
     if not link:
         abort(404)
@@ -94,15 +102,25 @@ def link_download(link_uuid: str) -> FlaskResponse:
     # Record the use
     link.record_use()
 
-    # Generate and return XLSX
-    from strata.services.export_service import generate_xlsx
+    # Generate download in requested format
+    try:
+        download = generate_download(result_hash, fmt, report.name[:31])
+    except ValueError as e:
+        return FlaskResponse(
+            json.dumps({"error": str(e)}),
+            status=400,
+            mimetype="application/json",
+        )
 
-    xlsx_bytes = generate_xlsx(result.columns, result.rows, report.name[:31])
-    filename = f"{report.name.replace(' ', '_')}.xlsx"
+    if not download:
+        abort(404)
+
+    data, mimetype, extension = download
+    filename = f"{report.name.replace(' ', '_')}{extension}"
 
     return FlaskResponse(
-        xlsx_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        data,
+        mimetype=mimetype,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -376,7 +394,15 @@ def get_run(run_uuid: str) -> FlaskResponse:
 @bp.route("/runs/<run_uuid>/download")
 @login_required
 def download_run(run_uuid: str) -> FlaskResponse:
-    """Download run results as XLSX."""
+    """Download run results in the requested format."""
+    fmt = request.args.get("format")
+    if not fmt:
+        return FlaskResponse(
+            json.dumps({"error": "Missing required 'format' parameter"}),
+            status=400,
+            mimetype="application/json",
+        )
+
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record or not run_record.result_hash:
         abort(404)
@@ -384,14 +410,23 @@ def download_run(run_uuid: str) -> FlaskResponse:
     report = Report.get_by_id(run_record.report_id)
     sheet_name = report.name[:31] if report else "Results"
 
-    xlsx_bytes = generate_xlsx_from_cache(run_record.result_hash, sheet_name)
-    if not xlsx_bytes:
+    try:
+        result = generate_download(run_record.result_hash, fmt, sheet_name)
+    except ValueError as e:
+        return FlaskResponse(
+            json.dumps({"error": str(e)}),
+            status=400,
+            mimetype="application/json",
+        )
+
+    if not result:
         abort(404)
 
-    filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}.xlsx"
+    data, mimetype, extension = result
+    filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}{extension}"
 
     return FlaskResponse(
-        xlsx_bytes,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        data,
+        mimetype=mimetype,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

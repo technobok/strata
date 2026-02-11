@@ -64,7 +64,8 @@
     <span>{{ result.row_count }} row{{ 's' if result.row_count != 1 else '' }}</span>
     <span>{{ result.duration_ms|duration }}</span>
     {% if run_record and run_record.result_hash %}
-    <a href="{{ url_for('reports.download_run', run_uuid=run_record.uuid) }}" role="button" class="small outline">Download XLSX</a>
+    <a href="{{ url_for('reports.download_run', run_uuid=run_record.uuid, format='xlsx') }}">XLSX</a>
+    <a href="{{ url_for('reports.download_run', run_uuid=run_record.uuid, format='parquet') }}">Parquet</a>
     {% endif %}
 </div>
 <div id="results-table" class="results-container">
