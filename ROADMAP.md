@@ -153,6 +153,9 @@ Datasets are reports flagged as reusable data sources that other reports can ref
 - [ ] Schedule run history log (success/failure per execution)
 - [ ] Email notification on schedule failure
 - [ ] Multiple daily times support in schedule UI
+- [ ] Exception report mode on schedules -- schedule runs on its usual cadence but only sends
+  the email if the report query returned more than 0 rows or if execution failed; useful for
+  alert/monitor-style reports that function like a test runner (all-clear runs are silent)
 
 ### API Enhancements
 
