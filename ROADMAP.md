@@ -177,6 +177,26 @@ Datasets are reports flagged as reusable data sources that other reports can ref
 - [ ] Report cloning / duplicate
 - [ ] Report version history / audit log
 
+### Rich Column Display
+
+- [ ] Companion-column convention for cell-level links and formatting -- columns named
+  `col__href` or `col__class` are hidden from display and instead enrich the corresponding
+  base column; `__href` makes the cell a clickable link, `__class` adds a CSS class to the
+  `<td>` for colour/style control
+- [ ] Report-to-report drill-through via relative `__href` links that point to a detail
+  report pre-filled with parameters from the clicked row
+  (e.g. `/reports/<uuid>/run?order_id=123`)
+- [ ] Predefined CSS utility classes for cell styling (`cell-danger`, `cell-success`,
+  `cell-warning`, `cell-muted`) so report authors can highlight rows by status or threshold
+- [ ] Excel export: render `__href` companion values as openpyxl cell hyperlinks with
+  Hyperlink named style; relative URLs must be resolved to absolute by prepending the
+  app base URL (e.g. `SERVER_NAME` or a config value) so links work outside the browser;
+  strip companion columns from visible sheet
+- [ ] Parquet export: strip all companion columns (presentation metadata has no meaning
+  in a data-interchange format)
+- [ ] Email inline table: render `__href` as `<a>` tags in the HTML table body; ignore or
+  map `__class` to inline styles
+
 ### Export & Delivery
 
 - [ ] Scheduled delivery to SharePoint / file share
