@@ -145,20 +145,18 @@ def _init_gatekeeper(app: Flask) -> None:
 
     try:
         if gk_db_path:
-            from gatekeeper.client import GatekeeperClient
-            from gatekeeper.client.flask_integration import setup_flask_integration
+            from gatekeeper import GatekeeperClient
 
-            client = GatekeeperClient(db_path=gk_db_path)
-            app.config["GATEKEEPER_CLIENT"] = client
-            setup_flask_integration(app, client)
+            gk = GatekeeperClient(db_path=gk_db_path)
+            gk.init_app(app, cookie_name="gk_session")
+            app.config["GATEKEEPER_CLIENT"] = gk
             logger.info("Gatekeeper client initialized (local DB)")
         elif gk_url and gk_api_key:
-            from gatekeeper.client import GatekeeperClient
-            from gatekeeper.client.flask_integration import setup_flask_integration
+            from gatekeeper import GatekeeperClient
 
-            client = GatekeeperClient(server_url=gk_url, api_key=gk_api_key)
-            app.config["GATEKEEPER_CLIENT"] = client
-            setup_flask_integration(app, client)
+            gk = GatekeeperClient(server_url=gk_url, api_key=gk_api_key)
+            gk.init_app(app, cookie_name="gk_session")
+            app.config["GATEKEEPER_CLIENT"] = gk
             logger.info("Gatekeeper client initialized (HTTP)")
         else:
             logger.info("Gatekeeper not configured, authentication disabled")
