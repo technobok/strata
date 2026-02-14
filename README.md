@@ -51,7 +51,7 @@ The dev server starts at `http://127.0.0.1:5000` by default.
 
 Set `STRATA_DB` to override the database path (defaults to `instance/strata.sqlite3`).
 
-Set `GATEKEEPER_DB` to enable SSO authentication via Gatekeeper.
+Set `gatekeeper.db_path` via `make config-set` to enable SSO authentication via Gatekeeper (or set the `GATEKEEPER_DB` environment variable).
 
 Set `OUTBOX_DB` to enable email delivery via Outbox.
 

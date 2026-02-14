@@ -139,19 +139,29 @@ def _init_gatekeeper(app: Flask) -> None:
 
     logger = logging.getLogger(__name__)
 
-    gk_db_path = os.environ.get("GATEKEEPER_DB")
-    if not gk_db_path:
-        logger.info("GATEKEEPER_DB not set, authentication disabled")
-        return
+    gk_db_path = os.environ.get("GATEKEEPER_DB") or app.config.get("GATEKEEPER_DB_PATH", "")
+    gk_url = app.config.get("GATEKEEPER_URL", "")
+    gk_api_key = app.config.get("GATEKEEPER_API_KEY", "")
 
     try:
-        from gatekeeper.client import GatekeeperClient
-        from gatekeeper.client.flask_integration import setup_flask_integration
+        if gk_db_path:
+            from gatekeeper.client import GatekeeperClient
+            from gatekeeper.client.flask_integration import setup_flask_integration
 
-        client = GatekeeperClient(db_path=gk_db_path)
-        app.config["GATEKEEPER_CLIENT"] = client
-        setup_flask_integration(app, client)
-        logger.info("Gatekeeper client initialized")
+            client = GatekeeperClient(db_path=gk_db_path)
+            app.config["GATEKEEPER_CLIENT"] = client
+            setup_flask_integration(app, client)
+            logger.info("Gatekeeper client initialized (local DB)")
+        elif gk_url and gk_api_key:
+            from gatekeeper.client import GatekeeperClient
+            from gatekeeper.client.flask_integration import setup_flask_integration
+
+            client = GatekeeperClient(server_url=gk_url, api_key=gk_api_key)
+            app.config["GATEKEEPER_CLIENT"] = client
+            setup_flask_integration(app, client)
+            logger.info("Gatekeeper client initialized (HTTP)")
+        else:
+            logger.info("Gatekeeper not configured, authentication disabled")
     except Exception as e:
         logger.warning(f"Failed to initialize Gatekeeper client: {e}")
 

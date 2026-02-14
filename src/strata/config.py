@@ -41,6 +41,10 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry(
         "cache.retention_days", ConfigType.INT, 30, "Days to keep cached results before cleanup"
     ),
+    # -- gatekeeper --
+    ConfigEntry("gatekeeper.db_path", ConfigType.STRING, "", "Path to Gatekeeper SQLite database"),
+    ConfigEntry("gatekeeper.url", ConfigType.STRING, "", "Gatekeeper HTTP API base URL"),
+    ConfigEntry("gatekeeper.api_key", ConfigType.STRING, "", "Gatekeeper API key", secret=True),
     # -- worker --
     ConfigEntry(
         "worker.poll_interval", ConfigType.INT, 30, "Schedule worker poll interval in seconds"
@@ -108,6 +112,9 @@ KEY_MAP: dict[str, str] = {
     "server.debug": "DEBUG",
     "cache.directory": "CACHE_DIRECTORY",
     "cache.retention_days": "CACHE_RETENTION_DAYS",
+    "gatekeeper.db_path": "GATEKEEPER_DB_PATH",
+    "gatekeeper.url": "GATEKEEPER_URL",
+    "gatekeeper.api_key": "GATEKEEPER_API_KEY",
     "worker.poll_interval": "WORKER_POLL_INTERVAL",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
