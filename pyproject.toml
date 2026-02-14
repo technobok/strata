@@ -26,6 +26,10 @@ dev = [
     "pytest",
 ]
 
+[tool.uv.sources]
+gatekeeper = { path = "../gatekeeper", editable = true }
+outbox = { path = "../outbox", editable = true }
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
