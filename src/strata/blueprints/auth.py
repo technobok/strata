@@ -83,19 +83,9 @@ def verify() -> str | Response:
 
     user, redirect_url = result
 
-    auth_token = gk.create_auth_token(user)
-
     response = redirect(redirect_url or url_for("index"))
     flash(f"Welcome, {user.fullname or user.username}!", "success")
-
-    response.set_cookie(
-        "gk_session",
-        auth_token,
-        max_age=86400 * 365,
-        httponly=True,
-        secure=not current_app.config.get("DEBUG", False),
-        samesite="Lax",
-    )
+    gk.set_session_cookie(response, user)
 
     return response
 
