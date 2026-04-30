@@ -17,6 +17,15 @@
     <label for="description">Description</label>
     <textarea id="description" name="description" rows="2" placeholder="What does this report do?">{{ description }}</textarea>
 
+    <label for="connection_id">Connection</label>
+    <select id="connection_id" name="connection_id">
+        <option value="">(none — local DuckDB only)</option>
+        {% for c in connections %}
+        <option value="{{ c.id }}" {% if connection_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.driver }})</option>
+        {% endfor %}
+    </select>
+    <small>Selected connection is attached as <code>src</code> before the report runs.</small>
+
     <label for="sql_template">SQL Template</label>
     <div class="sql-editor">
         <textarea id="sql_template" name="sql_template" rows="12" placeholder="SELECT * FROM {{ table_name }} WHERE date >= $date_from" spellcheck="false">{{ sql_template }}</textarea>

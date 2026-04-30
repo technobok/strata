@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{% if connection %}Edit {{ connection.name }}{% else %}New Connection{% endif %} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>{% if connection %}Edit Connection{% else %}New Connection{% endif %}</h2>
+    <p>External database the query engine can attach as <code>src</code>.</p>
+</hgroup>
+
+<form method="post">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required
+           value="{{ form_values.get('name') or (connection.name if connection else '') }}"
+           placeholder="prod-warehouse">
+
+    <label for="driver">Driver</label>
+    <select id="driver" name="driver" onchange="this.form.action='{{ url_for('connections.new') }}?driver=' + this.value; this.form.method='get'; this.form.submit();">
+        {% for key, spec in drivers.items() %}
+        <option value="{{ key }}" {% if selected_driver == key %}selected{% endif %}>{{ spec.label }}</option>
+        {% endfor %}
+    </select>
+
+    <label for="description">Description</label>
+    <textarea id="description" name="description" rows="2">{{ form_values.get('description') or (connection.description if connection else '') }}</textarea>
+
+    <fieldset>
+        <legend>Driver parameters</legend>
+        {% for field in drivers[selected_driver].param_schema %}
+        <label for="param_{{ field.name }}">{{ field.label }}{% if field.kind == 'password' and connection %} <small>(leave blank to keep current)</small>{% endif %}</label>
+        <input type="{{ field.kind }}" id="param_{{ field.name }}" name="param_{{ field.name }}"
+               {% if field.required and field.kind != 'password' %}required{% endif %}
+               value="{% if field.kind == 'password' %}{% else %}{{ form_values.get('param_' ~ field.name) or (connection.params.get(field.name, '') if connection else field.default or '') }}{% endif %}"
+               placeholder="{{ field.default or '' }}">
+        {% endfor %}
+    </fieldset>
+
+    <div class="form-actions">
+        <button type="submit">{% if connection %}Save{% else %}Create{% endif %}</button>
+        <button type="button" class="outline secondary" onclick="window.location.href='{{ url_for('connections.index') }}'">Cancel</button>
+    </div>
+</form>
+{% endblock %}

@@ -121,7 +121,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return f"{minutes}m {remaining:.0f}s"
 
     # Register blueprints
-    from strata.blueprints import admin, api, auth, reports, schedules, tags
+    from strata.blueprints import admin, api, auth, connections, reports, schedules, tags
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(reports.bp)
@@ -129,6 +129,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.register_blueprint(schedules.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(admin.bp)
+    app.register_blueprint(connections.bp)
 
     @app.route("/")
     def index() -> str:

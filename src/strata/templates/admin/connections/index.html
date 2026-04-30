@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Connections — Admin — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h2>Connections</h2>
+    <p>External database connections that reports can attach to.</p>
+</hgroup>
+
+<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+    <button type="button" onclick="location.href='{{ url_for('connections.new') }}'">New Connection</button>
+    <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back to Admin</button>
+</div>
+
+{% if connections %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Driver</th>
+            <th>Description</th>
+            <th>Modified</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in connections %}
+        <tr>
+            <td><strong>{{ c.name }}</strong></td>
+            <td>{{ drivers[c.driver].label if c.driver in drivers else c.driver }}</td>
+            <td>{{ c.description }}</td>
+            <td><small>{{ c.modified_at | localdate }}</small></td>
+            <td>
+                <form method="post" action="{{ url_for('connections.test', uuid=c.uuid) }}" style="display:inline">
+                    <button type="submit" class="small outline">Test</button>
+                </form>
+                <button type="button" class="small outline" onclick="location.href='{{ url_for('connections.edit', uuid=c.uuid) }}'">Edit</button>
+                <form method="post" action="{{ url_for('connections.delete', uuid=c.uuid) }}" style="display:inline">
+                    <button type="submit" class="small outline secondary" onclick="return confirm('Delete connection {{ c.name }}? Reports referencing it will lose the connection.')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p><em>No connections defined yet.</em></p>
+{% endif %}
+{% endblock %}

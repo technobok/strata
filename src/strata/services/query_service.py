@@ -48,13 +48,15 @@ def execute_report(
     structural_params: dict[str, str],
     value_params: dict[str, str],
     param_types: dict[str, str],
+    connection_id: int | None = None,
 ) -> QueryResult:
     """Execute a report's SQL template with the given parameters.
 
     1. Validate structural parameters
     2. Render Jinja2 structural template
     3. Cast value parameters to proper types
-    4. Execute via DuckDB with bind parameters
+    4. If connection_id is set, ATTACH that source as `src`
+    5. Execute via DuckDB with bind parameters
     """
     result = QueryResult()
 
@@ -88,6 +90,15 @@ def execute_report(
     try:
         conn = duckdb.connect(":memory:")
         try:
+            if connection_id is not None:
+                from strata.models.connection import Connection
+                from strata.services.connection_service import attach_into
+
+                conn_row = Connection.get_by_id(connection_id)
+                if conn_row is None:
+                    result.error = f"Report references missing connection id={connection_id}"
+                    return result
+                attach_into(conn, "src", conn_row.driver, conn_row.params)
             rel = conn.execute(rendered_sql, bind_params)
             result.columns = [desc[0] for desc in rel.description]
             result.types = [str(desc[1]) for desc in rel.description]

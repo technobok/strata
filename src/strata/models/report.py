@@ -15,6 +15,7 @@ class Report:
     name: str
     description: str
     sql_template: str
+    connection_id: int | None
     created_by: str
     modified_by: str
     created_at: str
@@ -28,13 +29,17 @@ class Report:
             name=str(row[2]),
             description=str(row[3]),
             sql_template=str(row[4]),
-            created_by=str(row[5]),
-            modified_by=str(row[6]),
-            created_at=str(row[7]),
-            modified_at=str(row[8]),
+            connection_id=int(row[5]) if row[5] is not None else None,
+            created_by=str(row[6]),
+            modified_by=str(row[7]),
+            created_at=str(row[8]),
+            modified_at=str(row[9]),
         )
 
-    _COLUMNS = "id, uuid, name, description, sql_template, created_by, modified_by, created_at, modified_at"
+    _COLUMNS = (
+        "id, uuid, name, description, sql_template, connection_id, "
+        "created_by, modified_by, created_at, modified_at"
+    )
 
     @staticmethod
     def get_by_id(report_id: int) -> Report | None:
@@ -66,20 +71,22 @@ class Report:
         sql_template: str,
         created_by: str,
         description: str = "",
+        connection_id: int | None = None,
     ) -> Report:
         now = datetime.now(UTC).isoformat()
         report_uuid = str(uuid_lib.uuid4())
 
         with transaction() as cursor:
             cursor.execute(
-                "INSERT INTO report (uuid, name, description, sql_template, "
+                "INSERT INTO report (uuid, name, description, sql_template, connection_id, "
                 "created_by, modified_by, created_at, modified_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     report_uuid,
                     name.strip(),
                     description.strip(),
                     sql_template,
+                    connection_id,
                     created_by,
                     created_by,
                     now,
@@ -95,11 +102,14 @@ class Report:
             name=name.strip(),
             description=description.strip(),
             sql_template=sql_template,
+            connection_id=connection_id,
             created_by=created_by,
             modified_by=created_by,
             created_at=now,
             modified_at=now,
         )
+
+    _UNSET: object = object()
 
     def update(
         self,
@@ -107,6 +117,7 @@ class Report:
         name: str | None = None,
         description: str | None = None,
         sql_template: str | None = None,
+        connection_id: object = _UNSET,
     ) -> bool:
         updates: list[str] = []
         params: list[Any] = []
@@ -120,6 +131,9 @@ class Report:
         if sql_template is not None:
             updates.append("sql_template = ?")
             params.append(sql_template)
+        if connection_id is not Report._UNSET:
+            updates.append("connection_id = ?")
+            params.append(connection_id)
 
         if not updates:
             return False
@@ -143,6 +157,8 @@ class Report:
             self.description = description.strip()
         if sql_template is not None:
             self.sql_template = sql_template
+        if connection_id is not Report._UNSET:
+            self.connection_id = connection_id  # type: ignore[assignment]
         self.modified_by = modified_by
         self.modified_at = now
         return True

@@ -1,11 +1,25 @@
 -- Strata database schema
 
+CREATE TABLE IF NOT EXISTS connection (
+    id INTEGER PRIMARY KEY,
+    uuid TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    driver TEXT NOT NULL,
+    params_encrypted TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL,
+    modified_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    modified_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS report (
     id INTEGER PRIMARY KEY,
     uuid TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     sql_template TEXT NOT NULL,
+    connection_id INTEGER REFERENCES connection(id) ON DELETE SET NULL,
     created_by TEXT NOT NULL,
     modified_by TEXT NOT NULL,
     created_at TEXT NOT NULL,

@@ -26,6 +26,7 @@ make config-set KEY=key VAL=value  # Set config
 - All models are dataclasses with static CRUD methods
 - Blueprints in `src/strata/blueprints/`
 - Services in `src/strata/services/`
+- External DB connections live in the `connection` table, params encrypted with Fernet keyed off `app_setting.secret_key`. Adding a driver = registering a `DriverSpec` in `src/strata/services/connection_service.py:DRIVERS`.
 
 ## Git Commits
 - Do not add "Co-Authored-By" lines to commit messages

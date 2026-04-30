@@ -188,7 +188,19 @@ def init_db_at(db_path: str) -> None:
             ("secret_key", new_key, "Secret key for signing auth tokens"),
         )
 
+    _apply_schema_migrations(conn)
     conn.close()
+
+
+def _apply_schema_migrations(conn: apsw.Connection) -> None:
+    """Idempotent ALTER TABLE upgrades for pre-existing databases."""
+    report_cols = {row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()}
+    if "connection_id" not in report_cols:
+        conn.execute(
+            "ALTER TABLE report ADD COLUMN connection_id INTEGER REFERENCES connection(id)"
+        )
+
+    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '1')")
 
 
 def init_db() -> None:
