@@ -40,30 +40,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash strata
-
 WORKDIR /app
 
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
-COPY --chown=strata:strata src/ ./src/
-COPY --chown=strata:strata worker/ ./worker/
-COPY --chown=strata:strata database/ ./database/
-COPY --chown=strata:strata wsgi.py ./
-COPY --chown=strata:strata pyproject.toml ./
-
-# Create instance directory
-RUN mkdir -p /app/instance/cache && chown -R strata:strata /app/instance
+COPY src/ ./src/
+COPY worker/ ./worker/
+COPY database/ ./database/
+COPY wsgi.py ./
+COPY pyproject.toml ./
 
 # Set environment
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-
-USER strata
 
 # Default port; override at runtime with the PORT env var.
 EXPOSE 5000
