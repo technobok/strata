@@ -3,10 +3,13 @@
 
 FROM python:3.14-slim AS builder
 
-# Install build dependencies (git is needed for `uv pip install git+...`)
+# Install build dependencies. git is needed for `uv pip install git+...`;
+# libldap2-dev / libsasl2-dev are needed to build python-ldap (gatekeeper dep).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     git \
+    libldap2-dev \
+    libsasl2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
@@ -30,6 +33,12 @@ RUN uv venv /app/.venv && \
 
 # Production image
 FROM python:3.14-slim
+
+# Runtime libs for python-ldap (gatekeeper dep).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libldap-common \
+    libsasl2-2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash strata
