@@ -75,6 +75,19 @@ def config() -> str | Response:
     )
 
 
+def _get_schema() -> list[dict[str, object]]:
+    """Return [{name, columns}] for every user table in the metadata DB."""
+    db = get_db()
+    tables: list[dict[str, object]] = []
+    for (name,) in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    ).fetchall():
+        cols = [row[1] for row in db.execute(f"PRAGMA table_info({name})").fetchall()]
+        tables.append({"name": name, "columns": cols})
+    return tables
+
+
 @bp.route("/sql", methods=["GET", "POST"])
 @admin_required
 def sql_console() -> str:
@@ -112,4 +125,5 @@ def sql_console() -> str:
         rows=rows,
         error=error,
         row_count=row_count,
+        schema=_get_schema(),
     )

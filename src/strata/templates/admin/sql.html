@@ -8,6 +8,20 @@
     <p>Execute read-only queries against the metadata database.</p>
 </hgroup>
 
+{% if schema %}
+<details>
+    <summary>Schema reference ({{ schema|length }} tables)</summary>
+    <div style="columns: 3; column-gap: 2rem; margin-top: 0.5rem;">
+        {% for table in schema %}
+        <div style="break-inside: avoid; margin-bottom: 0.5rem;">
+            <strong>{{ table.name }}</strong><br>
+            <small>{{ table.columns | join(', ') }}</small>
+        </div>
+        {% endfor %}
+    </div>
+</details>
+{% endif %}
+
 <form method="post">
     <label for="query">SQL Query (SELECT, PRAGMA, EXPLAIN only)</label>
     <textarea id="query" name="query" rows="5" class="sql-editor" placeholder="SELECT * FROM report LIMIT 10;">{{ query }}</textarea>
