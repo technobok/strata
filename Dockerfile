@@ -60,5 +60,5 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Default port; override at runtime with the PORT env var.
 EXPOSE 5000
 
-# Default command runs the Flask app
-CMD ["python", "wsgi.py"]
+# Default command runs the Flask app via gunicorn (the strata-web CLI).
+CMD ["strata-web"]
