@@ -26,9 +26,9 @@
     <div class="form-actions">
         <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>
         {% if report %}
-        <a href="{{ url_for('reports.run', uuid=report.uuid) }}" role="button" class="outline">Run</a>
+        <button type="button" class="outline" onclick="window.location.href='{{ url_for('reports.run', uuid=report.uuid) }}'">Run</button>
         {% endif %}
-        <a href="{{ url_for('reports.index') }}" role="button" class="outline secondary">Cancel</a>
+        <button type="button" class="outline secondary" onclick="window.location.href='{{ url_for('reports.index') }}'">Cancel</button>
     </div>
 </form>
 
