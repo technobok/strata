@@ -1,3 +1,0 @@
-[console_scripts]
-strata-admin = strata.cli:main
-strata-web = strata.web:main
