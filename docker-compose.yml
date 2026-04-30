@@ -7,8 +7,8 @@ services:
     container_name: strata-app
     volumes:
       - ./instance:/app/instance
-      - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
-      - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
+      - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
+      - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
     ports:
       - "${PORT:-5000}:${PORT:-5000}"
     environment:
@@ -26,13 +26,13 @@ services:
       # - STRATA_ROOT=/app
 
       # --- Gatekeeper (SSO auth — required to log in) ---
-      - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
       # Or HTTP mode instead of local DB:
       # - GATEKEEPER_URL=https://gatekeeper.example.com
       # - GATEKEEPER_API_KEY=...
 
       # --- Outbox (outgoing email queue) ---
-      - OUTBOX_DB=/data/outbox.sqlite3
+      - OUTBOX_DB=/outbox-data/outbox.sqlite3
       # - MAIL_SENDER=strata@example.com
     networks:
       - platform-net
@@ -54,8 +54,8 @@ services:
     command: ["python", "-m", "worker.schedule_worker"]
     volumes:
       - ./instance:/app/instance
-      - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
-      - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
+      - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
+      - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
     environment:
       # --- Runtime ---
       - PYTHONUNBUFFERED=1
@@ -67,13 +67,13 @@ services:
       # - STRATA_ROOT=/app
 
       # --- Gatekeeper (SSO auth) ---
-      - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
       # Or HTTP mode instead of local DB:
       # - GATEKEEPER_URL=https://gatekeeper.example.com
       # - GATEKEEPER_API_KEY=...
 
       # --- Outbox (outgoing email queue) ---
-      - OUTBOX_DB=/data/outbox.sqlite3
+      - OUTBOX_DB=/outbox-data/outbox.sqlite3
       # - MAIL_SENDER=strata@example.com
     networks:
       - platform-net
