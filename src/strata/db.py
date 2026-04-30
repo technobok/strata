@@ -15,7 +15,9 @@ def get_db_path() -> str:
     Priority:
       1. STRATA_DB environment variable
       2. Flask current_app.config["DATABASE_PATH"] (if in app context)
-      3. instance/strata.sqlite3 relative to project root (fallback)
+      3. $STRATA_ROOT/instance/strata.sqlite3 (if STRATA_ROOT is set)
+      4. Source-tree fallback (only when the package lives inside a checkout)
+      5. CWD/instance/strata.sqlite3
     """
     import os
 
@@ -30,8 +32,14 @@ def get_db_path() -> str:
     except RuntimeError, KeyError:
         pass
 
+    if os.environ.get("STRATA_ROOT"):
+        return str(Path(os.environ["STRATA_ROOT"]) / "instance" / "strata.sqlite3")
+
     source_root = Path(__file__).parent.parent.parent
-    return str(source_root / "instance" / "strata.sqlite3")
+    if (source_root / "src" / "strata" / "__init__.py").exists():
+        return str(source_root / "instance" / "strata.sqlite3")
+
+    return str(Path.cwd() / "instance" / "strata.sqlite3")
 
 
 def _configure_connection(conn: apsw.Connection) -> None:
