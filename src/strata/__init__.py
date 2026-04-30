@@ -58,8 +58,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     else:
         _load_config_from_db(app)
 
-    # Ensure cache directory exists
-    cache_dir = app.config.get("CACHE_DIRECTORY", str(instance_path / "cache"))
+    # Ensure cache directory exists. Priority: env > DB-loaded config > default.
+    cache_dir = (
+        os.environ.get("CACHE_DIRECTORY")
+        or app.config.get("CACHE_DIRECTORY")
+        or str(instance_path / "cache")
+    )
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
     app.config["CACHE_DIRECTORY"] = cache_dir
 
