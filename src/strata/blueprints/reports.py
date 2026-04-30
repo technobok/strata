@@ -43,6 +43,7 @@ def new() -> str | Response:
         description = request.form.get("description", "").strip()
         sql_template = request.form.get("sql_template", "")
         connection_id = request.form.get("connection_id", type=int) or None
+        materialise_as = request.form.get("materialise_as", "").strip() or None
 
         if not name:
             flash("Report name is required.", "error")
@@ -54,6 +55,7 @@ def new() -> str | Response:
                 description=description,
                 sql_template=sql_template,
                 connection_id=connection_id,
+                materialise_as=materialise_as,
                 connections=Connection.get_all(),
             )
 
@@ -63,6 +65,7 @@ def new() -> str | Response:
             created_by=g.user.username,
             description=description,
             connection_id=connection_id,
+            materialise_as=materialise_as,
         )
 
         extracted = template_service.extract_parameters(sql_template)
@@ -80,6 +83,7 @@ def new() -> str | Response:
         description="",
         sql_template="",
         connection_id=None,
+        materialise_as=None,
         connections=Connection.get_all(),
     )
 
@@ -102,6 +106,7 @@ def edit(uuid: str) -> str | Response:
             description = request.form.get("description", "").strip()
             sql_template = request.form.get("sql_template", "")
             connection_id = request.form.get("connection_id", type=int) or None
+            materialise_as = request.form.get("materialise_as", "").strip() or None
 
             if not name:
                 flash("Report name is required.", "error")
@@ -113,6 +118,7 @@ def edit(uuid: str) -> str | Response:
                     description=description,
                     sql_template=sql_template,
                     connection_id=connection_id,
+                    materialise_as=materialise_as,
                     connections=Connection.get_all(),
                 )
 
@@ -122,6 +128,7 @@ def edit(uuid: str) -> str | Response:
                 description=description,
                 sql_template=sql_template,
                 connection_id=connection_id,
+                materialise_as=materialise_as,
             )
 
             extracted = template_service.extract_parameters(sql_template)
@@ -170,6 +177,7 @@ def edit(uuid: str) -> str | Response:
         description=report.description,
         sql_template=report.sql_template,
         connection_id=report.connection_id,
+        materialise_as=report.materialise_as,
         connections=Connection.get_all(),
     )
 
@@ -238,6 +246,7 @@ def run(uuid: str) -> str | Response:
             value_params=value_params,
             param_types=param_types,
             connection_id=report.connection_id,
+            materialise_as=report.materialise_as,
         )
 
         if result.error:

@@ -199,8 +199,14 @@ def _apply_schema_migrations(conn: apsw.Connection) -> None:
         conn.execute(
             "ALTER TABLE report ADD COLUMN connection_id INTEGER REFERENCES connection(id)"
         )
+    if "materialise_as" not in report_cols:
+        conn.execute("ALTER TABLE report ADD COLUMN materialise_as TEXT")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_report_materialise_as "
+            "ON report(materialise_as) WHERE materialise_as IS NOT NULL"
+        )
 
-    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '1')")
+    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '2')")
 
 
 def init_db() -> None:

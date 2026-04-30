@@ -117,6 +117,8 @@ def _process_due_schedules() -> None:
             structural_params=structural_params,
             value_params=value_params,
             param_types=param_types,
+            connection_id=report.connection_id,
+            materialise_as=report.materialise_as,
         )
 
         if result.error:

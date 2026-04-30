@@ -66,15 +66,42 @@ def validate_structural_value(name: str, value: str) -> str | None:
     return None
 
 
-def render_structural(sql_template: str, structural_params: dict[str, str]) -> str:
+def render_structural(
+    sql_template: str,
+    structural_params: dict[str, str],
+    refs_collector: list[str] | None = None,
+) -> str:
     """Render Jinja2 structural parameters in the SQL template.
 
     Only structural parameters are rendered here. DuckDB bind parameters
     ($var) are left untouched for the query engine.
+
+    A `ref(name)` Jinja function is registered: it expands to
+    `mat_<name>.result` (the convention for materialised reports) and, when
+    `refs_collector` is provided, appends the referenced names so the caller
+    can ATTACH the matching .duckdb files before executing.
     """
     env = Environment()
+
+    def _ref(name: str) -> str:
+        if refs_collector is not None and name not in refs_collector:
+            refs_collector.append(name)
+        return f"mat_{name}.result"
+
+    env.globals["ref"] = _ref
     template = env.from_string(sql_template)
     return template.render(**structural_params)
+
+
+def find_refs(sql_template: str) -> list[str]:
+    """Statically discover ref('name') calls in a SQL template (best-effort)."""
+    pattern = re.compile(r"ref\s*\(\s*['\"]([^'\"]+)['\"]\s*\)")
+    seen: list[str] = []
+    for match in pattern.finditer(sql_template):
+        name = match.group(1)
+        if name not in seen:
+            seen.append(name)
+    return seen
 
 
 def cast_value(value: str, data_type: str) -> object:

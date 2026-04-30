@@ -5,9 +5,11 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import duckdb
+from flask import current_app
 
 from strata.services.template_service import (
     cast_value,
@@ -43,20 +45,33 @@ def compute_result_hash(
     return hashlib.sha256(data.encode()).hexdigest()
 
 
+def _materialised_path(name: str) -> Path:
+    """Resolve the .duckdb file path for a materialised report."""
+    cache_dir = Path(current_app.config.get("CACHE_DIRECTORY", "instance/cache"))
+    named_dir = cache_dir / "named"
+    named_dir.mkdir(parents=True, exist_ok=True)
+    return named_dir / f"{name}.duckdb"
+
+
 def execute_report(
     sql_template: str,
     structural_params: dict[str, str],
     value_params: dict[str, str],
     param_types: dict[str, str],
     connection_id: int | None = None,
+    materialise_as: str | None = None,
 ) -> QueryResult:
     """Execute a report's SQL template with the given parameters.
 
     1. Validate structural parameters
-    2. Render Jinja2 structural template
+    2. Render Jinja2 structural template (collect ref('name') usages)
     3. Cast value parameters to proper types
-    4. If connection_id is set, ATTACH that source as `src`
-    5. Execute via DuckDB with bind parameters
+    4. If materialise_as is set, target the corresponding named .duckdb file;
+       otherwise run in :memory:
+    5. ATTACH any ref()'d materialised files as mat_<name>
+    6. ATTACH the chosen connection as src
+    7. Execute via DuckDB with bind parameters; if materialising, write the
+       result into a `result` table inside the target file.
     """
     result = QueryResult()
 
@@ -68,12 +83,31 @@ def execute_report(
             return result
 
     # Render structural template
+    refs_used: list[str] = []
     try:
-        rendered_sql = render_structural(sql_template, structural_params)
+        rendered_sql = render_structural(sql_template, structural_params, refs_collector=refs_used)
         result.rendered_sql = rendered_sql
     except Exception as e:
         result.error = f"Template rendering error: {e}"
         return result
+
+    # Reject self-referential materialisation.
+    if materialise_as is not None and materialise_as in refs_used:
+        result.error = (
+            f"Report cannot ref('{materialise_as}') while materialising as '{materialise_as}'"
+        )
+        return result
+
+    # Resolve ref()'d source files (must already exist on disk).
+    ref_paths: dict[str, Path] = {}
+    for ref_name in refs_used:
+        path = _materialised_path(ref_name)
+        if not path.exists():
+            result.error = (
+                f"Materialised report '{ref_name}' has not been run yet (expected file: {path})"
+            )
+            return result
+        ref_paths[ref_name] = path
 
     # Cast value parameters
     bind_params: dict[str, Any] = {}
@@ -85,11 +119,24 @@ def execute_report(
             result.error = f"Parameter '{name}': {e}"
             return result
 
-    # Execute query
+    # Decide where the query runs.
+    target_path: Path | None = None
+    if materialise_as is not None:
+        target_path = _materialised_path(materialise_as)
+
     start_time = time.monotonic()
     try:
-        conn = duckdb.connect(":memory:")
+        conn = duckdb.connect(str(target_path) if target_path else ":memory:")
         try:
+            if target_path is not None:
+                # Reset stale state in the target file before re-materialising.
+                conn.execute("DROP TABLE IF EXISTS result")
+
+            # ATTACH ref()'d materialised sources read-only.
+            for ref_name, path in ref_paths.items():
+                conn.execute(f"ATTACH '{path}' AS mat_{ref_name} (READ_ONLY)")
+
+            # ATTACH the report's own connection.
             if connection_id is not None:
                 from strata.models.connection import Connection
                 from strata.services.connection_service import attach_into
@@ -99,7 +146,15 @@ def execute_report(
                     result.error = f"Report references missing connection id={connection_id}"
                     return result
                 attach_into(conn, "src", conn_row.driver, conn_row.params)
-            rel = conn.execute(rendered_sql, bind_params)
+
+            if target_path is not None:
+                # Materialise into the named .duckdb file as a single `result` table,
+                # then read it back so the live UI sees the same rows.
+                conn.execute(f"CREATE TABLE result AS {rendered_sql}", bind_params)
+                rel = conn.execute("SELECT * FROM result")
+            else:
+                rel = conn.execute(rendered_sql, bind_params)
+
             result.columns = [desc[0] for desc in rel.description]
             result.types = [str(desc[1]) for desc in rel.description]
             result.rows = rel.fetchall()
