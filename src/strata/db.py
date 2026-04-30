@@ -131,6 +131,30 @@ def transaction() -> Generator[apsw.Cursor]:
 # ---------------------------------------------------------------------------
 
 
+def _find_schema_path() -> Path:
+    """Locate database/schema.sql across dev and installed-package layouts."""
+    import os
+
+    candidates = [
+        # Source checkout: src/strata/db.py -> repo_root/database/schema.sql
+        Path(__file__).parent.parent.parent / "database" / "schema.sql",
+        # Container / installed layout: $STRATA_ROOT/database/schema.sql
+        *(
+            [Path(os.environ["STRATA_ROOT"]) / "database" / "schema.sql"]
+            if os.environ.get("STRATA_ROOT")
+            else []
+        ),
+        # CWD fallback (e.g. running from /app in docker)
+        Path.cwd() / "database" / "schema.sql",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    raise FileNotFoundError(
+        f"Could not locate database/schema.sql. Tried: {[str(p) for p in candidates]}"
+    )
+
+
 def init_db_at(db_path: str) -> None:
     """Initialize the database schema at the given path.
 
@@ -142,7 +166,7 @@ def init_db_at(db_path: str) -> None:
     conn = apsw.Connection(db_path)
     _configure_connection(conn)
 
-    schema_path = Path(__file__).parent.parent.parent / "database" / "schema.sql"
+    schema_path = _find_schema_path()
     with open(schema_path) as f:
         for _ in conn.execute(f.read()):
             pass
