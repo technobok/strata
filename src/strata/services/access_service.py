@@ -1,5 +1,7 @@
 """Access control service for reports."""
 
+from typing import cast
+
 from strata.db import get_db
 from strata.models.report import Report
 
@@ -97,15 +99,15 @@ def accessible_report_ids(username: str, permission: str = "run") -> list[int] |
     if not restricted_rows:
         return None  # No restrictions at all
 
-    restricted_ids = {int(r[0]) for r in restricted_rows}
+    restricted_ids = {cast(int, r[0]) for r in restricted_rows}
 
     # Get all report IDs
     all_rows = db.execute("SELECT id, created_by FROM report").fetchall()
 
     accessible = []
     for row in all_rows:
-        rid = int(row[0])
-        created_by = str(row[1])
+        rid = cast(int, row[0])
+        created_by = cast(str, row[1])
 
         if rid not in restricted_ids:
             # No ACL = open to all

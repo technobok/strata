@@ -4,7 +4,6 @@ import json
 
 from flask import (
     Blueprint,
-    abort,
     flash,
     g,
     redirect,
@@ -12,6 +11,8 @@ from flask import (
     request,
     url_for,
 )
+from werkzeug.datastructures import ImmutableMultiDict
+from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import login_required
@@ -28,7 +29,7 @@ def index(uuid: str) -> str:
     """List schedules for a report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     schedules = Schedule.get_for_report(report.id)
     return render_template("schedules/index.html", report=report, schedules=schedules)
@@ -40,7 +41,7 @@ def new(uuid: str) -> str | Response:
     """Create a new schedule."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     if request.method == "POST":
         definition = _parse_schedule_form(request.form)
@@ -74,7 +75,7 @@ def new(uuid: str) -> str | Response:
                 form=request.form,
             )
 
-        max_inline_rows = request.form.get("max_inline_rows", "100", type=int) or 100
+        max_inline_rows = request.form.get("max_inline_rows", type=int) or 100
 
         # Parse optional fixed parameters
         params_json_raw = request.form.get("parameters_json", "").strip()
@@ -118,11 +119,11 @@ def edit(schedule_uuid: str) -> str | Response:
     """Edit a schedule."""
     schedule = Schedule.get_by_uuid(schedule_uuid)
     if not schedule:
-        abort(404)
+        raise NotFound()
 
     report = Report.get_by_id(schedule.report_id)
     if not report:
-        abort(404)
+        raise NotFound()
 
     if request.method == "POST":
         definition = _parse_schedule_form(request.form)
@@ -156,7 +157,7 @@ def edit(schedule_uuid: str) -> str | Response:
                 form=request.form,
             )
 
-        max_inline_rows = request.form.get("max_inline_rows", "100", type=int) or 100
+        max_inline_rows = request.form.get("max_inline_rows", type=int) or 100
 
         params_json_raw = request.form.get("parameters_json", "").strip()
         parameters: dict | None = ...  # type: ignore[assignment]
@@ -204,7 +205,7 @@ def delete(schedule_uuid: str) -> Response:
     """Delete a schedule."""
     schedule = Schedule.get_by_uuid(schedule_uuid)
     if not schedule:
-        abort(404)
+        raise NotFound()
 
     report = Report.get_by_id(schedule.report_id)
     schedule.delete()
@@ -221,7 +222,7 @@ def preview(schedule_uuid: str) -> str:
     """HTMX endpoint: preview next N run times."""
     schedule = Schedule.get_by_uuid(schedule_uuid)
     if not schedule:
-        abort(404)
+        raise NotFound()
 
     runs = next_n_runs(schedule.schedule_definition, n=5)
     return render_template("schedules/_preview.html", runs=runs)
@@ -239,7 +240,7 @@ def preview_form() -> str:
     return render_template("schedules/_preview.html", runs=runs)
 
 
-def _parse_schedule_form(form: dict) -> dict | None:  # type: ignore[type-arg]
+def _parse_schedule_form(form: ImmutableMultiDict[str, str]) -> dict | None:
     """Parse schedule definition from form data."""
     schedule_type = form.get("schedule_type", "")
 
@@ -262,7 +263,7 @@ def _parse_schedule_form(form: dict) -> dict | None:  # type: ignore[type-arg]
                 return {"type": "daily", "at": at}
 
             case "weekly":
-                days = form.getlist("weekly_days") if hasattr(form, "getlist") else []
+                days = form.getlist("weekly_days")
                 if not days:
                     return None
                 at = form.get("weekly_at", "08:00")
@@ -286,7 +287,7 @@ def _parse_schedule_form(form: dict) -> dict | None:  # type: ignore[type-arg]
 
             case _:
                 return None
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 

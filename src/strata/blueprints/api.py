@@ -6,6 +6,7 @@ from typing import Any
 
 from flask import Blueprint, abort, g, jsonify, request
 from flask import Response as FlaskResponse
+from werkzeug.exceptions import NotFound
 
 from strata.blueprints.auth import login_required
 from strata.models.api_link import ApiLink
@@ -42,14 +43,14 @@ def link_download(link_uuid: str) -> FlaskResponse:
 
     link = ApiLink.get_by_uuid(link_uuid)
     if not link:
-        abort(404)
+        raise NotFound()
 
     if not link.is_valid():
         abort(403)
 
     report = Report.get_by_id(link.report_id)
     if not report:
-        abort(404)
+        raise NotFound()
 
     params = Parameter.get_for_report(report.id)
 
@@ -113,7 +114,7 @@ def link_download(link_uuid: str) -> FlaskResponse:
         )
 
     if not download:
-        abort(404)
+        raise NotFound()
 
     data, mimetype, extension = download
     filename = f"{report.name.replace(' ', '_')}{extension}"
@@ -130,14 +131,14 @@ def link_json(link_uuid: str) -> FlaskResponse:
     """Public endpoint: return report results as JSON via API link."""
     link = ApiLink.get_by_uuid(link_uuid)
     if not link:
-        abort(404)
+        raise NotFound()
 
     if not link.is_valid():
         abort(403)
 
     report = Report.get_by_id(link.report_id)
     if not report:
-        abort(404)
+        raise NotFound()
 
     params = Parameter.get_for_report(report.id)
 
@@ -203,7 +204,7 @@ def list_links(uuid: str) -> FlaskResponse:
     """List API links for a report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     links = ApiLink.get_for_report(report.id)
     return jsonify(
@@ -228,7 +229,7 @@ def create_link(uuid: str) -> FlaskResponse:
     """Create a new API link for a report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     data = request.get_json() or {}
     name = data.get("name", "").strip()
@@ -263,7 +264,7 @@ def rotate_link(link_uuid: str) -> FlaskResponse:
     """Rotate a link's UUID."""
     link = ApiLink.get_by_uuid(link_uuid)
     if not link:
-        abort(404)
+        raise NotFound()
 
     new_uuid = link.rotate_uuid()
     return jsonify({"uuid": new_uuid})
@@ -275,7 +276,7 @@ def delete_link(link_uuid: str) -> FlaskResponse:
     """Delete an API link."""
     link = ApiLink.get_by_uuid(link_uuid)
     if not link:
-        abort(404)
+        raise NotFound()
 
     link.delete()
     return jsonify({"deleted": True})
@@ -290,7 +291,7 @@ def run_report(uuid: str) -> FlaskResponse:
     """Programmatic report execution — returns JSON results."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     data: dict[str, Any] = request.get_json() or {}
     supplied_params: dict[str, str] = data.get("parameters", {})
@@ -366,7 +367,7 @@ def get_run(run_uuid: str) -> FlaskResponse:
     """Get a run's results from cache."""
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record:
-        abort(404)
+        raise NotFound()
 
     if run_record.status != "completed" or not run_record.result_hash:
         return jsonify(
@@ -405,7 +406,7 @@ def download_run(run_uuid: str) -> FlaskResponse:
 
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record or not run_record.result_hash:
-        abort(404)
+        raise NotFound()
 
     report = Report.get_by_id(run_record.report_id)
     sheet_name = report.name[:31] if report else "Results"
@@ -420,7 +421,7 @@ def download_run(run_uuid: str) -> FlaskResponse:
         )
 
     if not result:
-        abort(404)
+        raise NotFound()
 
     data, mimetype, extension = result
     filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}{extension}"

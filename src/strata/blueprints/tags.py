@@ -2,7 +2,8 @@
 
 import json
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import login_required
@@ -50,7 +51,7 @@ def edit(tag_id: int) -> str | Response:
     """Edit a tag."""
     tag = Tag.get_by_id(tag_id)
     if not tag:
-        abort(404)
+        raise NotFound()
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -70,7 +71,7 @@ def delete(tag_id: int) -> Response:
     """Delete a tag."""
     tag = Tag.get_by_id(tag_id)
     if not tag:
-        abort(404)
+        raise NotFound()
 
     tag.delete()
     flash(f"Tag '{tag.name}' deleted.", "success")

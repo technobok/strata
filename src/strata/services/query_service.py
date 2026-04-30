@@ -90,7 +90,7 @@ def execute_report(
         try:
             rel = conn.execute(rendered_sql, bind_params)
             result.columns = [desc[0] for desc in rel.description]
-            result.types = [desc[1] for desc in rel.description]
+            result.types = [str(desc[1]) for desc in rel.description]
             result.rows = rel.fetchall()
             result.row_count = len(result.rows)
         finally:

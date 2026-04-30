@@ -2,7 +2,6 @@
 
 from flask import (
     Blueprint,
-    abort,
     flash,
     g,
     redirect,
@@ -13,6 +12,7 @@ from flask import (
 from flask import (
     Response as FlaskResponse,
 )
+from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import login_required
@@ -83,7 +83,7 @@ def edit(uuid: str) -> str | Response:
     """Edit an existing report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     params = Parameter.get_for_report(report.id)
 
@@ -167,7 +167,7 @@ def delete(uuid: str) -> Response:
     """Delete a report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     report.delete()
     flash(f"Report '{report.name}' deleted.", "success")
@@ -180,7 +180,7 @@ def run(uuid: str) -> str | Response:
     """Run a report with parameters."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     params = Parameter.get_for_report(report.id)
     result: QueryResult | None = None
@@ -260,7 +260,7 @@ def runs(uuid: str) -> str:
     """List run history for a report."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     run_list = ReportRun.get_for_report(report.id)
     return render_template("runs/index.html", report=report, runs=run_list)
@@ -272,11 +272,11 @@ def view_run(run_uuid: str) -> str:
     """View a past run's results from cache."""
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record:
-        abort(404)
+        raise NotFound()
 
     report = Report.get_by_id(run_record.report_id)
     if not report:
-        abort(404)
+        raise NotFound()
 
     columns: list[str] = []
     rows: list[tuple] = []
@@ -314,7 +314,7 @@ def download_run(run_uuid: str) -> FlaskResponse:
 
     run_record = ReportRun.get_by_uuid(run_uuid)
     if not run_record or not run_record.result_hash:
-        abort(404)
+        raise NotFound()
 
     report = Report.get_by_id(run_record.report_id)
     sheet_name = report.name[:31] if report else "Results"
@@ -325,7 +325,7 @@ def download_run(run_uuid: str) -> FlaskResponse:
         return FlaskResponse(str(e), status=400)
 
     if not result:
-        abort(404)
+        raise NotFound()
 
     data, mimetype, extension = result
     filename = f"{sheet_name.replace(' ', '_')}_{run_record.uuid[:8]}{extension}"
@@ -343,7 +343,7 @@ def run_sort(uuid: str) -> str:
     """HTMX endpoint: sort/filter cached results."""
     report = Report.get_by_uuid(uuid)
     if not report:
-        abort(404)
+        raise NotFound()
 
     result_hash = request.form.get("result_hash", "")
     sort_col = request.form.get("sort_col", "")

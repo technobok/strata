@@ -1,5 +1,7 @@
 """Full-text search service using FTS5."""
 
+from typing import cast
+
 from strata.db import get_db
 
 
@@ -29,7 +31,7 @@ def rebuild_index() -> int:
 
     count = 0
     for row in rows:
-        report_id = int(row[0])
+        report_id = cast(int, row[0])
         name = str(row[1]) if row[1] else ""
         description = str(row[2]) if row[2] else ""
 
@@ -96,7 +98,7 @@ def search(query: str, limit: int = 50, tag: str | None = None) -> list[dict]:
     for row in rows:
         results.append(
             {
-                "id": int(row[0]),
+                "id": cast(int, row[0]),
                 "uuid": str(row[1]),
                 "name": str(row[2]),
                 "description": str(row[3]),

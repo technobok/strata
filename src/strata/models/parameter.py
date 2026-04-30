@@ -143,7 +143,7 @@ class Parameter:
         if data_type is not None:
             self.data_type = data_type
         if default_value is not ...:
-            self.default_value = default_value  # type: ignore[assignment]
+            self.default_value = default_value
         if description is not None:
             self.description = description
         if display_order is not None:
