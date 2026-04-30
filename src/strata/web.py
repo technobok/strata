@@ -1,7 +1,14 @@
 """Web server entry point for strata-web."""
 
+import os
+
 import click
 from flask import Flask
+
+
+def _int_env(name: str) -> int | None:
+    value = os.environ.get(name)
+    return int(value) if value else None
 
 
 @click.command()
@@ -16,12 +23,12 @@ def main(host: str | None, port: int | None, workers: int, dev: bool) -> None:
     app = create_app()
 
     if dev:
-        run_host = host or app.config.get("DEV_HOST", "127.0.0.1")
-        run_port = port or app.config.get("DEV_PORT", 5000)
+        run_host = host or os.environ.get("HOST") or app.config.get("DEV_HOST", "127.0.0.1")
+        run_port = port or _int_env("PORT") or app.config.get("DEV_PORT", 5000)
         app.run(debug=True, host=run_host, port=run_port)
     else:
-        run_host = host or app.config.get("HOST", "0.0.0.0")
-        run_port = port or app.config.get("PORT", 5000)
+        run_host = host or os.environ.get("HOST") or app.config.get("HOST", "0.0.0.0")
+        run_port = port or _int_env("PORT") or app.config.get("PORT", 5000)
 
         import gunicorn.app.base
 

@@ -9,16 +9,40 @@ services:
       - ./instance:/app/instance
       - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
       - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
+    ports:
+      - "${PORT:-5000}:${PORT:-5000}"
     environment:
+      # --- Runtime ---
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-UTC}
+
+      # --- Listen address ---
+      - PORT=${PORT:-5000}
+      - HOST=${HOST:-0.0.0.0}
+
+      # --- Strata DB (SQLite metadata store) ---
+      # Defaults to /app/instance/strata.sqlite3 inside the container
+      # - STRATA_DB=/app/instance/strata.sqlite3
+      # - STRATA_ROOT=/app
+
+      # --- Gatekeeper (SSO auth — required to log in) ---
       - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      # Or HTTP mode instead of local DB:
+      # - GATEKEEPER_URL=https://gatekeeper.example.com
+      # - GATEKEEPER_API_KEY=...
+
+      # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/data/outbox.sqlite3
+      # - MAIL_SENDER=strata@example.com
     networks:
       - platform-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import os,urllib.request;urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\",\"5000\")}/')"
       interval: 30s
       timeout: 10s
       retries: 3
@@ -33,10 +57,24 @@ services:
       - ${GATEKEEPER_DB_PATH:-../gatekeeper/instance/gatekeeper.sqlite3}:/data/gatekeeper.sqlite3:ro
       - ${OUTBOX_DB_PATH:-../outbox/instance/outbox.sqlite3}:/data/outbox.sqlite3
     environment:
+      # --- Runtime ---
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-UTC}
+
+      # --- Strata DB (SQLite metadata store) ---
+      # Defaults to /app/instance/strata.sqlite3 inside the container
+      # - STRATA_DB=/app/instance/strata.sqlite3
+      # - STRATA_ROOT=/app
+
+      # --- Gatekeeper (SSO auth) ---
       - GATEKEEPER_DB=/data/gatekeeper.sqlite3
+      # Or HTTP mode instead of local DB:
+      # - GATEKEEPER_URL=https://gatekeeper.example.com
+      # - GATEKEEPER_API_KEY=...
+
+      # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/data/outbox.sqlite3
+      # - MAIL_SENDER=strata@example.com
     networks:
       - platform-net
     restart: unless-stopped

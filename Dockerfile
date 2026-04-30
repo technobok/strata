@@ -50,6 +50,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 USER strata
 
+# Default port; override at runtime with the PORT env var.
 EXPOSE 5000
 
 # Default command runs the Flask app
