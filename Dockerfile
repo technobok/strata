@@ -27,8 +27,8 @@ COPY src/ ./src/
 # which point at sibling checkouts that don't exist inside the image.
 RUN uv venv /app/.venv && \
     . /app/.venv/bin/activate && \
-    uv pip install git+https://github.com/technobok/gatekeeper.git && \
-    uv pip install git+https://github.com/technobok/outbox.git && \
+    uv pip install --no-sources git+https://github.com/technobok/gatekeeper.git && \
+    uv pip install --no-sources git+https://github.com/technobok/outbox.git && \
     uv pip install --no-sources .
 
 # Production image
