@@ -87,6 +87,23 @@ def _postgres_attach(alias: str, params: dict) -> str:
     return f"ATTACH '{conn_str}' AS {alias} (TYPE postgres)"
 
 
+def _mssql_attach(alias: str, params: dict) -> str:
+    # Build a standard ODBC-style MSSQL connection string. DuckDB's mssql
+    # community extension accepts `Server=...;Database=...;User Id=...;...`.
+    parts = [f"Server={params['server']}"]
+    if params.get("port"):
+        parts[0] = f"Server={params['server']},{params['port']}"
+    parts.append(f"Database={params['database']}")
+    parts.append(f"User Id={params['user']}")
+    parts.append(f"Password={params['password']}")
+    if str(params.get("encrypt", "")).lower() in ("yes", "true", "1"):
+        parts.append("Encrypt=yes")
+    if str(params.get("trust_server_certificate", "")).lower() in ("yes", "true", "1"):
+        parts.append("TrustServerCertificate=yes")
+    conn_str = ";".join(parts).replace("'", "''")
+    return f"ATTACH '{conn_str}' AS {alias} (TYPE mssql)"
+
+
 DRIVERS: dict[str, DriverSpec] = {
     "sqlite": DriverSpec(
         label="SQLite (file)",
@@ -106,15 +123,49 @@ DRIVERS: dict[str, DriverSpec] = {
         extensions=["postgres"],
         attach_sql=_postgres_attach,
     ),
+    "mssql": DriverSpec(
+        label="Microsoft SQL Server",
+        param_schema=[
+            ParamField("server", "Server (host or DSN)"),
+            ParamField("port", "Port", kind="number", required=False),
+            ParamField("database", "Database"),
+            ParamField("user", "User"),
+            ParamField("password", "Password", kind="password"),
+            ParamField("encrypt", "Encrypt (yes/no)", required=False, default="yes"),
+            ParamField(
+                "trust_server_certificate",
+                "Trust server certificate (yes/no)",
+                required=False,
+                default="no",
+            ),
+        ],
+        # mssql lives in the community-extensions repo
+        extensions=["community/mssql"],
+        attach_sql=_mssql_attach,
+    ),
 }
+
+
+def _install_load(conn: duckdb.DuckDBPyConnection, ext: str) -> None:
+    """INSTALL+LOAD a DuckDB extension.
+
+    Accepts 'name' for core extensions or 'community/name' for the community
+    repo (e.g. 'community/mssql').
+    """
+    if "/" in ext:
+        repo, name = ext.split("/", 1)
+        conn.execute(f"INSTALL {name} FROM {repo}")
+    else:
+        name = ext
+        conn.execute(f"INSTALL {name}")
+    conn.execute(f"LOAD {name}")
 
 
 def attach_into(conn: duckdb.DuckDBPyConnection, alias: str, driver: str, params: dict) -> None:
     """Load required extensions and ATTACH the source as `alias` on conn."""
     spec = DRIVERS[driver]
     for ext in spec.extensions:
-        conn.execute(f"INSTALL {ext}")
-        conn.execute(f"LOAD {ext}")
+        _install_load(conn, ext)
     conn.execute(spec.attach_sql(alias, params))
 
 
