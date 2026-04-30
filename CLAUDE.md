@@ -2,13 +2,17 @@
 
 ## Build/Run Commands
 ```bash
-make sync                # Install dependencies
-make init-db             # Create blank database
+make sync                # Install dependencies (local dev)
+make init-db             # Create / migrate the local dev DB
 make rundev              # Run dev server
 make worker              # Run schedule worker
 make check               # ruff format + ruff check + ty check
 make config-list         # Show config
 make config-set KEY=key VAL=value  # Set config
+
+# Docker (deployment)
+make rebuild             # After git pull: rebuild images + apply DB migrations
+make db-init             # Apply DB migrations only (no rebuild)
 ```
 
 ## Architecture

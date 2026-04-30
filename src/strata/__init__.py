@@ -57,6 +57,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         app.config.from_mapping(test_config)
     else:
         _load_config_from_db(app)
+        _check_schema_version(db_path)
 
     # Ensure cache directory exists. Priority: env > DB-loaded config > default.
     cache_dir = (
@@ -167,6 +168,38 @@ def _init_gatekeeper(app: Flask) -> None:
             logger.info("Gatekeeper not configured, authentication disabled")
     except Exception as e:
         logger.warning(f"Failed to initialize Gatekeeper client: {e}")
+
+
+def _check_schema_version(db_path: str) -> None:
+    """Abort startup with a clear message if the DB schema is older than the code.
+
+    Catches the "image rebuilt without re-running migrations" footgun before
+    a request hits a missing-column error.
+    """
+    from strata.db import EXPECTED_SCHEMA_VERSION
+
+    try:
+        conn = apsw.Connection(db_path, flags=apsw.SQLITE_OPEN_READONLY)
+    except apsw.CantOpenError:
+        # Fresh deploy with no DB yet; init-db will create one.
+        return
+    try:
+        try:
+            row = conn.execute(
+                "SELECT value FROM db_metadata WHERE key='schema_version'"
+            ).fetchone()
+        except apsw.SQLError:
+            row = None
+    finally:
+        conn.close()
+    have = int(row[0]) if row else 0
+    if have < EXPECTED_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"strata DB schema_version={have}, code expects "
+            f">= {EXPECTED_SCHEMA_VERSION}. "
+            "Run: docker compose run --rm app strata-admin init-db "
+            "(or: make db-init)"
+        )
 
 
 def _load_config_from_db(app: Flask) -> None:

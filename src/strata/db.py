@@ -8,6 +8,11 @@ import apsw
 
 _standalone_db: apsw.Connection | None = None
 
+# Bumped by every schema change; checked at app boot. If the DB on disk reports
+# a lower value than this constant, the runtime aborts with a clear message
+# instructing the operator to run `make db-init`.
+EXPECTED_SCHEMA_VERSION = 2
+
 
 def get_db_path() -> str:
     """Resolve the database path.

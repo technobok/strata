@@ -1,22 +1,10 @@
 # Strata - Docker Compose configuration
 # Usage:
-#   docker compose --profile init up init   (one-time, creates the SQLite schema)
-#   docker compose up -d                    (run app + worker)
+#   make rebuild           # after `git pull`: build images + apply DB migrations
+#   make db-init           # apply DB migrations only (no rebuild)
+#   docker compose up -d   # run app + worker
 
 services:
-  init:
-    build: .
-    container_name: strata-init
-    command: ["strata-admin", "init-db"]
-    volumes:
-      - ./instance:/app/instance
-    environment:
-      - PYTHONUNBUFFERED=1
-      - TZ=${TZ:-UTC}
-    restart: "no"
-    profiles:
-      - init
-
   app:
     build: .
     container_name: strata-app

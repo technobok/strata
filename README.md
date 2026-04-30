@@ -77,9 +77,25 @@ Configuration is stored in the `app_setting` table and loaded at startup.
 | `make check` | Run ruff format + ruff check + ty check |
 | `make config-list` | Show all configuration settings |
 | `make config-set` | Set a config value |
+| `make rebuild` | After `git pull`: rebuild Docker images + apply DB migrations |
+| `make db-init` | Apply DB migrations against the running deployment |
 | `make docker-up` | Start Docker containers |
 | `make docker-down` | Stop Docker containers |
 | `make clean` | Remove temp files and database |
+
+### Docker deployment
+
+After pulling new commits, run a single command — it rebuilds the images and applies any new schema migrations against the live SQLite metadata DB:
+
+```bash
+git pull
+make rebuild
+docker compose up -d
+```
+
+`make rebuild` runs `docker compose build` followed by `make db-init`. The init step uses a throwaway container based on the freshly-built `app` image, so the binary running the migration is always the same one the long-lived containers will run — no separate image to keep in sync.
+
+If the app starts up against a DB whose `schema_version` is older than the code expects, it aborts at boot with a clear error pointing at `make db-init`.
 
 ## SQL Template System
 

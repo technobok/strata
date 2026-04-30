@@ -1,4 +1,4 @@
-.PHONY: help sync install init-db run rundev worker check clean config-list config-set docker-up docker-down
+.PHONY: help sync install init-db run rundev worker check clean config-list config-set docker-up docker-down db-init rebuild
 
 SHELL := /bin/bash
 VENV_DIR := $(or $(VIRTUAL_ENV),.venv)
@@ -68,6 +68,17 @@ docker-up:
 
 docker-down:
 	docker compose down
+
+# Apply DB schema init / migrations inside a throwaway container based on the
+# `app` image. Always uses the freshly-built image, so rebuild + db-init in one
+# go (`make rebuild`) is reliably self-consistent.
+db-init:
+	docker compose run --rm app strata-admin init-db
+
+# Rebuild all images then apply DB migrations. The "after `git pull`" recipe.
+rebuild:
+	docker compose build
+	$(MAKE) db-init
 
 clean:
 	@echo "--- Cleaning up ---"
