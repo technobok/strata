@@ -17,10 +17,15 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
 
-# Create virtual environment and install dependencies
+# Create virtual environment and install dependencies.
+# gatekeeper and outbox are pulled from git; --no-sources makes uv
+# ignore the [tool.uv.sources] editable-path overrides in pyproject.toml,
+# which point at sibling checkouts that don't exist inside the image.
 RUN uv venv /app/.venv && \
     . /app/.venv/bin/activate && \
-    uv pip install .
+    uv pip install git+https://github.com/technobok/gatekeeper.git && \
+    uv pip install git+https://github.com/technobok/outbox.git && \
+    uv pip install --no-sources .
 
 # Production image
 FROM python:3.14-slim
