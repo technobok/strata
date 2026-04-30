@@ -54,6 +54,14 @@ services:
       # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/outbox-data/outbox.sqlite3
       # - MAIL_SENDER=strata@example.com
+
+      # --- Reverse proxy (we run behind webreports-caddy at /strata) ---
+      # PREFIX=1 makes url_for() prepend /strata so static URLs work behind
+      # Caddy's handle_path /strata/*. Set to 0 if running standalone.
+      - PROXY_X_FORWARDED_FOR=1
+      - PROXY_X_FORWARDED_PROTO=1
+      - PROXY_X_FORWARDED_HOST=1
+      - PROXY_X_FORWARDED_PREFIX=1
     networks:
       - platform-net
     restart: unless-stopped
@@ -99,6 +107,12 @@ services:
       # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/outbox-data/outbox.sqlite3
       # - MAIL_SENDER=strata@example.com
+
+      # --- Reverse proxy (matches app service; harmless for the worker) ---
+      - PROXY_X_FORWARDED_FOR=1
+      - PROXY_X_FORWARDED_PROTO=1
+      - PROXY_X_FORWARDED_HOST=1
+      - PROXY_X_FORWARDED_PREFIX=1
     networks:
       - platform-net
     restart: unless-stopped

@@ -204,6 +204,18 @@ def _load_config_from_db(app: Flask) -> None:
 
         app.config[flask_key] = value
 
+    # Env vars override DB-loaded proxy config (so docker can enable ProxyFix
+    # without seeding the SQLite settings table).
+    for env_key in (
+        "PROXY_X_FORWARDED_FOR",
+        "PROXY_X_FORWARDED_PROTO",
+        "PROXY_X_FORWARDED_HOST",
+        "PROXY_X_FORWARDED_PREFIX",
+    ):
+        raw = os.environ.get(env_key)
+        if raw is not None:
+            app.config[env_key] = int(raw)
+
     # Apply ProxyFix if any proxy values are non-zero
     x_for = app.config.get("PROXY_X_FORWARDED_FOR", 0)
     x_proto = app.config.get("PROXY_X_FORWARDED_PROTO", 0)
