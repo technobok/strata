@@ -3,9 +3,10 @@
 
 FROM python:3.14-slim AS builder
 
-# Install build dependencies
+# Install build dependencies (git is needed for `uv pip install git+...`)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for fast dependency management
