@@ -38,22 +38,15 @@ FROM python:3.14-slim
 #   libldap-common / libsasl2-2 — python-ldap (gatekeeper dep)
 #   unixodbc                    — libodbc.so.2, used by DuckDB odbc_scanner
 #   tdsodbc / freetds-bin       — FreeTDS ODBC driver (open source) for MSSQL/Sybase
-#   msodbcsql18                 — Microsoft's MSSQL ODBC driver (proprietary, free; EULA accepted)
 #
-# The packages.microsoft.com repo is added with [trusted=yes] because its
-# signing key still has a SHA1 self-signature, which Debian 12's Sequoia
-# verifier (sqv) refuses since 2026-02-01. HTTPS + TLS still authenticates
-# the transport against packages.microsoft.com. Drop this workaround once
-# Microsoft re-signs the key.
+# We ship FreeTDS only. Microsoft's msodbcsql18 was tried and dropped: it
+# doesn't support NTLM-with-domain-account auth on Linux (the form you get
+# from a Windows-domain-joined SQL Server with `UID=DOMAIN\user;PWD=...`),
+# which is the dominant in-house use case. Add msodbcsql18 back here only
+# if you need Always Encrypted, MARS, or AD password auth with UPN UIDs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libldap-common libsasl2-2 \
         unixodbc tdsodbc freetds-bin \
-        ca-certificates \
-    && echo "deb [trusted=yes] https://packages.microsoft.com/debian/12/prod bookworm main" \
-         > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
-    && rm /etc/apt/sources.list.d/mssql-release.list \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

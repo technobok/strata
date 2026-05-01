@@ -182,24 +182,27 @@ Standalone deployments (no proxy) can leave the env vars at `1` — ProxyFix on 
 
 ### 8. Connecting via ODBC
 
-The runtime image bundles unixODBC plus two SQL Server drivers, so an `odbc` Connection works out of the box without any host-side setup:
+The runtime image bundles unixODBC and the **FreeTDS** ODBC driver (pure-MIT open source), so an `odbc` Connection works out of the box without any host-side setup. FreeTDS supports the `UID=DOMAIN\user;PWD=…;UseNTLMv2=yes;Trusted_Domain=DOMAIN` auth pattern used by Windows-domain-joined SQL Server, which Microsoft's Linux ODBC driver (`msodbcsql18`) deliberately does not — that's why we ship FreeTDS only.
 
-- **Microsoft `msodbcsql18`** — proprietary, free of charge (the EULA is accepted at image build time via `ACCEPT_EULA=Y`). Best feature support (Always Encrypted, MARS, current TLS).
-- **FreeTDS** — pure-MIT open source. Smaller, fewer SQL Server-specific extensions but works for most use cases.
+In strata, **/admin/connections → New → "ODBC (any driver…)"** opens a single text box for the connection string.
 
-In strata, **/admin/connections → New → "ODBC (any driver…)"** opens a single text box for the connection string. Pick the driver inline via the `Driver={…}` segment:
+Worked example for a domain-joined SQL Server (NTLM):
 
 ```
-# Microsoft msodbcsql18
-Driver={ODBC Driver 18 for SQL Server};Server=tcp:host,1433;Database=mydb;UID=user;PWD=pw;Encrypt=yes;TrustServerCertificate=yes
+Driver=FreeTDS;Server=host.example.com;Port=1433;Database=mydb;UID=DOMAIN\user;PWD=...;UseNTLMv2=yes;Trusted_Domain=DOMAIN;TDS_Version=7.4
+```
 
-# FreeTDS
-Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=user;PWD=pw;TDS_Version=7.4
+For SQL-native logins (no domain prefix), drop the NTLM fields:
+
+```
+Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
 The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test/Run, strata installs `community/odbc_scanner`, runs `LOAD odbc_scanner`, and `ATTACH`es your source as `src` (`READ_ONLY`). Reports referencing the connection then query e.g. `SELECT TOP 10 * FROM src.dbo.orders`.
 
 For PostgreSQL there's no need to use ODBC — the dedicated `postgres` driver uses DuckDB's native postgres extension and is faster.
+
+If you need Always Encrypted, MARS, or AD-password auth with UPN UIDs (`user@domain.com`), add Microsoft's `msodbcsql18` back to the runtime stage of the `Dockerfile` (see the comment block in there). Bring your own apt-repo workaround — Microsoft's signing key was still SHA1-self-signed at the time we last looked, which Debian 12's apt now rejects.
 
 ## Configuration reference
 
