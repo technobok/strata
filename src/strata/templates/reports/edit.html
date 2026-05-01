@@ -17,24 +17,21 @@
     <label for="description">Description</label>
     <textarea id="description" name="description" rows="2" placeholder="What does this report do?">{{ description }}</textarea>
 
-    <label for="connection_id">Connection</label>
-    <select id="connection_id" name="connection_id">
-        <option value="">(none — local DuckDB only)</option>
-        {% for c in connections %}
-        <option value="{{ c.id }}" {% if connection_id == c.id %}selected{% endif %}>{{ c.name }} ({{ c.driver }})</option>
-        {% endfor %}
-    </select>
-    <small>Selected connection is attached as <code>src</code> before the report runs.</small>
-
     <label for="materialise_as">Materialise as <small>(optional)</small></label>
     <input type="text" id="materialise_as" name="materialise_as" value="{{ materialise_as or '' }}" placeholder="e.g. orders_daily">
     <small>If set, this report's result is written to a named DuckDB file. Other reports can reference it via <code>{{ '{{' }} ref('orders_daily') {{ '}}' }}</code>, which expands to <code>mat_orders_daily.result</code>. Schedule this report to refresh.</small>
 
     <label for="sql_template">SQL Template</label>
     <div class="sql-editor">
-        <textarea id="sql_template" name="sql_template" rows="12" placeholder="SELECT * FROM {{ table_name }} WHERE date >= $date_from" spellcheck="false">{{ sql_template }}</textarea>
+        <textarea id="sql_template" name="sql_template" rows="12" placeholder="{% raw %}{% do conn('warehouse') %}
+SELECT * FROM warehouse.dbo.orders WHERE date >= $date_from{% endraw %}" spellcheck="false">{{ sql_template }}</textarea>
     </div>
-    <small>Use <code>{{ '{{' }} var {{ '}}' }}</code> for structural parameters (table names, schemas), <code>$var</code> for value parameters (dates, filters), and <code>{{ '{{' }} ref('name') {{ '}}' }}</code> to reference another materialised report.</small>
+    <small>
+        <code>{{ '{{' }} var {{ '}}' }}</code> structural params (identifiers, schema names) ·
+        <code>$var</code> typed value params (dates, filters) ·
+        <code>{% raw %}{% do conn('name') %}{% endraw %}</code> attach an external connection (uses the connection's name as the SQL alias) ·
+        <code>{{ '{{' }} ref('name') {{ '}}' }}</code> reference a materialised report.
+    </small>
 
     <div class="form-actions">
         <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>

@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS report (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     sql_template TEXT NOT NULL,
-    connection_id INTEGER REFERENCES connection(id) ON DELETE SET NULL,
     materialise_as TEXT UNIQUE,
     created_by TEXT NOT NULL,
     modified_by TEXT NOT NULL,

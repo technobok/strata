@@ -58,18 +58,18 @@ def execute_report(
     structural_params: dict[str, str],
     value_params: dict[str, str],
     param_types: dict[str, str],
-    connection_id: int | None = None,
     materialise_as: str | None = None,
 ) -> QueryResult:
     """Execute a report's SQL template with the given parameters.
 
     1. Validate structural parameters
-    2. Render Jinja2 structural template (collect ref('name') usages)
+    2. Render Jinja2 structural template, collecting ref('...') and conn('...')
+       usages as side effects
     3. Cast value parameters to proper types
     4. If materialise_as is set, target the corresponding named .duckdb file;
        otherwise run in :memory:
-    5. ATTACH any ref()'d materialised files as mat_<name>
-    6. ATTACH the chosen connection as src
+    5. ATTACH each ref()'d materialised file as mat_<name>
+    6. ATTACH each conn()'d external source under its own name
     7. Execute via DuckDB with bind parameters; if materialising, write the
        result into a `result` table inside the target file.
     """
@@ -84,8 +84,14 @@ def execute_report(
 
     # Render structural template
     refs_used: list[str] = []
+    conns_used: list[str] = []
     try:
-        rendered_sql = render_structural(sql_template, structural_params, refs_collector=refs_used)
+        rendered_sql = render_structural(
+            sql_template,
+            structural_params,
+            refs_collector=refs_used,
+            conns_collector=conns_used,
+        )
         result.rendered_sql = rendered_sql
     except Exception as e:
         result.error = f"Template rendering error: {e}"
@@ -108,6 +114,17 @@ def execute_report(
             )
             return result
         ref_paths[ref_name] = path
+
+    # Resolve conn()'d connections (must already exist).
+    from strata.models.connection import Connection
+
+    conn_rows = {}
+    for conn_name in conns_used:
+        conn_row = Connection.get_by_name(conn_name)
+        if conn_row is None:
+            result.error = f"conn('{conn_name}'): no connection defined with that name"
+            return result
+        conn_rows[conn_name] = conn_row
 
     # Cast value parameters
     bind_params: dict[str, Any] = {}
@@ -136,16 +153,11 @@ def execute_report(
             for ref_name, path in ref_paths.items():
                 conn.execute(f"ATTACH '{path}' AS mat_{ref_name} (READ_ONLY)")
 
-            # ATTACH the report's own connection.
-            if connection_id is not None:
-                from strata.models.connection import Connection
-                from strata.services.connection_service import attach_into
+            # ATTACH each conn()'d external source under its own name.
+            from strata.services.connection_service import attach_into
 
-                conn_row = Connection.get_by_id(connection_id)
-                if conn_row is None:
-                    result.error = f"Report references missing connection id={connection_id}"
-                    return result
-                attach_into(conn, "src", conn_row.driver, conn_row.params)
+            for conn_name, conn_row in conn_rows.items():
+                attach_into(conn, conn_name, conn_row.driver, conn_row.params)
 
             if target_path is not None:
                 # Materialise into the named .duckdb file as a single `result` table,

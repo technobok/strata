@@ -16,7 +16,6 @@ from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import login_required
-from strata.models.connection import Connection
 from strata.models.parameter import Parameter
 from strata.models.report import Report
 from strata.models.report_run import ReportRun
@@ -42,7 +41,6 @@ def new() -> str | Response:
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
         sql_template = request.form.get("sql_template", "")
-        connection_id = request.form.get("connection_id", type=int) or None
         materialise_as = request.form.get("materialise_as", "").strip() or None
 
         if not name:
@@ -54,9 +52,7 @@ def new() -> str | Response:
                 name=name,
                 description=description,
                 sql_template=sql_template,
-                connection_id=connection_id,
                 materialise_as=materialise_as,
-                connections=Connection.get_all(),
             )
 
         report = Report.create(
@@ -64,7 +60,6 @@ def new() -> str | Response:
             sql_template=sql_template,
             created_by=g.user.username,
             description=description,
-            connection_id=connection_id,
             materialise_as=materialise_as,
         )
 
@@ -82,9 +77,7 @@ def new() -> str | Response:
         name="",
         description="",
         sql_template="",
-        connection_id=None,
         materialise_as=None,
-        connections=Connection.get_all(),
     )
 
 
@@ -105,7 +98,6 @@ def edit(uuid: str) -> str | Response:
             name = request.form.get("name", "").strip()
             description = request.form.get("description", "").strip()
             sql_template = request.form.get("sql_template", "")
-            connection_id = request.form.get("connection_id", type=int) or None
             materialise_as = request.form.get("materialise_as", "").strip() or None
 
             if not name:
@@ -117,9 +109,7 @@ def edit(uuid: str) -> str | Response:
                     name=name,
                     description=description,
                     sql_template=sql_template,
-                    connection_id=connection_id,
                     materialise_as=materialise_as,
-                    connections=Connection.get_all(),
                 )
 
             report.update(
@@ -127,7 +117,6 @@ def edit(uuid: str) -> str | Response:
                 name=name,
                 description=description,
                 sql_template=sql_template,
-                connection_id=connection_id,
                 materialise_as=materialise_as,
             )
 
@@ -176,9 +165,7 @@ def edit(uuid: str) -> str | Response:
         name=report.name,
         description=report.description,
         sql_template=report.sql_template,
-        connection_id=report.connection_id,
         materialise_as=report.materialise_as,
-        connections=Connection.get_all(),
     )
 
 
@@ -245,7 +232,6 @@ def run(uuid: str) -> str | Response:
             structural_params=structural_params,
             value_params=value_params,
             param_types=param_types,
-            connection_id=report.connection_id,
             materialise_as=report.materialise_as,
         )
 

@@ -198,7 +198,7 @@ For SQL-native logins (no domain prefix), drop the NTLM fields:
 Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
-The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test/Run, strata installs `community/odbc_scanner`, runs `LOAD odbc_scanner`, and `ATTACH`es your source as `src` (`READ_ONLY`). Reports referencing the connection then query e.g. `SELECT TOP 10 * FROM src.dbo.orders`.
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `community/odbc_scanner`, runs `LOAD odbc_scanner`, and `ATTACH`es your source as a probe alias (`READ_ONLY`). Reports use the connection by declaring it inline in the SQL — see *SQL templates and references* below.
 
 For PostgreSQL there's no need to use ODBC — the dedicated `postgres` driver uses DuckDB's native postgres extension and is faster.
 
@@ -243,11 +243,13 @@ make config-set KEY=cache.retention_days VAL=60
 
 ## SQL templates and references
 
-Reports use a two-layer template system:
+Reports use a Jinja2 template plus DuckDB bind parameters:
 
 ```sql
--- {{ var }} = Jinja2 structural (rendered first)
--- $var = DuckDB bind parameter (executed safely)
+-- {{ var }}              Jinja structural (rendered before execution)
+-- $var                   DuckDB bind parameter (typed, executed safely)
+-- {% do conn('name') %}  attach an external connection under the given name
+-- {{ ref('name') }}      reference another materialised report
 
 SELECT *
 FROM {{ schema }}.{{ table_name }}
@@ -255,9 +257,35 @@ WHERE company_code = $company_code
   AND date >= $date_from
 ```
 
-Structural parameters are validated (alphanumeric, underscores, dots). Value parameters are type-cast to their declared DuckDB type before execution. When saving a report, parameters are automatically extracted from the SQL template and synced with the parameter definitions.
+Structural parameters are validated (alphanumeric, underscores, dots, `$`). Value parameters are type-cast to their declared DuckDB type before execution. When saving a report, parameters are automatically extracted from the SQL template and synced with the parameter definitions.
 
-If the report has a **connection** assigned, that source is `ATTACH`-ed as `src` before execution, so `SELECT * FROM src.public.users` works. If a report sets **Materialise as** to e.g. `orders_daily`, its result is written to a `result` table inside `cache_dir/named/orders_daily.duckdb` on every run. Other reports can reference it inline:
+### External connections — `conn('name')`
+
+Define a connection at `/admin/connections`, then declare it inline at the top of the report SQL. The connection's name becomes the SQL alias:
+
+```sql
+{% do conn('warehouse') %}
+{% do conn('crm') %}
+
+SELECT a.id, b.label, a.amount
+FROM   warehouse.dbo.orders a
+JOIN   crm.public.customers b ON a.cust_id = b.id
+WHERE  a.created_at >= $since
+```
+
+Each `conn(...)` call ATTACHes the source under its connection name before the query runs. Connection names are validated as SQL-safe identifiers (start with a letter/underscore, then letters/digits/underscores) so they can be used unquoted as aliases. Multiple connections per report are first-class.
+
+If you want a shorter alias in the SQL than the connection's name (e.g. for a long name), capture it with `{% set %}`:
+
+```sql
+{% set wh = conn('nav-prod-warehouse-aus') %}{# ❌ would be rejected: hyphens not allowed #}
+{% set wh = conn('nav_prod_warehouse_aus') %}
+SELECT * FROM {{ wh }}.dbo.orders
+```
+
+### Materialised reports — `ref('name')`
+
+If a report sets **Materialise as** to e.g. `orders_daily`, its result is written to a `result` table inside `cache_dir/named/orders_daily.duckdb` on every run. Other reports can reference it inline:
 
 ```sql
 SELECT customer, count(*) FROM {{ ref('orders_daily') }} GROUP BY 1

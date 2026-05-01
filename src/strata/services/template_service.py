@@ -119,27 +119,54 @@ def render_structural(
     sql_template: str,
     structural_params: dict[str, str],
     refs_collector: list[str] | None = None,
+    conns_collector: list[str] | None = None,
 ) -> str:
     """Render Jinja2 structural parameters in the SQL template.
 
     Only structural parameters are rendered here. DuckDB bind parameters
     ($var) are left untouched for the query engine.
 
-    A `ref(name)` Jinja function is registered: it expands to
-    `mat_<name>.result` (the convention for materialised reports) and, when
-    `refs_collector` is provided, appends the referenced names so the caller
-    can ATTACH the matching .duckdb files before executing.
+    Two side-effect functions are registered as Jinja globals:
+
+    - `ref(name)` — expands to `mat_<name>.result` (the convention for
+      materialised reports). When `refs_collector` is provided, the name is
+      appended so the caller can ATTACH the matching .duckdb cache files.
+
+    - `conn(name)` — declares that this report uses the named connection.
+      Returns the connection's name as the SQL alias, so the natural form is
+      either `{% do conn('warehouse') %}` (declare-only, alias used directly
+      in SQL) or `{% set wh = conn('warehouse') %}` (capture the alias
+      under a shorter Jinja variable). When `conns_collector` is provided,
+      the name is appended so the caller can ATTACH the connection.
+
+    `jinja2.ext.do` is enabled so `{% do conn('name') %}` works.
     """
-    env = Environment()
+    env = Environment(extensions=["jinja2.ext.do"])
 
     def _ref(name: str) -> str:
         if refs_collector is not None and name not in refs_collector:
             refs_collector.append(name)
         return f"mat_{name}.result"
 
+    def _conn(name: str) -> str:
+        if not ALIAS_RE.match(name):
+            raise ValueError(
+                f"conn('{name}'): connection names must match {ALIAS_RE.pattern} "
+                "(start with a letter or _, then letters/digits/underscores)"
+            )
+        if conns_collector is not None and name not in conns_collector:
+            conns_collector.append(name)
+        return name
+
     env.globals["ref"] = _ref
+    env.globals["conn"] = _conn
     template = env.from_string(sql_template)
     return template.render(**structural_params)
+
+
+# Connection / alias names must be SQL-identifier-safe so they can be used
+# unquoted in ATTACH ... AS <alias> and in the report SQL.
+ALIAS_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def find_refs(sql_template: str) -> list[str]:

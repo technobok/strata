@@ -11,7 +11,7 @@ _standalone_db: apsw.Connection | None = None
 # Bumped by every schema change; checked at app boot. If the DB on disk reports
 # a lower value than this constant, the runtime aborts with a clear message
 # instructing the operator to run `make db-init`.
-EXPECTED_SCHEMA_VERSION = 2
+EXPECTED_SCHEMA_VERSION = 3
 
 
 def get_db_path() -> str:
@@ -200,18 +200,18 @@ def init_db_at(db_path: str) -> None:
 def _apply_schema_migrations(conn: apsw.Connection) -> None:
     """Idempotent ALTER TABLE upgrades for pre-existing databases."""
     report_cols = {row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()}
-    if "connection_id" not in report_cols:
-        conn.execute(
-            "ALTER TABLE report ADD COLUMN connection_id INTEGER REFERENCES connection(id)"
-        )
     if "materialise_as" not in report_cols:
         conn.execute("ALTER TABLE report ADD COLUMN materialise_as TEXT")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_report_materialise_as "
             "ON report(materialise_as) WHERE materialise_as IS NOT NULL"
         )
+    # connection_id (introduced in schema_version=1) is dropped in v3 — reports
+    # now declare connections inline via {% do conn('name') %}.
+    if "connection_id" in report_cols:
+        conn.execute("ALTER TABLE report DROP COLUMN connection_id")
 
-    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '2')")
+    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '3')")
 
 
 def init_db() -> None:

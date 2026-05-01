@@ -15,6 +15,7 @@ from werkzeug.wrappers import Response
 from strata.blueprints.auth import admin_required
 from strata.models.connection import Connection
 from strata.services.connection_service import DRIVERS, test_connection
+from strata.services.template_service import ALIAS_RE
 
 bp = Blueprint("connections", __name__, url_prefix="/admin/connections")
 
@@ -57,6 +58,13 @@ def new() -> str | Response:
 
         if not name:
             flash("Connection name is required.", "error")
+        elif not ALIAS_RE.match(name):
+            flash(
+                f"Connection name '{name}' must start with a letter or underscore "
+                "and contain only letters, digits, and underscores (no hyphens, "
+                "spaces, or punctuation) so it can be used directly as a SQL alias.",
+                "error",
+            )
         elif driver not in DRIVERS:
             flash(f"Unknown driver: {driver}", "error")
         elif Connection.get_by_name(name) is not None:
@@ -97,6 +105,13 @@ def edit(uuid: str) -> str | Response:
 
         if not name:
             flash("Connection name is required.", "error")
+        elif not ALIAS_RE.match(name):
+            flash(
+                f"Connection name '{name}' must start with a letter or underscore "
+                "and contain only letters, digits, and underscores (no hyphens, "
+                "spaces, or punctuation) so it can be used directly as a SQL alias.",
+                "error",
+            )
         elif driver not in DRIVERS:
             flash(f"Unknown driver: {driver}", "error")
         else:

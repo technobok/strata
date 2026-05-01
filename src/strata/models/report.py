@@ -15,7 +15,6 @@ class Report:
     name: str
     description: str
     sql_template: str
-    connection_id: int | None
     materialise_as: str | None
     created_by: str
     modified_by: str
@@ -30,16 +29,15 @@ class Report:
             name=str(row[2]),
             description=str(row[3]),
             sql_template=str(row[4]),
-            connection_id=int(row[5]) if row[5] is not None else None,
-            materialise_as=str(row[6]) if row[6] is not None else None,
-            created_by=str(row[7]),
-            modified_by=str(row[8]),
-            created_at=str(row[9]),
-            modified_at=str(row[10]),
+            materialise_as=str(row[5]) if row[5] is not None else None,
+            created_by=str(row[6]),
+            modified_by=str(row[7]),
+            created_at=str(row[8]),
+            modified_at=str(row[9]),
         )
 
     _COLUMNS = (
-        "id, uuid, name, description, sql_template, connection_id, materialise_as, "
+        "id, uuid, name, description, sql_template, materialise_as, "
         "created_by, modified_by, created_at, modified_at"
     )
 
@@ -73,7 +71,6 @@ class Report:
         sql_template: str,
         created_by: str,
         description: str = "",
-        connection_id: int | None = None,
         materialise_as: str | None = None,
     ) -> Report:
         now = datetime.now(UTC).isoformat()
@@ -81,15 +78,14 @@ class Report:
 
         with transaction() as cursor:
             cursor.execute(
-                "INSERT INTO report (uuid, name, description, sql_template, connection_id, "
+                "INSERT INTO report (uuid, name, description, sql_template, "
                 "materialise_as, created_by, modified_by, created_at, modified_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     report_uuid,
                     name.strip(),
                     description.strip(),
                     sql_template,
-                    connection_id,
                     materialise_as,
                     created_by,
                     created_by,
@@ -106,7 +102,6 @@ class Report:
             name=name.strip(),
             description=description.strip(),
             sql_template=sql_template,
-            connection_id=connection_id,
             materialise_as=materialise_as,
             created_by=created_by,
             modified_by=created_by,
@@ -122,7 +117,6 @@ class Report:
         name: str | None = None,
         description: str | None = None,
         sql_template: str | None = None,
-        connection_id: object = _UNSET,
         materialise_as: object = _UNSET,
     ) -> bool:
         updates: list[str] = []
@@ -137,9 +131,6 @@ class Report:
         if sql_template is not None:
             updates.append("sql_template = ?")
             params.append(sql_template)
-        if connection_id is not Report._UNSET:
-            updates.append("connection_id = ?")
-            params.append(connection_id)
         if materialise_as is not Report._UNSET:
             updates.append("materialise_as = ?")
             params.append(materialise_as)
@@ -166,8 +157,6 @@ class Report:
             self.description = description.strip()
         if sql_template is not None:
             self.sql_template = sql_template
-        if connection_id is not Report._UNSET:
-            self.connection_id = connection_id  # type: ignore[assignment]
         if materialise_as is not Report._UNSET:
             self.materialise_as = materialise_as  # type: ignore[assignment]
         self.modified_by = modified_by
