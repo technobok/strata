@@ -143,11 +143,15 @@ def _init_gatekeeper(app: Flask) -> None:
     """Initialize Gatekeeper client for SSO authentication."""
     import logging
 
+    from flask import g
+
     logger = logging.getLogger(__name__)
 
     gk_db_path = os.environ.get("GATEKEEPER_DB") or app.config.get("GATEKEEPER_DB_PATH", "")
     gk_url = app.config.get("GATEKEEPER_URL", "")
     gk_api_key = app.config.get("GATEKEEPER_API_KEY", "")
+    admin_group = os.environ.get("STRATA_ADMIN_GROUP", "strata-admins")
+    app.config["STRATA_ADMIN_GROUP"] = admin_group
 
     try:
         if gk_db_path:
@@ -168,6 +172,13 @@ def _init_gatekeeper(app: Flask) -> None:
             logger.info("Gatekeeper not configured, authentication disabled")
     except Exception as e:
         logger.warning(f"Failed to initialize Gatekeeper client: {e}")
+
+    # Derive g.strata_is_admin from g.user's group membership. Runs after
+    # gatekeeper's own before_request that populates g.user.
+    @app.before_request
+    def _populate_is_admin() -> None:
+        user = g.get("user")
+        g.strata_is_admin = bool(user and user.in_group(admin_group))
 
 
 def _check_schema_version(db_path: str) -> None:
