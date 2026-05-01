@@ -38,6 +38,9 @@ services:
       # Or HTTP mode instead of local DB:
       # - GATEKEEPER_URL=https://gatekeeper.example.com
       # - GATEKEEPER_API_KEY=...
+      # Gatekeeper group whose members get admin access in strata. Add yourself
+      # to this group via gatekeeper's web UI to access /admin/*.
+      - STRATA_ADMIN_GROUP=${STRATA_ADMIN_GROUP:-strata-admins}
 
       # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/outbox-data/outbox.sqlite3
@@ -91,6 +94,8 @@ services:
       # Or HTTP mode instead of local DB:
       # - GATEKEEPER_URL=https://gatekeeper.example.com
       # - GATEKEEPER_API_KEY=...
+      # Mirrored from app for parity (worker doesn't currently inspect it).
+      - STRATA_ADMIN_GROUP=${STRATA_ADMIN_GROUP:-strata-admins}
 
       # --- Outbox (outgoing email queue) ---
       - OUTBOX_DB=/outbox-data/outbox.sqlite3
