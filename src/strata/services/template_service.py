@@ -126,7 +126,7 @@ def render_structural(
     Only structural parameters are rendered here. DuckDB bind parameters
     ($var) are left untouched for the query engine.
 
-    Two side-effect functions are registered as Jinja globals:
+    Three side-effect functions are registered as Jinja globals:
 
     - `ref(name)` — expands to `mat_<name>.result` (the convention for
       materialised reports). When `refs_collector` is provided, the name is
@@ -135,9 +135,18 @@ def render_structural(
     - `conn(name)` — declares that this report uses the named connection.
       Returns the connection's name as the SQL alias, so the natural form is
       either `{% do conn('warehouse') %}` (declare-only, alias used directly
-      in SQL) or `{% set wh = conn('warehouse') %}` (capture the alias
-      under a shorter Jinja variable). When `conns_collector` is provided,
-      the name is appended so the caller can ATTACH the connection.
+      in SQL for sqlite/postgres) or `{% set wh = conn('warehouse') %}`
+      (capture the alias under a shorter Jinja variable). When
+      `conns_collector` is provided, the name is appended so the caller can
+      attach the connection.
+
+    - `q(name, query)` — query helper for ODBC connections. DuckDB's
+      odbc_scanner is a query-function extension, not a storage one, so
+      ODBC sources can't be addressed as `<alias>.<table>`. Use
+      `{{ q('navi', 'SELECT TOP 10 * FROM dbo.orders') }}` and the result
+      renders as `odbc_query(getvariable('conn_navi'), '…')`. The conn name
+      is auto-recorded into `conns_collector`, so `{% do conn('navi') %}`
+      is optional when q() is the only access pattern.
 
     `jinja2.ext.do` is enabled so `{% do conn('name') %}` works.
     """
@@ -158,8 +167,17 @@ def render_structural(
             conns_collector.append(name)
         return name
 
+    def _q(name: str, query: str) -> str:
+        if not ALIAS_RE.match(name):
+            raise ValueError(f"q('{name}', ...): connection names must match {ALIAS_RE.pattern}")
+        if conns_collector is not None and name not in conns_collector:
+            conns_collector.append(name)
+        escaped = query.replace("'", "''")
+        return f"odbc_query(getvariable('conn_{name}'), '{escaped}')"
+
     env.globals["ref"] = _ref
     env.globals["conn"] = _conn
+    env.globals["q"] = _q
     template = env.from_string(sql_template)
     return template.render(**structural_params)
 

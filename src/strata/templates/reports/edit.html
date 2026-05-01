@@ -29,7 +29,8 @@ SELECT * FROM warehouse.dbo.orders WHERE date >= $date_from{% endraw %}" spellch
     <small>
         <code>{{ '{{' }} var {{ '}}' }}</code> structural params (identifiers, schema names) ·
         <code>$var</code> typed value params (dates, filters) ·
-        <code>{% raw %}{% do conn('name') %}{% endraw %}</code> attach an external connection (uses the connection's name as the SQL alias) ·
+        <code>{% raw %}{% do conn('name') %}{% endraw %}</code> attach a SQLite / PostgreSQL connection (alias = the connection's name) ·
+        <code>{{ '{{' }} q('name', 'SELECT …') {{ '}}' }}</code> query an ODBC connection (renders to <code>odbc_query(getvariable('conn_name'), '…')</code>) ·
         <code>{{ '{{' }} ref('name') {{ '}}' }}</code> reference a materialised report.
     </small>
 

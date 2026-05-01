@@ -67,16 +67,24 @@ class DriverSpec:
     label: str
     param_schema: list[ParamField]
     extensions: list[str]
-    attach_sql: Callable[[str, dict], str]
+    # Per-driver "make this connection usable under <alias>" function.
+    # For ATTACH-able drivers (sqlite, postgres) this runs an ATTACH and the
+    # report SQL queries `<alias>.<schema>.<table>`. For ODBC the function
+    # creates a session variable `conn_<alias>` holding the odbc_connect()
+    # handle; the report SQL queries via the q('alias', '...') Jinja helper.
+    attach: Callable[[duckdb.DuckDBPyConnection, str, dict], None]
+    # True when the driver requires the q() helper instead of a plain
+    # `<alias>.table` reference. Used for documentation / future UI hints.
+    needs_q_helper: bool = False
     probe_sql: str = "SELECT 1"
 
 
-def _sqlite_attach(alias: str, params: dict) -> str:
+def _sqlite_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> None:
     path = str(params.get("path", "")).replace("'", "''")
-    return f"ATTACH '{path}' AS {alias} (TYPE sqlite)"
+    conn.execute(f"ATTACH '{path}' AS {alias} (TYPE sqlite)")
 
 
-def _postgres_attach(alias: str, params: dict) -> str:
+def _postgres_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> None:
     parts = [
         f"host={params['host']}",
         f"port={params.get('port', 5432)}",
@@ -85,12 +93,20 @@ def _postgres_attach(alias: str, params: dict) -> str:
         f"password={params['password']}",
     ]
     conn_str = " ".join(parts).replace("'", "''")
-    return f"ATTACH '{conn_str}' AS {alias} (TYPE postgres)"
+    conn.execute(f"ATTACH '{conn_str}' AS {alias} (TYPE postgres)")
 
 
-def _odbc_attach(alias: str, params: dict) -> str:
+def _odbc_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> None:
+    """Create a SET VARIABLE conn_<alias> holding the odbc_connect() handle.
+
+    DuckDB's core odbc_scanner extension is a query-function extension, not a
+    storage extension — there's no `ATTACH ... TYPE odbc_scanner`. Instead,
+    you connect once and pass the handle to odbc_query() per SELECT. We stash
+    the handle in a session variable so the report SQL can reach it via
+    `getvariable('conn_<alias>')`, wrapped by the q() Jinja helper.
+    """
     cs = str(params["connection_string"]).replace("'", "''")
-    return f"ATTACH '{cs}' AS {alias} (TYPE odbc_scanner, READ_ONLY)"
+    conn.execute(f"SET VARIABLE conn_{alias} = odbc_connect('{cs}')")
 
 
 DRIVERS: dict[str, DriverSpec] = {
@@ -104,7 +120,7 @@ DRIVERS: dict[str, DriverSpec] = {
             )
         ],
         extensions=[],
-        attach_sql=_sqlite_attach,
+        attach=_sqlite_attach,
     ),
     "postgres": DriverSpec(
         label="PostgreSQL",
@@ -116,7 +132,7 @@ DRIVERS: dict[str, DriverSpec] = {
             ParamField("password", "Password", kind="password", secret=True),
         ],
         extensions=["postgres"],
-        attach_sql=_postgres_attach,
+        attach=_postgres_attach,
     ),
     "odbc": DriverSpec(
         label="ODBC (any driver — typically FreeTDS for SQL Server)",
@@ -135,7 +151,8 @@ DRIVERS: dict[str, DriverSpec] = {
         # not community-extensions. Earlier versions of strata pointed at
         # community/odbc_scanner which 404s.
         extensions=["odbc_scanner"],
-        attach_sql=_odbc_attach,
+        attach=_odbc_attach,
+        needs_q_helper=True,
     ),
 }
 
@@ -156,11 +173,16 @@ def _install_load(conn: duckdb.DuckDBPyConnection, ext: str) -> None:
 
 
 def attach_into(conn: duckdb.DuckDBPyConnection, alias: str, driver: str, params: dict) -> None:
-    """Load required extensions and ATTACH the source as `alias` on conn."""
+    """Load required extensions and bind the source under `alias` on conn.
+
+    For ATTACH-able drivers (sqlite, postgres) the alias is a DuckDB schema.
+    For ODBC the alias is the suffix of a session variable (`conn_<alias>`)
+    holding the odbc_connect() handle.
+    """
     spec = DRIVERS[driver]
     for ext in spec.extensions:
         _install_load(conn, ext)
-    conn.execute(spec.attach_sql(alias, params))
+    spec.attach(conn, alias, params)
 
 
 def test_connection(driver: str, params: dict) -> tuple[bool, str]:

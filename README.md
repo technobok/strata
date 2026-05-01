@@ -5,7 +5,7 @@ A reporting system that uses DuckDB as its query engine, allowing users to autho
 ## Features
 
 - **Two-layer SQL templating** — `{{ var }}` for Jinja2 structural parts (table names, connection strings), `$var` for DuckDB bind parameters (dates, codes, filter values)
-- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL, ODBC) declared inline in report SQL via `{% do conn('name') %}`
+- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL via `{% do conn('name') %}`; ODBC via `{{ q('name', 'SELECT …') }}`)
 - **Materialised reports** — opt a report into writing its result to a named DuckDB file; reference it from other reports via `{{ ref('name') }}`
 - **Automatic parameter extraction** — Jinja AST parsing and regex scanning detect parameters from SQL templates
 - **DuckDB result cache** — query results cached as DuckDB files, enabling fast re-sorting, filtering, and export without re-execution
@@ -198,7 +198,7 @@ For SQL-native logins (no domain prefix), drop the NTLM fields:
 Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
-The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `community/odbc_scanner`, runs `LOAD odbc_scanner`, and `ATTACH`es your source as a probe alias (`READ_ONLY`). Reports use the connection by declaring it inline in the SQL — see *SQL templates and references* below.
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Reports use the connection inline via the `q()` helper — see *SQL templates and references* below.
 
 For PostgreSQL there's no need to use ODBC — the dedicated `postgres` driver uses DuckDB's native postgres extension and is faster.
 
@@ -244,10 +244,11 @@ The host-only entries (`STRATA_CACHE_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTAN
 Reports use a Jinja2 template plus DuckDB bind parameters:
 
 ```sql
--- {{ var }}              Jinja structural (rendered before execution)
--- $var                   DuckDB bind parameter (typed, executed safely)
--- {% do conn('name') %}  attach an external connection under the given name
--- {{ ref('name') }}      reference another materialised report
+-- {{ var }}                       Jinja structural (rendered before execution)
+-- $var                            DuckDB bind parameter (typed, executed safely)
+-- {% do conn('name') %}           attach a SQLite/PostgreSQL connection by name
+-- {{ q('name', 'inner SELECT') }} run a SELECT against an ODBC connection
+-- {{ ref('name') }}               reference another materialised report
 
 SELECT *
 FROM {{ schema }}.{{ table_name }}
@@ -257,7 +258,7 @@ WHERE company_code = $company_code
 
 Structural parameters are validated (alphanumeric, underscores, dots, `$`). Value parameters are type-cast to their declared DuckDB type before execution. When saving a report, parameters are automatically extracted from the SQL template and synced with the parameter definitions.
 
-### External connections — `conn('name')`
+### External connections — SQLite & PostgreSQL via `conn('name')`
 
 Define a connection at `/admin/connections`, then declare it inline at the top of the report SQL. The connection's name becomes the SQL alias:
 
@@ -280,6 +281,20 @@ If you want a shorter alias in the SQL than the connection's name (e.g. for a lo
 {% set wh = conn('nav_prod_warehouse_aus') %}
 SELECT * FROM {{ wh }}.dbo.orders
 ```
+
+### External connections — ODBC via `q('name', 'SELECT …')`
+
+DuckDB's `odbc_scanner` extension is a query-function extension, not a storage one — there's no ATTACH form for it. Instead strata declares the connection by storing an `odbc_connect()` handle in a session variable (`conn_<name>`), and reports query through it via the `q()` Jinja helper:
+
+```sql
+SELECT *
+FROM   {{ q('navi_brs', 'SELECT TOP 10 OrderID, CustID, Total FROM dbo.Orders WHERE Total > 1000') }} AS o
+WHERE  o.Total > $threshold
+```
+
+`q('navi_brs', '…')` renders to `odbc_query(getvariable('conn_navi_brs'), '…')`. Calling `q()` automatically registers the connection (no separate `{% do conn('navi_brs') %}` is required, though it doesn't hurt). You can mix sqlite/postgres `conn()` and ODBC `q()` calls in the same report — strata sets up each one before the SELECT runs.
+
+The inner SELECT executes on the remote SQL Server and only the result columns/rows come back to DuckDB; the rest of the outer query (joins with materialised reports, additional filters, transformations) runs in DuckDB.
 
 ### Materialised reports — `ref('name')`
 
