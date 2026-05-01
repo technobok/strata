@@ -7,6 +7,11 @@ from jinja2 import Environment, TemplateSyntaxError, meta
 # Pattern for DuckDB bind parameters: $name or $name123
 _BIND_PARAM_RE = re.compile(r"\$([a-zA-Z_][a-zA-Z0-9_]*)")
 
+# Jinja globals registered at render time (see render_structural). These
+# would otherwise show up as 'undeclared variables' from meta.find_undeclared_
+# variables and be classified as structural parameters.
+_JINJA_GLOBALS: frozenset[str] = frozenset({"conn", "ref", "q"})
+
 # Allowed chars for structural parameter values (identifiers, connection strings).
 # `$` is permitted because SQL Server / Sybase / Oracle allow it inside identifiers
 # (e.g. dbo.events$archive); DuckDB also accepts it in quoted and unquoted identifiers.
@@ -68,11 +73,14 @@ def extract_parameters(sql_template: str) -> list[dict[str, str]]:
     params: list[dict[str, str]] = []
     seen: set[str] = set()
 
-    # Extract structural parameters from Jinja2 AST
-    env = Environment()
+    # Extract structural parameters from Jinja2 AST. The Jinja globals we
+    # register at render time (conn, ref, q) appear as "undeclared variables"
+    # to meta.find_undeclared_variables — they're functions, not template
+    # vars — so filter them out of the structural-parameter result.
+    env = Environment(extensions=["jinja2.ext.do"])
     try:
         ast = env.parse(sql_template)
-        jinja_vars = meta.find_undeclared_variables(ast)
+        jinja_vars = meta.find_undeclared_variables(ast) - _JINJA_GLOBALS
         for name in sorted(jinja_vars):
             if name not in seen:
                 params.append({"name": name, "param_type": "structural"})
