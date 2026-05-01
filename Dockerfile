@@ -34,10 +34,24 @@ RUN uv venv /app/.venv && \
 # Production image
 FROM python:3.14-slim
 
-# Runtime libs for python-ldap (gatekeeper dep).
+# Runtime libs:
+#   libldap-common / libsasl2-2 — python-ldap (gatekeeper dep)
+#   unixodbc                    — libodbc.so.2, used by DuckDB odbc_scanner
+#   tdsodbc / freetds-bin       — FreeTDS ODBC driver (open source) for MSSQL/Sybase
+#   msodbcsql18                 — Microsoft's MSSQL ODBC driver (proprietary, free; EULA accepted)
+# curl/gnupg are added only for the Microsoft repo fetch and purged afterwards.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libldap-common \
-    libsasl2-2 \
+        libldap-common libsasl2-2 \
+        unixodbc tdsodbc freetds-bin \
+        curl ca-certificates gnupg \
+    && curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+         -o /tmp/msft.deb \
+    && dpkg -i /tmp/msft.deb \
+    && rm /tmp/msft.deb \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+    && apt-get purge -y curl gnupg \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

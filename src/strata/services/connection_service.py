@@ -56,9 +56,10 @@ def decrypt_params(token: str) -> dict:
 class ParamField:
     name: str
     label: str
-    kind: str = "text"  # 'text' | 'password' | 'number'
+    kind: str = "text"  # 'text' | 'password' | 'number' | 'textarea'
     required: bool = True
     default: str | None = None
+    secret: bool = False  # if True, blank value at edit-time keeps the existing value
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,11 @@ def _postgres_attach(alias: str, params: dict) -> str:
     ]
     conn_str = " ".join(parts).replace("'", "''")
     return f"ATTACH '{conn_str}' AS {alias} (TYPE postgres)"
+
+
+def _odbc_attach(alias: str, params: dict) -> str:
+    cs = str(params["connection_string"]).replace("'", "''")
+    return f"ATTACH '{cs}' AS {alias} (TYPE odbc_scanner, READ_ONLY)"
 
 
 def _mssql_attach(alias: str, params: dict) -> str:
@@ -118,7 +124,7 @@ DRIVERS: dict[str, DriverSpec] = {
             ParamField("port", "Port", kind="number", required=False, default="5432"),
             ParamField("database", "Database"),
             ParamField("user", "User"),
-            ParamField("password", "Password", kind="password"),
+            ParamField("password", "Password", kind="password", secret=True),
         ],
         extensions=["postgres"],
         attach_sql=_postgres_attach,
@@ -130,7 +136,7 @@ DRIVERS: dict[str, DriverSpec] = {
             ParamField("port", "Port", kind="number", required=False),
             ParamField("database", "Database"),
             ParamField("user", "User"),
-            ParamField("password", "Password", kind="password"),
+            ParamField("password", "Password", kind="password", secret=True),
             ParamField("encrypt", "Encrypt (yes/no)", required=False, default="yes"),
             ParamField(
                 "trust_server_certificate",
@@ -142,6 +148,19 @@ DRIVERS: dict[str, DriverSpec] = {
         # mssql lives in the community-extensions repo
         extensions=["community/mssql"],
         attach_sql=_mssql_attach,
+    ),
+    "odbc": DriverSpec(
+        label="ODBC (any driver — MSSQL via msodbcsql18 or FreeTDS, etc.)",
+        param_schema=[
+            ParamField(
+                "connection_string",
+                "ODBC connection string",
+                kind="textarea",
+                secret=True,
+            ),
+        ],
+        extensions=["community/odbc_scanner"],
+        attach_sql=_odbc_attach,
     ),
 }
 

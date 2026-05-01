@@ -26,7 +26,7 @@ def _form_params(driver: str, existing: dict | None = None) -> dict:
     for field in spec.param_schema:
         raw = request.form.get(f"param_{field.name}", "").strip()
         if not raw:
-            if field.kind == "password" and existing is not None and field.name in existing:
+            if field.secret and existing is not None and field.name in existing:
                 params[field.name] = existing[field.name]
                 continue
             if field.default is not None:

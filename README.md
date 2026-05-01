@@ -5,7 +5,7 @@ A reporting system that uses DuckDB as its query engine, allowing users to autho
 ## Features
 
 - **Two-layer SQL templating** — `{{ var }}` for Jinja2 structural parts (table names, connection strings), `$var` for DuckDB bind parameters (dates, codes, filter values)
-- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL, MSSQL) attached as `src` before each report runs
+- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL, MSSQL via the dedicated extension or via ODBC) attached as `src` before each report runs
 - **Materialised reports** — opt a report into writing its result to a named DuckDB file; reference it from other reports via `{{ ref('name') }}`
 - **Automatic parameter extraction** — Jinja AST parsing and regex scanning detect parameters from SQL templates
 - **DuckDB result cache** — query results cached as DuckDB files, enabling fast re-sorting, filtering, and export without re-execution
@@ -162,7 +162,7 @@ Then log in to strata. The **Admin** link will be in the top nav. From `/admin` 
 
 - **SQL Console** — read-only SELECT/PRAGMA/EXPLAIN against the metadata DB, with a schema sidebar.
 - **Configuration** — DB-stored settings registry (`server.port`, `cache.directory`, etc.).
-- **Connections** — register external databases (SQLite/PostgreSQL/MSSQL) so reports can `ATTACH` them.
+- **Connections** — register external databases so reports can `ATTACH` them. See *Connecting via ODBC* below for the MSSQL setup.
 
 ### 6. After every `git pull`
 
@@ -179,6 +179,27 @@ docker compose up -d
 Strata's compose file ships with `PROXY_X_FORWARDED_PREFIX=1` (and the other three `PROXY_X_FORWARDED_*` flags) so `url_for()` produces correct URLs when fronted at a subpath. If you front strata with Caddy at `/strata`, make sure the proxy strips the prefix and sends `X-Forwarded-Prefix: /strata`. The reference setup is [`webreports-caddy`](../webreports-caddy/), whose Caddyfile contains a working `handle_path /strata/* { reverse_proxy strata-app:5005 { header_up X-Forwarded-Prefix /strata } }` block.
 
 Standalone deployments (no proxy) can leave the env vars at `1` — ProxyFix on a non-proxied request is a no-op because the headers simply aren't present.
+
+### 8. Connecting via ODBC
+
+The runtime image bundles unixODBC plus two SQL Server drivers, so an `odbc` Connection works out of the box without any host-side setup:
+
+- **Microsoft `msodbcsql18`** — proprietary, free of charge (the EULA is accepted at image build time via `ACCEPT_EULA=Y`). Best feature support (Always Encrypted, MARS, current TLS).
+- **FreeTDS** — pure-MIT open source. Smaller, fewer SQL Server-specific extensions but works for most use cases.
+
+In strata, **/admin/connections → New → "ODBC (any driver…)"** opens a single text box for the connection string. Pick the driver inline via the `Driver={…}` segment:
+
+```
+# Microsoft msodbcsql18
+Driver={ODBC Driver 18 for SQL Server};Server=tcp:host,1433;Database=mydb;UID=user;PWD=pw;Encrypt=yes;TrustServerCertificate=yes
+
+# FreeTDS
+Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=user;PWD=pw;TDS_Version=7.4
+```
+
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test/Run, strata installs `community/odbc_scanner`, runs `LOAD odbc_scanner`, and `ATTACH`es your source as `src` (`READ_ONLY`). Reports referencing the connection then query e.g. `SELECT TOP 10 * FROM src.dbo.orders`.
+
+For PostgreSQL there's no need to use ODBC — the dedicated `postgres` driver uses DuckDB's native postgres extension and is faster.
 
 ## Configuration reference
 

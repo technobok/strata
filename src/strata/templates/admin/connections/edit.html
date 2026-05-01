@@ -27,11 +27,19 @@
     <fieldset>
         <legend>Driver parameters</legend>
         {% for field in drivers[selected_driver].param_schema %}
-        <label for="param_{{ field.name }}">{{ field.label }}{% if field.kind == 'password' and connection %} <small>(leave blank to keep current)</small>{% endif %}</label>
+        <label for="param_{{ field.name }}">{{ field.label }}{% if field.secret and connection %} <small>(leave blank to keep current)</small>{% endif %}</label>
+        {% set existing_value = form_values.get('param_' ~ field.name) or (connection.params.get(field.name, '') if connection else field.default or '') %}
+        {% set initial_value = '' if field.secret else existing_value %}
+        {% if field.kind == 'textarea' %}
+        <textarea id="param_{{ field.name }}" name="param_{{ field.name }}" rows="3"
+                  {% if field.required and not field.secret %}required{% endif %}
+                  placeholder="{{ field.default or '' }}">{{ initial_value }}</textarea>
+        {% else %}
         <input type="{{ field.kind }}" id="param_{{ field.name }}" name="param_{{ field.name }}"
-               {% if field.required and field.kind != 'password' %}required{% endif %}
-               value="{% if field.kind == 'password' %}{% else %}{{ form_values.get('param_' ~ field.name) or (connection.params.get(field.name, '') if connection else field.default or '') }}{% endif %}"
+               {% if field.required and not field.secret %}required{% endif %}
+               value="{{ initial_value }}"
                placeholder="{{ field.default or '' }}">
+        {% endif %}
         {% endfor %}
     </fieldset>
 
