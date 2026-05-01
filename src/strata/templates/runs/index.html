@@ -5,7 +5,7 @@
 {% block content %}
 <hgroup>
     <h1>{{ report.name }} - Run History</h1>
-    <p><a href="{{ url_for('reports.run', uuid=report.uuid) }}">Back to report</a></p>
+    <p><button type="button" class="small outline" onclick="location.href='{{ url_for('reports.run', uuid=report.uuid) }}'">Back to report</button></p>
 </hgroup>
 
 {% if runs %}
@@ -30,9 +30,9 @@
             <td>{{ run.run_by }}</td>
             <td>
                 {% if run.status == 'completed' and run.result_hash %}
-                <a href="{{ url_for('reports.view_run', run_uuid=run.uuid) }}" role="button" class="small outline">View</a>
-                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}">XLSX</a>
-                <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}">Parquet</a>
+                <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.view_run', run_uuid=run.uuid) }}'">View</button>
+                <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}'">XLSX</button>
+                <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}'">Parquet</button>
                 {% elif run.error_message %}
                 <small title="{{ run.error_message }}">{{ run.error_message[:50] }}{% if run.error_message|length > 50 %}...{% endif %}</small>
                 {% endif %}

@@ -113,7 +113,13 @@ def _mssql_attach(alias: str, params: dict) -> str:
 DRIVERS: dict[str, DriverSpec] = {
     "sqlite": DriverSpec(
         label="SQLite (file)",
-        param_schema=[ParamField("path", "Database file path")],
+        param_schema=[
+            ParamField(
+                "path",
+                "Database file path (absolute, inside the container — e.g. "
+                "/app/instance/external.sqlite3; bind-mount the file)",
+            )
+        ],
         extensions=[],
         attach_sql=_sqlite_attach,
     ),
@@ -150,7 +156,7 @@ DRIVERS: dict[str, DriverSpec] = {
         attach_sql=_mssql_attach,
     ),
     "odbc": DriverSpec(
-        label="ODBC (any driver — MSSQL via msodbcsql18 or FreeTDS, etc.)",
+        label="ODBC (any driver — typically FreeTDS for SQL Server)",
         param_schema=[
             ParamField(
                 "connection_string",

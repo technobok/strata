@@ -303,6 +303,7 @@ def view_run(run_uuid: str) -> str:
 
     columns: list[str] = []
     rows: list[tuple] = []
+    cache_file: str | None = None
 
     if run_record.result_hash and cache_service.result_exists(run_record.result_hash):
         sort_col = request.args.get("sort_col", "")
@@ -310,6 +311,7 @@ def view_run(run_uuid: str) -> str:
         columns, rows, _ = cache_service.read_result(
             run_record.result_hash, sort_col=sort_col or None, sort_dir=sort_dir
         )
+        cache_file = str(cache_service.cache_path(run_record.result_hash))
     else:
         sort_col = ""
         sort_dir = "asc"
@@ -322,6 +324,7 @@ def view_run(run_uuid: str) -> str:
         rows=rows,
         sort_col=sort_col,
         sort_dir=sort_dir,
+        cache_file=cache_file,
     )
 
 

@@ -13,15 +13,19 @@
     {% if run.row_count is not none %}<span>{{ run.row_count }} row{{ 's' if run.row_count != 1 else '' }}</span>{% endif %}
     <span>{{ run.duration_ms|duration }}</span>
     <span>by {{ run.run_by }}</span>
-    {% if run.result_hash %}
-    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}">XLSX</a>
-    <a href="{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}">Parquet</a>
-    {% endif %}
 </div>
 
+{% if cache_file %}
+<p><small>Cached at <code>{{ cache_file }}</code></small></p>
+{% endif %}
+
 <div class="form-actions" style="margin-bottom: 1rem;">
-    <a href="{{ url_for('reports.runs', uuid=report.uuid) }}" role="button" class="outline secondary small">Run History</a>
-    <a href="{{ url_for('reports.run', uuid=report.uuid) }}" role="button" class="outline small">Run Again</a>
+    <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.runs', uuid=report.uuid) }}'">Run History</button>
+    <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.run', uuid=report.uuid) }}'">Run Again</button>
+    {% if run.result_hash %}
+    <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.download_run', run_uuid=run.uuid, format='xlsx') }}'">XLSX</button>
+    <button type="button" class="small outline" onclick="location.href='{{ url_for('reports.download_run', run_uuid=run.uuid, format='parquet') }}'">Parquet</button>
+    {% endif %}
 </div>
 
 {% if run.error_message %}
