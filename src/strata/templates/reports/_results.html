@@ -3,7 +3,7 @@
     <thead>
         <tr>
             {% for col in result.columns %}
-            <th hx-post="{{ url_for('reports.run_results', uuid=report.uuid) }}"
+            <th hx-post="{{ url_for('reports.run_sort', uuid=report.uuid) }}"
                 hx-target="#results-table"
                 hx-include="closest form"
                 hx-vals='{"sort_col": "{{ col }}", "sort_dir": "{% if sort_col == col and sort_dir == 'asc' %}desc{% else %}asc{% endif %}"}'
