@@ -93,23 +93,6 @@ def _odbc_attach(alias: str, params: dict) -> str:
     return f"ATTACH '{cs}' AS {alias} (TYPE odbc_scanner, READ_ONLY)"
 
 
-def _mssql_attach(alias: str, params: dict) -> str:
-    # Build a standard ODBC-style MSSQL connection string. DuckDB's mssql
-    # community extension accepts `Server=...;Database=...;User Id=...;...`.
-    parts = [f"Server={params['server']}"]
-    if params.get("port"):
-        parts[0] = f"Server={params['server']},{params['port']}"
-    parts.append(f"Database={params['database']}")
-    parts.append(f"User Id={params['user']}")
-    parts.append(f"Password={params['password']}")
-    if str(params.get("encrypt", "")).lower() in ("yes", "true", "1"):
-        parts.append("Encrypt=yes")
-    if str(params.get("trust_server_certificate", "")).lower() in ("yes", "true", "1"):
-        parts.append("TrustServerCertificate=yes")
-    conn_str = ";".join(parts).replace("'", "''")
-    return f"ATTACH '{conn_str}' AS {alias} (TYPE mssql)"
-
-
 DRIVERS: dict[str, DriverSpec] = {
     "sqlite": DriverSpec(
         label="SQLite (file)",
@@ -134,26 +117,6 @@ DRIVERS: dict[str, DriverSpec] = {
         ],
         extensions=["postgres"],
         attach_sql=_postgres_attach,
-    ),
-    "mssql": DriverSpec(
-        label="Microsoft SQL Server",
-        param_schema=[
-            ParamField("server", "Server (host or DSN)"),
-            ParamField("port", "Port", kind="number", required=False),
-            ParamField("database", "Database"),
-            ParamField("user", "User"),
-            ParamField("password", "Password", kind="password", secret=True),
-            ParamField("encrypt", "Encrypt (yes/no)", required=False, default="yes"),
-            ParamField(
-                "trust_server_certificate",
-                "Trust server certificate (yes/no)",
-                required=False,
-                default="no",
-            ),
-        ],
-        # mssql lives in the community-extensions repo
-        extensions=["community/mssql"],
-        attach_sql=_mssql_attach,
     ),
     "odbc": DriverSpec(
         label="ODBC (any driver — typically FreeTDS for SQL Server)",

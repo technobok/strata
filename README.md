@@ -5,7 +5,7 @@ A reporting system that uses DuckDB as its query engine, allowing users to autho
 ## Features
 
 - **Two-layer SQL templating** — `{{ var }}` for Jinja2 structural parts (table names, connection strings), `$var` for DuckDB bind parameters (dates, codes, filter values)
-- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL, MSSQL via the dedicated extension or via ODBC) attached as `src` before each report runs
+- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL, ODBC) declared inline in report SQL via `{% do conn('name') %}`
 - **Materialised reports** — opt a report into writing its result to a named DuckDB file; reference it from other reports via `{{ ref('name') }}`
 - **Automatic parameter extraction** — Jinja AST parsing and regex scanning detect parameters from SQL templates
 - **DuckDB result cache** — query results cached as DuckDB files, enabling fast re-sorting, filtering, and export without re-execution
