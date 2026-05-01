@@ -85,8 +85,10 @@ def new() -> str | Response:
         "admin/connections/edit.html",
         connection=None,
         drivers=DRIVERS,
-        selected_driver=request.form.get("driver") or request.args.get("driver") or "sqlite",
-        form_values=request.form,
+        # request.values combines args+form so the driver-change GET resubmit
+        # (which puts every field in the URL query string) repopulates correctly.
+        selected_driver=request.values.get("driver") or "sqlite",
+        form_values=request.values,
     )
 
 
@@ -130,8 +132,8 @@ def edit(uuid: str) -> str | Response:
         "admin/connections/edit.html",
         connection=connection,
         drivers=DRIVERS,
-        selected_driver=request.form.get("driver") or connection.driver,
-        form_values=request.form,
+        selected_driver=request.values.get("driver") or connection.driver,
+        form_values=request.values,
     )
 
 

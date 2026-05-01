@@ -121,11 +121,14 @@ DRIVERS: dict[str, DriverSpec] = {
     "odbc": DriverSpec(
         label="ODBC (any driver — typically FreeTDS for SQL Server)",
         param_schema=[
+            # Not marked secret=True even though the string contains PWD=…:
+            # the operator needs to see the existing connection-string contents
+            # (host, UID, driver-specific options) to meaningfully edit them.
+            # The value is still Fernet-encrypted at rest in the DB.
             ParamField(
                 "connection_string",
                 "ODBC connection string",
                 kind="textarea",
-                secret=True,
             ),
         ],
         extensions=["community/odbc_scanner"],

@@ -15,7 +15,7 @@
            placeholder="prod-warehouse">
 
     <label for="driver">Driver</label>
-    <select id="driver" name="driver" onchange="this.form.action='{{ url_for('connections.new') }}?driver=' + this.value; this.form.method='get'; this.form.submit();">
+    <select id="driver" name="driver" onchange="this.form.method='get'; this.form.submit();">
         {% for key, spec in drivers.items() %}
         <option value="{{ key }}" {% if selected_driver == key %}selected{% endif %}>{{ spec.label }}</option>
         {% endfor %}
