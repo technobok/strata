@@ -131,7 +131,10 @@ DRIVERS: dict[str, DriverSpec] = {
                 kind="textarea",
             ),
         ],
-        extensions=["community/odbc_scanner"],
+        # odbc_scanner is published in DuckDB's CORE extensions repo (v1.5.2+),
+        # not community-extensions. Earlier versions of strata pointed at
+        # community/odbc_scanner which 404s.
+        extensions=["odbc_scanner"],
         attach_sql=_odbc_attach,
     ),
 }
