@@ -58,5 +58,7 @@
         </tbody>
     </table>
 </div>
+{% elif executed and not error %}
+<p><em>Statement executed; no rows to display.</em></p>
 {% endif %}
 {% endblock %}

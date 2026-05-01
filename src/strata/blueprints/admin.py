@@ -97,6 +97,7 @@ def sql_console() -> str:
     rows: list[tuple] = []
     error: str | None = None
     row_count = 0
+    executed = False
 
     if request.method == "POST":
         query = request.form.get("query", "").strip()
@@ -111,10 +112,15 @@ def sql_console() -> str:
                 db = get_db()
                 try:
                     cursor = db.execute(query)
-                    if cursor.description:
+                    # APSW raises ExecutionCompleteError if the cursor has no
+                    # remaining rows (empty SELECT, side-effect PRAGMA, etc.).
+                    try:
                         columns = [desc[0] for desc in cursor.description]
+                    except apsw.ExecutionCompleteError:
+                        columns = []
                     rows = cursor.fetchall()
                     row_count = len(rows)
+                    executed = True
                 except apsw.SQLError as e:
                     error = str(e)
 
@@ -125,5 +131,6 @@ def sql_console() -> str:
         rows=rows,
         error=error,
         row_count=row_count,
+        executed=executed,
         schema=_get_schema(),
     )
