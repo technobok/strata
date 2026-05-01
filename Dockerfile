@@ -39,19 +39,21 @@ FROM python:3.14-slim
 #   unixodbc                    — libodbc.so.2, used by DuckDB odbc_scanner
 #   tdsodbc / freetds-bin       — FreeTDS ODBC driver (open source) for MSSQL/Sybase
 #   msodbcsql18                 — Microsoft's MSSQL ODBC driver (proprietary, free; EULA accepted)
-# curl/gnupg are added only for the Microsoft repo fetch and purged afterwards.
+#
+# The packages.microsoft.com repo is added with [trusted=yes] because its
+# signing key still has a SHA1 self-signature, which Debian 12's Sequoia
+# verifier (sqv) refuses since 2026-02-01. HTTPS + TLS still authenticates
+# the transport against packages.microsoft.com. Drop this workaround once
+# Microsoft re-signs the key.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libldap-common libsasl2-2 \
         unixodbc tdsodbc freetds-bin \
-        curl ca-certificates gnupg \
-    && curl -fsSL https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-         -o /tmp/msft.deb \
-    && dpkg -i /tmp/msft.deb \
-    && rm /tmp/msft.deb \
+        ca-certificates \
+    && echo "deb [trusted=yes] https://packages.microsoft.com/debian/12/prod bookworm main" \
+         > /etc/apt/sources.list.d/mssql-release.list \
     && apt-get update \
     && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
-    && apt-get purge -y curl gnupg \
-    && apt-get autoremove -y \
+    && rm /etc/apt/sources.list.d/mssql-release.list \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
