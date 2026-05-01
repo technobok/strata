@@ -37,7 +37,7 @@ SELECT * FROM warehouse.dbo.orders WHERE date >= $date_from{% endraw %}" spellch
     <div class="form-actions">
         <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>
         {% if report %}
-        <button type="button" class="outline" onclick="window.location.href='{{ url_for('reports.run', uuid=report.uuid) }}'">Run</button>
+        <button type="submit" name="action" value="save_and_run" class="outline">Run</button>
         {% endif %}
         <button type="button" class="outline secondary" onclick="window.location.href='{{ url_for('reports.index') }}'">Cancel</button>
     </div>

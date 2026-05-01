@@ -68,6 +68,7 @@
     <a href="{{ url_for('reports.download_run', run_uuid=run_record.uuid, format='parquet') }}">Parquet</a>
     {% endif %}
 </div>
+{% set result_hash = run_record.result_hash if run_record else (result_hash|default('')) %}
 <div id="results-table" class="results-container">
     {% include "reports/_results.html" %}
 </div>

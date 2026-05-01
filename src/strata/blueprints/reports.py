@@ -94,7 +94,7 @@ def edit(uuid: str) -> str | Response:
     if request.method == "POST":
         action = request.form.get("action", "save")
 
-        if action == "save":
+        if action in ("save", "save_and_run"):
             name = request.form.get("name", "").strip()
             description = request.form.get("description", "").strip()
             sql_template = request.form.get("sql_template", "")
@@ -133,6 +133,8 @@ def edit(uuid: str) -> str | Response:
                 flash(" | ".join(messages), "info")
 
             flash("Report saved.", "success")
+            if action == "save_and_run":
+                return redirect(url_for("reports.run", uuid=report.uuid))
             return redirect(url_for("reports.edit", uuid=report.uuid))
 
         elif action == "update_param":
@@ -259,6 +261,7 @@ def run(uuid: str) -> str | Response:
         params=params,
         result=result,
         run_record=run_record,
+        result_hash=(run_record.result_hash if run_record and run_record.result_hash else ""),
         param_values=dict(request.form) if request.method == "POST" else {},
     )
 
