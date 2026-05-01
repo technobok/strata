@@ -7,9 +7,55 @@ from jinja2 import Environment, TemplateSyntaxError, meta
 # Pattern for DuckDB bind parameters: $name or $name123
 _BIND_PARAM_RE = re.compile(r"\$([a-zA-Z_][a-zA-Z0-9_]*)")
 
-# Allowed chars for structural parameter values (identifiers, connection strings)
-_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9_.]+$")
+# Allowed chars for structural parameter values (identifiers, connection strings).
+# `$` is permitted because SQL Server / Sybase / Oracle allow it inside identifiers
+# (e.g. dbo.events$archive); DuckDB also accepts it in quoted and unquoted identifiers.
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9_.$]+$")
 _CONNECTION_STRING_RE = re.compile(r"^[a-zA-Z0-9_.=;{}\-\\/: @,]+$")
+
+
+def _strip_literals(sql: str) -> str:
+    """Replace string literals, quoted identifiers, and comments with spaces.
+
+    Used so the bind-param regex doesn't match `$name` patterns that appear
+    inside `'...'` strings, `"..."` identifiers, or `-- ...` / `/* ... */`
+    comments. Length is preserved so source positions still line up if a
+    caller cares.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        c = sql[i]
+        if c == "'" or c == '"':
+            quote = c
+            j = i + 1
+            while j < n:
+                if sql[j] == quote:
+                    if j + 1 < n and sql[j + 1] == quote:
+                        # SQL-style doubled-quote escape
+                        j += 2
+                        continue
+                    j += 1
+                    break
+                j += 1
+            out.append(" " * (j - i))
+            i = j
+        elif c == "-" and i + 1 < n and sql[i + 1] == "-":
+            j = sql.find("\n", i)
+            if j == -1:
+                j = n
+            out.append(" " * (j - i))
+            i = j
+        elif c == "/" and i + 1 < n and sql[i + 1] == "*":
+            j = sql.find("*/", i + 2)
+            j = n if j == -1 else j + 2
+            out.append(" " * (j - i))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def extract_parameters(sql_template: str) -> list[dict[str, str]]:
@@ -34,8 +80,11 @@ def extract_parameters(sql_template: str) -> list[dict[str, str]]:
     except TemplateSyntaxError:
         pass
 
-    # Extract value parameters from $var patterns
-    for match in _BIND_PARAM_RE.finditer(sql_template):
+    # Extract value parameters from $var patterns. Skip occurrences inside
+    # string/identifier literals and comments so a table name like
+    # "dbo.events$archive" doesn't get treated as a bind parameter.
+    scrubbed = _strip_literals(sql_template)
+    for match in _BIND_PARAM_RE.finditer(scrubbed):
         name = match.group(1)
         if name not in seen:
             params.append({"name": name, "param_type": "value"})
