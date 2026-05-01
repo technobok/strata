@@ -18,3 +18,9 @@ def set_setting(key: str, value: str, description: str = "") -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value, description),
         )
+
+
+def clear_setting(key: str) -> None:
+    """Delete a setting row so the runtime falls back to the registry default."""
+    with transaction() as cursor:
+        cursor.execute("DELETE FROM app_setting WHERE key = ?", (key,))

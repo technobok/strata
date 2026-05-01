@@ -1,6 +1,7 @@
 """Admin blueprint — settings, SQL console, system info."""
 
 import logging
+import os
 
 import apsw
 from flask import (
@@ -14,9 +15,16 @@ from flask import (
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
-from strata.config import REGISTRY
+from strata.config import (
+    BOOTSTRAP_ONLY,
+    ENV_OVERRIDES,
+    REGISTRY,
+    ConfigType,
+    parse_value,
+    resolve_effective,
+)
 from strata.db import get_db
-from strata.models.app_setting import get_setting, set_setting
+from strata.models.app_setting import clear_setting, set_setting
 
 log = logging.getLogger(__name__)
 
@@ -51,28 +59,87 @@ def index() -> str:
 @bp.route("/config", methods=["GET", "POST"])
 @admin_required
 def config() -> str | Response:
-    """View and edit application configuration."""
-    if request.method == "POST":
-        for entry in REGISTRY:
-            form_key = f"config_{entry.key}"
-            value = request.form.get(form_key, "").strip()
-            if value:
-                set_setting(entry.key, value, entry.description)
+    """View and edit application configuration.
 
-        flash("Configuration saved. Restart the app for changes to take effect.", "success")
+    Each row resolves to (effective, source) where source is 'env', 'db', or
+    'default'. Env-overridden rows render read-only. Bootstrap-only rows (the
+    DB / project-root paths needed before the DB opens) are also read-only.
+    """
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        if action == "clear":
+            key = request.form.get("clear_key", "")
+            if any(e.key == key for e in REGISTRY) and key not in BOOTSTRAP_ONLY:
+                clear_setting(key)
+                flash(f"Cleared '{key}' (now using default).", "success")
+            return redirect(url_for("admin.config"))
+
+        # action == 'save': iterate all registry entries.
+        inert_overrides: list[str] = []
+        errors: list[str] = []
+        for entry in REGISTRY:
+            if entry.key in BOOTSTRAP_ONLY:
+                continue
+            form_key = f"config_{entry.key}"
+            present = request.form.get(f"{form_key}_present") == "1"
+            if not present:
+                continue
+
+            if entry.type is ConfigType.BOOL:
+                raw = "true" if request.form.get(form_key) else "false"
+            elif entry.secret:
+                # Empty submission keeps the existing stored secret (never overwrite
+                # with blank just because the operator didn't retype it).
+                raw = request.form.get(form_key, "")
+                if not raw:
+                    continue
+            else:
+                raw = request.form.get(form_key, "").strip()
+
+            if raw == "":
+                clear_setting(entry.key)
+                continue
+
+            # Validate INT now so we don't store something that fails parse at boot.
+            if entry.type is ConfigType.INT:
+                try:
+                    parse_value(entry, raw)
+                except ValueError:
+                    errors.append(f"{entry.key}: '{raw}' is not a valid integer")
+                    continue
+
+            set_setting(entry.key, raw, entry.description)
+            env_name = ENV_OVERRIDES.get(entry.key)
+            if env_name and os.environ.get(env_name):
+                inert_overrides.append(f"{entry.key} (overridden by ${env_name})")
+
+        for err in errors:
+            flash(err, "error")
+        if inert_overrides:
+            flash(
+                "Saved, but these are currently inert because of env-var overrides "
+                "(value will take effect once the env var is unset): " + ", ".join(inert_overrides),
+                "info",
+            )
+        if not errors:
+            flash("Configuration saved. Most changes need an app restart.", "success")
         return redirect(url_for("admin.config"))
 
-    # Load current values
-    config_values: dict[str, str] = {}
+    rows = []
     for entry in REGISTRY:
-        val = get_setting(entry.key)
-        config_values[entry.key] = val if val is not None else str(entry.default)
+        effective, source = resolve_effective(entry, os.environ.get)
+        rows.append(
+            {
+                "entry": entry,
+                "effective": effective,
+                "source": source,
+                "env_name": ENV_OVERRIDES.get(entry.key, ""),
+                "bootstrap_only": entry.key in BOOTSTRAP_ONLY,
+                "type": entry.type.value,
+            }
+        )
 
-    return render_template(
-        "admin/config.html",
-        registry=REGISTRY,
-        config_values=config_values,
-    )
+    return render_template("admin/config.html", rows=rows)
 
 
 def _get_schema() -> list[dict[str, object]]:

@@ -5,6 +5,7 @@ description, and whether it contains a secret.  The registry is the single
 source of truth for what settings exist.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -41,10 +42,30 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry(
         "cache.retention_days", ConfigType.INT, 30, "Days to keep cached results before cleanup"
     ),
+    # -- auth --
+    ConfigEntry(
+        "auth.admin_group",
+        ConfigType.STRING,
+        "strata-admins",
+        "Gatekeeper group whose members get strata admin access",
+    ),
     # -- gatekeeper --
     ConfigEntry("gatekeeper.db_path", ConfigType.STRING, "", "Path to Gatekeeper SQLite database"),
     ConfigEntry("gatekeeper.url", ConfigType.STRING, "", "Gatekeeper HTTP API base URL"),
     ConfigEntry("gatekeeper.api_key", ConfigType.STRING, "", "Gatekeeper API key", secret=True),
+    # -- mail / outbox --
+    ConfigEntry(
+        "mail.sender",
+        ConfigType.STRING,
+        "strata@localhost",
+        "From-address on outgoing schedule emails",
+    ),
+    ConfigEntry(
+        "outbox.db_path",
+        ConfigType.STRING,
+        "",
+        "Path to outbox SQLite (queues outgoing email)",
+    ),
     # -- worker --
     ConfigEntry(
         "worker.poll_interval", ConfigType.INT, 30, "Schedule worker poll interval in seconds"
@@ -57,6 +78,21 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry("proxy.x_forwarded_host", ConfigType.INT, 0, "Trust X-Forwarded-Host (hop count)"),
     ConfigEntry(
         "proxy.x_forwarded_prefix", ConfigType.INT, 0, "Trust X-Forwarded-Prefix (hop count)"
+    ),
+    # -- bootstrap-only (read before the DB is open; shown read-only in /admin/config) --
+    ConfigEntry(
+        "storage.strata_db",
+        ConfigType.STRING,
+        "",
+        "Path to the strata SQLite metadata DB. Bootstrap-only: must be set via "
+        "the STRATA_DB env var since it is needed before the DB is opened.",
+    ),
+    ConfigEntry(
+        "storage.strata_root",
+        ConfigType.STRING,
+        "",
+        "Project root used to resolve database/schema.sql at init-db time. "
+        "Bootstrap-only — set via STRATA_ROOT.",
     ),
 ]
 
@@ -112,12 +148,66 @@ KEY_MAP: dict[str, str] = {
     "server.debug": "DEBUG",
     "cache.directory": "CACHE_DIRECTORY",
     "cache.retention_days": "CACHE_RETENTION_DAYS",
+    "auth.admin_group": "AUTH_ADMIN_GROUP",
     "gatekeeper.db_path": "GATEKEEPER_DB_PATH",
     "gatekeeper.url": "GATEKEEPER_URL",
     "gatekeeper.api_key": "GATEKEEPER_API_KEY",
+    "mail.sender": "MAIL_SENDER",
+    "outbox.db_path": "OUTBOX_DB_PATH",
     "worker.poll_interval": "WORKER_POLL_INTERVAL",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
     "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",
     "proxy.x_forwarded_prefix": "PROXY_X_FORWARDED_PREFIX",
+    # storage.* are deliberately not mapped — they're env-only at runtime.
 }
+
+
+# Registry key → env var that overrides it at runtime.
+ENV_OVERRIDES: dict[str, str] = {
+    "server.host": "HOST",
+    "server.port": "PORT",
+    "cache.directory": "CACHE_DIRECTORY",
+    "auth.admin_group": "STRATA_ADMIN_GROUP",
+    "gatekeeper.db_path": "GATEKEEPER_DB",
+    "mail.sender": "MAIL_SENDER",
+    "outbox.db_path": "OUTBOX_DB",
+    "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
+    "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
+    "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",
+    "proxy.x_forwarded_prefix": "PROXY_X_FORWARDED_PREFIX",
+    "storage.strata_db": "STRATA_DB",
+    "storage.strata_root": "STRATA_ROOT",
+}
+
+
+# Registry keys whose value is needed before the DB is open. The /admin/config
+# form shows them read-only; the save handler skips them defensively.
+BOOTSTRAP_ONLY: frozenset[str] = frozenset(
+    {
+        "storage.strata_db",
+        "storage.strata_root",
+    }
+)
+
+
+def resolve_effective(
+    entry: ConfigEntry,
+    env_get: Callable[[str], str | None],
+) -> tuple[str, str]:
+    """Return (display_value, source) for a registry entry.
+
+    source is one of 'env', 'db', 'default'. The DB-row presence (not Flask's
+    merged config view) is what makes a value 'db' vs 'default'.
+    """
+    from strata.models.app_setting import get_setting  # local: avoid import cycle
+
+    env_name = ENV_OVERRIDES.get(entry.key)
+    if env_name:
+        raw = env_get(env_name)
+        if raw is not None and raw != "":
+            return raw, "env"
+    stored_raw = get_setting(entry.key)
+    if stored_raw is not None:
+        return stored_raw, "db"
+    return serialize_value(entry, entry.default), "default"

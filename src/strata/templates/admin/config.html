@@ -5,34 +5,97 @@
 {% block content %}
 <hgroup>
     <h2>Configuration</h2>
-    <p>Application settings stored in the database.</p>
+    <p>Application settings. Each row shows the value the running app is using
+    and where it came from. Env-overridden rows are read-only — change the env
+    var (e.g. in <code>docker-compose.yml</code>) to take effect.</p>
 </hgroup>
 
+<style>
+.cfg-source {
+    display: inline-block; padding: 0 0.4rem; border-radius: 0.25rem;
+    font-size: 0.75rem; font-family: monospace;
+}
+.cfg-source-env { background: #f6c453; color: #5a3e00; }
+.cfg-source-db  { background: #6db4ff; color: #002a5e; }
+.cfg-source-default { background: #d8d8d8; color: #444; }
+.cfg-row td { vertical-align: top; padding: 0.5rem 0.4rem; }
+.cfg-key { font-family: monospace; font-size: 0.85rem; }
+.cfg-meta { font-size: 0.8rem; color: #888; margin-top: 0.2rem; }
+</style>
+
 <form method="post">
+    <input type="hidden" name="action" value="save">
     <table>
         <thead>
             <tr>
-                <th>Key</th>
-                <th>Value</th>
+                <th style="width:24%">Key</th>
+                <th style="width:30%">Value</th>
+                <th>Source</th>
                 <th>Description</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
-            {% for entry in registry %}
-            <tr>
-                <td><code>{{ entry.key }}</code></td>
+            {% for r in rows %}
+            {% set entry = r.entry %}
+            {% set readonly = r.source == 'env' or r.bootstrap_only %}
+            <tr class="cfg-row">
+                <td><span class="cfg-key">{{ entry.key }}</span></td>
                 <td>
-                    <input type="text" name="config_{{ entry.key }}" value="{{ config_values.get(entry.key, '') }}" placeholder="{{ entry.default }}">
+                    <input type="hidden" name="config_{{ entry.key }}_present" value="1">
+                    {% if r.type == 'bool' %}
+                    <input type="checkbox" name="config_{{ entry.key }}"
+                           {% if r.effective in ('true', '1', 'on', 'yes') %}checked{% endif %}
+                           {% if readonly %}disabled{% endif %}>
+                    {% elif entry.secret %}
+                    <input type="password" name="config_{{ entry.key }}"
+                           value=""
+                           placeholder="{% if r.source == 'db' %}(unchanged){% else %}(unset){% endif %}"
+                           {% if readonly %}readonly{% endif %}
+                           autocomplete="new-password">
+                    {% elif r.type == 'int' %}
+                    <input type="number" name="config_{{ entry.key }}"
+                           value="{{ r.effective }}"
+                           {% if readonly %}readonly{% endif %}>
+                    {% else %}
+                    <input type="text" name="config_{{ entry.key }}"
+                           value="{{ r.effective }}"
+                           {% if readonly %}readonly{% endif %}>
+                    {% endif %}
+                    {% if r.source == 'env' %}
+                    <div class="cfg-meta">from env var <code>{{ r.env_name }}</code></div>
+                    {% elif r.bootstrap_only %}
+                    <div class="cfg-meta">bootstrap-only · set via <code>{{ r.env_name }}</code></div>
+                    {% endif %}
                 </td>
-                <td><small>{{ entry.description }} (type: {{ entry.type }})</small></td>
+                <td>
+                    <span class="cfg-source cfg-source-{{ r.source }}">{{ r.source }}</span>
+                </td>
+                <td><small>{{ entry.description }}</small></td>
+                <td>
+                    {% if r.source == 'db' and not r.bootstrap_only %}
+                    <button type="submit" form="clear-{{ entry.key }}" class="small outline secondary">Clear</button>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 
-    <div style="display:flex;gap:0.5rem;">
+    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
         <button type="submit">Save Configuration</button>
         <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back</button>
     </div>
 </form>
+
+{# Per-row clear forms (separate so the Clear buttons don't accidentally
+   submit the main save form). #}
+{% for r in rows %}
+{% if r.source == 'db' and not r.bootstrap_only %}
+<form id="clear-{{ r.entry.key }}" method="post" style="display:none;">
+    <input type="hidden" name="action" value="clear">
+    <input type="hidden" name="clear_key" value="{{ r.entry.key }}">
+</form>
+{% endif %}
+{% endfor %}
 {% endblock %}

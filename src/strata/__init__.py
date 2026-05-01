@@ -150,8 +150,13 @@ def _init_gatekeeper(app: Flask) -> None:
     gk_db_path = os.environ.get("GATEKEEPER_DB") or app.config.get("GATEKEEPER_DB_PATH", "")
     gk_url = app.config.get("GATEKEEPER_URL", "")
     gk_api_key = app.config.get("GATEKEEPER_API_KEY", "")
-    admin_group = os.environ.get("STRATA_ADMIN_GROUP", "strata-admins")
-    app.config["STRATA_ADMIN_GROUP"] = admin_group
+    # auth.admin_group: env > DB-loaded > registry default
+    admin_group = (
+        os.environ.get("STRATA_ADMIN_GROUP")
+        or app.config.get("AUTH_ADMIN_GROUP")
+        or "strata-admins"
+    )
+    app.config["AUTH_ADMIN_GROUP"] = admin_group
 
     try:
         if gk_db_path:

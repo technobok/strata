@@ -20,9 +20,17 @@ def send_report_email(
     If row_count <= max_inline_rows, renders an HTML table inline.
     Always attaches the XLSX file.
     """
+    # outbox.db_path: env > Flask-config (DB-loaded) > unset.
     outbox_db = os.environ.get("OUTBOX_DB")
     if not outbox_db:
-        log.warning("OUTBOX_DB not set, skipping email send")
+        try:
+            from flask import current_app
+
+            outbox_db = current_app.config.get("OUTBOX_DB_PATH") or ""
+        except RuntimeError:
+            outbox_db = ""
+    if not outbox_db:
+        log.warning("OUTBOX_DB / outbox.db_path not set, skipping email send")
         return False
 
     try:
@@ -69,7 +77,15 @@ def send_report_email(
         data=xlsx_bytes,
     )
 
-    mail_sender = os.environ.get("MAIL_SENDER", "strata@localhost")
+    # mail.sender: env > Flask-config (DB-loaded) > registry default.
+    mail_sender = os.environ.get("MAIL_SENDER")
+    if not mail_sender:
+        try:
+            from flask import current_app
+
+            mail_sender = current_app.config.get("MAIL_SENDER") or "strata@localhost"
+        except RuntimeError:
+            mail_sender = "strata@localhost"
 
     try:
         message = Message(

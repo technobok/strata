@@ -206,40 +206,38 @@ If you need Always Encrypted, MARS, or AD-password auth with UPN UIDs (`user@dom
 
 ## Configuration reference
 
-Strata reads settings from three layers, in priority order: **env vars > DB-stored config (`app_setting` table) > built-in defaults**. The DB-stored layer is editable from `/admin/config` or via `make config-set KEY=key VAL=value`.
+Every setting strata reads is in the registry at `src/strata/config.py`. The runtime resolves each one in priority order: **env var > DB-stored value (`app_setting` table) > registry default**.
 
-### Environment variables
-
-| Variable | Default | Purpose | Where set |
-|---|---|---|---|
-| `HOST` | `0.0.0.0` | Bind address for gunicorn / Flask. | Compose `app` |
-| `PORT` | `5000` | Listen port; also drives the host port mapping. | Compose `app` |
-| `STRATA_DB` | `/app/instance/strata.sqlite3` | Path to the SQLite metadata DB. | Compose (commented) |
-| `STRATA_ROOT` | (auto) | Project root used to resolve `instance/` and `database/schema.sql` when running outside a source checkout. | Compose (commented) |
-| `STRATA_CACHE_DIR` | `./instance/cache` (host) | Host directory mounted at `/cache-data`. Pin to a dedicated disk for large caches. | Compose (host substitution) |
-| `CACHE_DIRECTORY` | `/cache-data` (container) | Where DuckDB cache and named-materialised files land inside the container. | Compose `app` + `worker` |
-| `GATEKEEPER_INSTANCE` | `../gatekeeper/instance` (host) | Host path to the sibling gatekeeper's `instance/` dir, mounted at `/gatekeeper-data`. | Compose (host substitution) |
-| `GATEKEEPER_DB` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` + `worker` |
-| `STRATA_ADMIN_GROUP` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group whose members are strata admins. | Compose `app` + `worker` |
-| `OUTBOX_INSTANCE` | `../outbox/instance` (host) | Host path to outbox's `instance/` dir, mounted at `/outbox-data`. | Compose (host substitution) |
-| `OUTBOX_DB` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite. Required for scheduled email delivery. | Compose `app` + `worker` |
-| `MAIL_SENDER` | `strata@localhost` | From-address on outgoing schedule emails. | Compose (commented) |
-| `PROXY_X_FORWARDED_FOR` | `1` | Trust hop count for `X-Forwarded-For` (audit log client IP). | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_PROTO` | `1` | Trust hop count for `X-Forwarded-Proto`. | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_HOST` | `1` | Trust hop count for `X-Forwarded-Host`. | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_PREFIX` | `1` | Trust hop count for `X-Forwarded-Prefix`. **Required when behind a subpath proxy** so `url_for()` produces correct URLs. | Compose `app` + `worker` |
-| `TZ` | `UTC` | Container timezone. UI renders timestamps in the user's local TZ regardless. | Compose `app` + `worker` |
-
-`CACHE_DIRECTORY` and the four `PROXY_X_FORWARDED_*` values are also exposed as DB-stored keys (`cache.directory`, `proxy.x_forwarded_*`); env wins when both are set.
-
-### DB-stored configuration
-
-The full registry is in `src/strata/config.py`. Notable keys: `server.port`, `server.host`, `cache.directory`, `cache.retention_days`, `proxy.x_forwarded_*`. Edit through the admin UI or:
+`/admin/config` shows the full registry, the *effective* value for each row, and which layer it came from (`env` / `db` / `default`). Env-overridden rows are read-only — to change them, edit the env var (typically in `docker-compose.yml`). All other rows are editable; saving writes to the DB layer. Each registry entry is also reachable from the CLI:
 
 ```bash
 make config-list
 make config-set KEY=cache.retention_days VAL=60
 ```
+
+### Environment variables and registry mapping
+
+| Variable | Registry key | Default | Purpose | Where set |
+|---|---|---|---|---|
+| `HOST` | `server.host` | `0.0.0.0` | Bind address for gunicorn / Flask. | Compose `app` |
+| `PORT` | `server.port` | `5000` | Listen port; also drives the host port mapping. | Compose `app` |
+| `STRATA_DB` | `storage.strata_db` | `/app/instance/strata.sqlite3` | Path to the SQLite metadata DB. **Bootstrap-only** — read before the DB is open, so it must come from the env. | Compose (commented) |
+| `STRATA_ROOT` | `storage.strata_root` | (auto) | Project root used at init-db time to resolve `database/schema.sql`. **Bootstrap-only.** | Compose (commented) |
+| `STRATA_CACHE_DIR` | (host-only) | `./instance/cache` | Host directory mounted at `/cache-data`. Pin to a dedicated disk for large caches. | Compose (host substitution) |
+| `CACHE_DIRECTORY` | `cache.directory` | `/cache-data` | Where DuckDB cache and named-materialised files land inside the container. | Compose `app` + `worker` |
+| `GATEKEEPER_INSTANCE` | (host-only) | `../gatekeeper/instance` | Host path mounted at `/gatekeeper-data`. | Compose (host substitution) |
+| `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` + `worker` |
+| `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins. | Compose `app` + `worker` |
+| `OUTBOX_INSTANCE` | (host-only) | `../outbox/instance` | Host path mounted at `/outbox-data`. | Compose (host substitution) |
+| `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite. Required for scheduled email delivery. | Compose `app` + `worker` |
+| `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on outgoing schedule emails. | Compose (commented) |
+| `PROXY_X_FORWARDED_FOR` | `proxy.x_forwarded_for` | `1` | Trust hop count for `X-Forwarded-For`. | Compose `app` + `worker` |
+| `PROXY_X_FORWARDED_PROTO` | `proxy.x_forwarded_proto` | `1` | Trust hop count for `X-Forwarded-Proto`. | Compose `app` + `worker` |
+| `PROXY_X_FORWARDED_HOST` | `proxy.x_forwarded_host` | `1` | Trust hop count for `X-Forwarded-Host`. | Compose `app` + `worker` |
+| `PROXY_X_FORWARDED_PREFIX` | `proxy.x_forwarded_prefix` | `1` | **Required behind a subpath proxy** for correct `url_for()` URLs. | Compose `app` + `worker` |
+| `TZ` | (container TZ) | `UTC` | Container timezone. UI still renders timestamps in the user's local TZ. | Compose `app` + `worker` |
+
+The host-only entries (`STRATA_CACHE_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application.
 
 ## SQL templates and references
 
