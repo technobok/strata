@@ -8,10 +8,10 @@ import apsw
 
 _standalone_db: apsw.Connection | None = None
 
-# Bumped by every schema change; checked at app boot. If the DB on disk reports
-# a lower value than this constant, the runtime aborts with a clear message
-# instructing the operator to run `make db-init`.
-EXPECTED_SCHEMA_VERSION = 3
+# Highest migration version this code expects; checked at app boot. If the DB on
+# disk reports a lower value, the runtime aborts with a clear message instructing
+# the operator to run `make db-init`. Bump this when adding a new migration file.
+EXPECTED_SCHEMA_VERSION = 1
 
 
 def get_db_path() -> str:
@@ -144,34 +144,96 @@ def transaction() -> Generator[apsw.Cursor]:
 # ---------------------------------------------------------------------------
 
 
-def _find_schema_path() -> Path:
-    """Locate database/schema.sql across dev and installed-package layouts."""
+def _migrations_dir() -> Path:
+    """Locate database/migrations/ across dev and installed-package layouts."""
     import os
 
     candidates = [
-        # Source checkout: src/strata/db.py -> repo_root/database/schema.sql
-        Path(__file__).parent.parent.parent / "database" / "schema.sql",
-        # Container / installed layout: $STRATA_ROOT/database/schema.sql
+        # Source checkout: src/strata/db.py -> repo_root/database/migrations
+        Path(__file__).parent.parent.parent / "database" / "migrations",
+        # Container / installed layout: $STRATA_ROOT/database/migrations
         *(
-            [Path(os.environ["STRATA_ROOT"]) / "database" / "schema.sql"]
+            [Path(os.environ["STRATA_ROOT"]) / "database" / "migrations"]
             if os.environ.get("STRATA_ROOT")
             else []
         ),
         # CWD fallback (e.g. running from /app in docker)
-        Path.cwd() / "database" / "schema.sql",
+        Path.cwd() / "database" / "migrations",
     ]
     for path in candidates:
-        if path.exists():
+        if path.is_dir():
             return path
     raise FileNotFoundError(
-        f"Could not locate database/schema.sql. Tried: {[str(p) for p in candidates]}"
+        f"Could not locate database/migrations/. Tried: {[str(p) for p in candidates]}"
     )
 
 
-def init_db_at(db_path: str) -> None:
-    """Initialize the database schema at the given path.
+def _migration_files() -> list[tuple[int, Path]]:
+    """Return (version, path) for every NNNN_*.sql migration, ordered by version."""
+    files: list[tuple[int, Path]] = []
+    for path in _migrations_dir().glob("*.sql"):
+        stem = path.name.split("_", 1)[0]
+        try:
+            version = int(stem)
+        except ValueError:
+            continue
+        files.append((version, path))
+    files.sort(key=lambda vp: vp[0])
+    return files
 
-    Works without Flask context.
+
+def apply_migrations(conn: apsw.Connection) -> int:
+    """Apply pending forward-only migrations; return the max applied version.
+
+    Each database/migrations/NNNN_name.sql file is applied once, in version
+    order, inside its own transaction, and recorded in schema_migrations.
+    db_metadata.schema_version is stamped with the max applied version for the
+    boot-time schema gate (_check_schema_version).
+    """
+    from datetime import UTC, datetime
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations "
+        "(version INTEGER PRIMARY KEY, applied_at TEXT)"
+    )
+    applied = {
+        int(v)
+        for (v,) in conn.execute("SELECT version FROM schema_migrations").fetchall()
+        if v is not None
+    }
+
+    max_version = max(applied) if applied else 0
+    for version, path in _migration_files():
+        max_version = max(max_version, version)
+        if version in applied:
+            continue
+        sql = path.read_text()
+        now = datetime.now(UTC).isoformat()
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE;")
+        try:
+            for _ in cursor.execute(sql):
+                pass
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (version, now),
+            )
+            cursor.execute("COMMIT;")
+        except Exception:
+            cursor.execute("ROLLBACK;")
+            raise
+
+    conn.execute(
+        "INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', ?)",
+        (str(max_version),),
+    )
+    return max_version
+
+
+def init_db_at(db_path: str) -> None:
+    """Initialize / migrate the database at the given path (no Flask context).
+
+    Idempotent: applies only pending migrations, then ensures a secret_key.
     """
     import secrets
 
@@ -179,12 +241,10 @@ def init_db_at(db_path: str) -> None:
     conn = apsw.Connection(db_path)
     _configure_connection(conn)
 
-    schema_path = _find_schema_path()
-    with open(schema_path) as f:
-        for _ in conn.execute(f.read()):
-            pass
+    apply_migrations(conn)
 
-    # Generate secret_key if not exists
+    # Generate secret_key if absent (signs auth tokens; derives the Fernet key
+    # for encrypted connection params).
     row = conn.execute("SELECT value FROM app_setting WHERE key = 'secret_key'").fetchone()
     if not row:
         new_key = secrets.token_urlsafe(32)
@@ -193,25 +253,7 @@ def init_db_at(db_path: str) -> None:
             ("secret_key", new_key, "Secret key for signing auth tokens"),
         )
 
-    _apply_schema_migrations(conn)
     conn.close()
-
-
-def _apply_schema_migrations(conn: apsw.Connection) -> None:
-    """Idempotent ALTER TABLE upgrades for pre-existing databases."""
-    report_cols = {row[1] for row in conn.execute("PRAGMA table_info(report)").fetchall()}
-    if "materialise_as" not in report_cols:
-        conn.execute("ALTER TABLE report ADD COLUMN materialise_as TEXT")
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_report_materialise_as "
-            "ON report(materialise_as) WHERE materialise_as IS NOT NULL"
-        )
-    # connection_id (introduced in schema_version=1) is dropped in v3 — reports
-    # now declare connections inline via {% do conn('name') %}.
-    if "connection_id" in report_cols:
-        conn.execute("ALTER TABLE report DROP COLUMN connection_id")
-
-    conn.execute("INSERT OR REPLACE INTO db_metadata (key, value) VALUES ('schema_version', '3')")
 
 
 def init_db() -> None:
