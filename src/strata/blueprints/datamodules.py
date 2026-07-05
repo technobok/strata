@@ -24,7 +24,7 @@ from strata.models.datamodule_connection import DatamoduleConnection
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.dependency import Dependency
 from strata.models.report import Report
-from strata.models.report_arg import DATA_TYPES, ReportArg
+from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.source_file import SourceFile
 from strata.services import datamodule_service
 from strata.services.template_service import ALIAS_RE
@@ -48,8 +48,14 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
     """
     names = request.form.getlist("arg_name")
     types = request.form.getlist("arg_type")
+    widgets = request.form.getlist("arg_widget")
     defaults = request.form.getlist("arg_default")
     requireds = request.form.getlist("arg_required")
+    constraints = request.form.getlist("arg_constraint")
+    descriptions = request.form.getlist("arg_description")
+
+    def _at(items: list[str], i: int, default: str = "") -> str:
+        return items[i] if i < len(items) else default
 
     args: list[dict] = []
     for i, name in enumerate(names):
@@ -58,15 +64,21 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
             continue
         if not ALIAS_RE.match(name):
             return [], f"Argument name '{name}' must be a letter/underscore identifier."
-        data_type = types[i] if i < len(types) else "text"
+        data_type = _at(types, i, "text")
         if data_type not in DATA_TYPES:
             return [], f"Unknown argument type '{data_type}'."
+        widget = _at(widgets, i, "input")
+        if widget not in WIDGETS:
+            return [], f"Unknown widget '{widget}'."
         args.append(
             {
                 "name": name,
                 "data_type": data_type,
-                "default_value": (defaults[i] if i < len(defaults) else "").strip(),
-                "required": (requireds[i] if i < len(requireds) else "yes") == "yes",
+                "widget": widget,
+                "default_value": _at(defaults, i).strip(),
+                "required": _at(requireds, i, "yes") == "yes",
+                "constraint_query": _at(constraints, i).strip() or None,
+                "description": _at(descriptions, i).strip(),
             }
         )
     return args, None
@@ -209,6 +221,7 @@ def report_new(uuid: str) -> str | Response:
         report=None,
         args=[],
         data_types=DATA_TYPES,
+        widgets=WIDGETS,
     )
 
 
@@ -236,6 +249,7 @@ def report_edit(report_uuid: str) -> str | Response:
         report=report,
         args=ReportArg.get_for_report(report.id) if report else [],
         data_types=DATA_TYPES,
+        widgets=WIDGETS,
     )
 
 

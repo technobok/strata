@@ -33,7 +33,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
     if ext not in _SUPPORTED:
         return FlaskResponse(f"Unsupported format '{ext}'", status=400)
 
-    arg_values = dict(request.args.items())
+    arg_values = {k: request.args.getlist(k) for k in request.args}
 
     if ext == "parquet":
         try:
@@ -43,24 +43,26 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
 
     # html
     args = ReportArg.get_for_report(report.id)
-    try:
-        result = report_service.run_table(report, dm, arg_values)
-    except ArgError as exc:
-        return render_template(
-            "reports/view.html",
-            report=report,
-            datamodule=dm,
-            args=args,
-            arg_values=arg_values,
-            result=None,
-            arg_error=str(exc),
-        )
+    options = report_service.arg_options_map(report, dm, args)
+
+    # Run once args are submitted, or when nothing is required — a report with
+    # required args shows its (options-populated) form before first running.
+    result = None
+    arg_error = None
+    if request.args or not any(a.required for a in args):
+        try:
+            result = report_service.run_table(report, dm, arg_values)
+        except ArgError as exc:
+            arg_error = str(exc)
+
     return render_template(
         "reports/view.html",
         report=report,
         datamodule=dm,
         args=args,
         arg_values=arg_values,
+        options=options,
+        query_string=request.query_string.decode(),
         result=result,
-        arg_error=None,
+        arg_error=arg_error,
     )

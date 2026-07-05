@@ -12,6 +12,7 @@ from typing import Any
 from strata.db import get_db, transaction
 
 DATA_TYPES = ("text", "integer", "number", "decimal", "date", "time", "boolean")
+WIDGETS = ("input", "select", "multiselect")
 
 
 @dataclass
@@ -63,21 +64,25 @@ class ReportArg:
     def replace_all(report_id: int, args: list[dict[str, Any]]) -> None:
         """Delete this report's args and reinsert the given list, in order.
 
-        Each dict carries: name, data_type, default_value, required, description.
+        Each dict carries: name, data_type, widget, default_value, required,
+        description, constraint_query.
         """
         with transaction() as cursor:
             cursor.execute("DELETE FROM report_arg WHERE report_id = ?", (report_id,))
             for order, arg in enumerate(args):
                 cursor.execute(
                     "INSERT INTO report_arg (report_id, name, data_type, widget, default_value, "
-                    "required, display_order, description) VALUES (?, ?, ?, 'input', ?, ?, ?, ?)",
+                    "required, display_order, description, constraint_query) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         report_id,
                         str(arg["name"]).strip(),
                         str(arg["data_type"]),
+                        str(arg.get("widget", "input")),
                         arg.get("default_value") or None,
                         1 if arg.get("required") else 0,
                         order,
                         str(arg.get("description", "")).strip(),
+                        arg.get("constraint_query") or None,
                     ),
                 )

@@ -230,6 +230,11 @@ def cast_value(value: str, data_type: str) -> object:
             from datetime import date
 
             return date.fromisoformat(value).isoformat()
+        case "time":
+            # Validate time format (HH:MM[:SS])
+            from datetime import time
+
+            return time.fromisoformat(value).isoformat()
         case "boolean":
             return value.lower() in ("true", "1", "yes", "on")
         case _:

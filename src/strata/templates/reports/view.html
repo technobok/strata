@@ -15,7 +15,7 @@
     {% if g.strata_is_admin %}
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
     {% endif %}
-    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='parquet', **arg_values) }}" role="button" class="outline secondary small">Download Parquet</a>
+    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='parquet') }}{% if query_string %}?{{ query_string }}{% endif %}" role="button" class="outline secondary small">Download Parquet</a>
 </div>
 
 {% if args %}
@@ -24,12 +24,31 @@
         <legend>Arguments</legend>
         <div class="grid">
             {% for arg in args %}
+            {% set vals = arg_values.get(arg.name) or [] %}
+            {% set current = vals[0] if vals else (arg.default_value or '') %}
+            {% set opts = options.get(arg.id, []) %}
             <label>
                 {{ arg.name }}
                 {% if arg.description %}<small>({{ arg.description }})</small>{% endif %}
-                {% set current = arg_values.get(arg.name, arg.default_value or '') %}
-                {% if arg.data_type == 'date' %}
+                {% if arg.widget == 'select' %}
+                <select name="{{ arg.name }}">
+                    {% if not arg.required %}<option value="">—</option>{% endif %}
+                    {% for value, label in opts %}
+                    <option value="{{ value }}" {% if current == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                {% if not opts %}<small>Build the datamodule to load options.</small>{% endif %}
+                {% elif arg.widget == 'multiselect' %}
+                <select name="{{ arg.name }}" multiple size="4">
+                    {% for value, label in opts %}
+                    <option value="{{ value }}" {% if value in vals %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                {% if not opts %}<small>Build the datamodule to load options.</small>{% endif %}
+                {% elif arg.data_type == 'date' %}
                 <input type="date" name="{{ arg.name }}" value="{{ current }}" {% if arg.required %}required{% endif %}>
+                {% elif arg.data_type == 'time' %}
+                <input type="time" name="{{ arg.name }}" value="{{ current }}" step="1" {% if arg.required %}required{% endif %}>
                 {% elif arg.data_type == 'boolean' %}
                 <select name="{{ arg.name }}">
                     <option value="true" {% if current == 'true' %}selected{% endif %}>True</option>
