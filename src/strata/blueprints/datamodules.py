@@ -11,16 +11,21 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
+from strata.models.connection import Connection
 from strata.models.datamodule import Datamodule
+from strata.models.datamodule_connection import DatamoduleConnection
 from strata.models.datamodule_version import DatamoduleVersion
+from strata.models.dependency import Dependency
 from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, ReportArg
+from strata.models.source_file import SourceFile
 from strata.services import datamodule_service
 from strata.services.template_service import ALIAS_RE
 
@@ -134,11 +139,22 @@ def edit(uuid: str) -> str | Response:
             flash("Datamodule saved.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
+    deps = Dependency.get_for_datamodule(dm.id)
+    dep_names = {d.depends_on_id: Datamodule.get_by_id(d.depends_on_id) for d in deps}
+    conns = DatamoduleConnection.get_for_datamodule(dm.id)
+    conn_names = {c.connection_id: Connection.get_by_id(c.connection_id) for c in conns}
     return render_template(
         "datamodules/edit.html",
         datamodule=dm,
         reports=Report.get_for_datamodule(dm.id),
         versions=DatamoduleVersion.list_for(dm.id),
+        sources=SourceFile.get_for_datamodule(dm.id),
+        dependencies=deps,
+        dep_names=dep_names,
+        connections=conns,
+        conn_names=conn_names,
+        all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
+        all_connections=Connection.get_all(),
     )
 
 
@@ -278,3 +294,131 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
 
     ReportArg.replace_all(saved.id, args)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Build inputs: source files, dependencies, connections
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/<uuid>/sources", methods=["POST"])
+@admin_required
+def source_upload(uuid: str) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    file = request.files.get("file")
+    filename = file.filename if file else None
+    if file is None or not filename:
+        flash("Choose a file to upload.", "error")
+        return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+    datamodule_service.save_source(dm, file, filename, uploaded_by=g.user.username)
+    flash(f"Uploaded '{filename}'.", "success")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+@bp.route("/<uuid>/sources/<int:source_id>/download")
+@admin_required
+def source_download(uuid: str, source_id: int) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    sf = SourceFile.get_by_id(source_id)
+    if sf is None or sf.datamodule_id != dm.id:
+        raise NotFound()
+    path = datamodule_service.source_disk_path(dm.uuid, sf.stored_name)
+    if not path.exists():
+        raise NotFound()
+    return send_file(str(path), as_attachment=True, download_name=sf.filename)
+
+
+@bp.route("/<uuid>/sources/<int:source_id>/delete", methods=["POST"])
+@admin_required
+def source_delete(uuid: str, source_id: int) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    sf = SourceFile.get_by_id(source_id)
+    if sf is None or sf.datamodule_id != dm.id:
+        raise NotFound()
+    datamodule_service.delete_source(dm, sf)
+    flash(f"Deleted source '{sf.filename}'.", "success")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+@bp.route("/<uuid>/dependencies", methods=["POST"])
+@admin_required
+def dependency_add(uuid: str) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    depends_on_uuid = request.form.get("depends_on_uuid", "").strip()
+    local_name = request.form.get("local_name", "").strip()
+    dep_dm = Datamodule.get_by_uuid(depends_on_uuid)
+
+    if not local_name or not ALIAS_RE.match(local_name):
+        flash("Local name must be a letter/underscore identifier.", "error")
+    elif dep_dm is None:
+        flash("Choose a datamodule to depend on.", "error")
+    elif dep_dm.id == dm.id:
+        flash("A datamodule cannot depend on itself.", "error")
+    elif Dependency.reaches(dep_dm.id, dm.id):
+        flash(f"Adding this dependency would create a cycle via '{dep_dm.path}'.", "error")
+    else:
+        try:
+            Dependency.create(dm.id, dep_dm.id, local_name)
+            flash(f"Added dependency '{local_name}' → {dep_dm.path}.", "success")
+        except Exception as exc:  # UNIQUE(datamodule_id, local_name)
+            flash(f"Could not add dependency: {exc}", "error")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+@bp.route("/<uuid>/dependencies/<int:dep_id>/delete", methods=["POST"])
+@admin_required
+def dependency_delete(uuid: str, dep_id: int) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    dep = Dependency.get_by_id(dep_id)
+    if dep is None or dep.datamodule_id != dm.id:
+        raise NotFound()
+    dep.delete()
+    flash("Dependency removed.", "success")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+@bp.route("/<uuid>/connections", methods=["POST"])
+@admin_required
+def connection_add(uuid: str) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    connection_id = request.form.get("connection_id", type=int)
+    local_name = request.form.get("local_name", "").strip()
+    crow = Connection.get_by_id(connection_id) if connection_id else None
+
+    if not local_name or not ALIAS_RE.match(local_name):
+        flash("Local name must be a letter/underscore identifier.", "error")
+    elif crow is None:
+        flash("Choose a connection.", "error")
+    else:
+        try:
+            DatamoduleConnection.create(dm.id, crow.id, local_name)
+            flash(f"Bound connection '{crow.name}' as '{local_name}'.", "success")
+        except Exception as exc:  # UNIQUE(datamodule_id, local_name)
+            flash(f"Could not bind connection: {exc}", "error")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+@bp.route("/<uuid>/connections/<int:link_id>/delete", methods=["POST"])
+@admin_required
+def connection_delete(uuid: str, link_id: int) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    link = DatamoduleConnection.get_by_id(link_id)
+    if link is None or link.datamodule_id != dm.id:
+        raise NotFound()
+    link.delete()
+    flash("Connection binding removed.", "success")
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid))

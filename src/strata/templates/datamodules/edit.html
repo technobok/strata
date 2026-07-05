@@ -49,6 +49,97 @@
 </div>
 
 <hr>
+<h2>Sources</h2>
+<p><small>Reference an uploaded file in the build script as <code>source('filename')</code>.</small></p>
+{% if sources %}
+<table>
+    <thead><tr><th>Filename</th><th>Size</th><th>Uploaded by</th><th></th></tr></thead>
+    <tbody>
+        {% for s in sources %}
+        <tr>
+            <td><a href="{{ url_for('datamodules.source_download', uuid=datamodule.uuid, source_id=s.id) }}">{{ s.filename }}</a></td>
+            <td>{{ s.byte_size if s.byte_size is not none else '' }}</td>
+            <td>{{ s.uploaded_by }}</td>
+            <td>
+                <form method="post" action="{{ url_for('datamodules.source_delete', uuid=datamodule.uuid, source_id=s.id) }}" onsubmit="return confirm('Delete this source file?');">
+                    <button type="submit" class="outline secondary small">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+<form method="post" action="{{ url_for('datamodules.source_upload', uuid=datamodule.uuid) }}" enctype="multipart/form-data" style="display:flex; gap:0.5rem; align-items:center;">
+    <input type="file" name="file" required>
+    <button type="submit" class="outline">Upload</button>
+</form>
+
+<hr>
+<h2>Dependencies</h2>
+<p><small>ATTACHes another datamodule's live version read-only; query it as <code>local_name.table</code>.</small></p>
+{% if dependencies %}
+<table>
+    <thead><tr><th>Local name</th><th>Datamodule</th><th></th></tr></thead>
+    <tbody>
+        {% for d in dependencies %}
+        <tr>
+            <td><code>{{ d.local_name }}</code></td>
+            <td>{{ dep_names[d.depends_on_id].path if dep_names[d.depends_on_id] else '(deleted)' }}</td>
+            <td>
+                <form method="post" action="{{ url_for('datamodules.dependency_delete', uuid=datamodule.uuid, dep_id=d.id) }}">
+                    <button type="submit" class="outline secondary small">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+<form method="post" action="{{ url_for('datamodules.dependency_add', uuid=datamodule.uuid) }}" style="display:flex; gap:0.5rem; align-items:center;">
+    <select name="depends_on_uuid" required>
+        <option value="">— datamodule —</option>
+        {% for d in all_datamodules %}<option value="{{ d.uuid }}">{{ d.path }}</option>{% endfor %}
+    </select>
+    <input type="text" name="local_name" placeholder="local_name" required>
+    <button type="submit" class="outline">Add dependency</button>
+</form>
+
+<hr>
+<h2>Connections</h2>
+<p><small>Bind an external connection; query it as <code>local_name.table</code> (SQLite/Postgres).</small></p>
+{% if connections %}
+<table>
+    <thead><tr><th>Local name</th><th>Connection</th><th></th></tr></thead>
+    <tbody>
+        {% for c in connections %}
+        <tr>
+            <td><code>{{ c.local_name }}</code></td>
+            <td>{{ conn_names[c.connection_id].name if conn_names[c.connection_id] else '(deleted)' }}</td>
+            <td>
+                <form method="post" action="{{ url_for('datamodules.connection_delete', uuid=datamodule.uuid, link_id=c.id) }}">
+                    <button type="submit" class="outline secondary small">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% if all_connections %}
+<form method="post" action="{{ url_for('datamodules.connection_add', uuid=datamodule.uuid) }}" style="display:flex; gap:0.5rem; align-items:center;">
+    <select name="connection_id" required>
+        <option value="">— connection —</option>
+        {% for c in all_connections %}<option value="{{ c.id }}">{{ c.name }} ({{ c.driver }})</option>{% endfor %}
+    </select>
+    <input type="text" name="local_name" placeholder="local_name" required>
+    <button type="submit" class="outline">Bind connection</button>
+</form>
+{% else %}
+<p><small>No connections defined. Create one under <a href="{{ url_for('connections.index') }}">Admin → Connections</a>.</small></p>
+{% endif %}
+
+<hr>
 <header style="display:flex; justify-content:space-between; align-items:center;">
     <h2>Reports</h2>
     <a href="{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}" role="button" class="outline small">New Report</a>
