@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}{% if datamodule %}{{ datamodule.path }}{% else %}New Datamodule{% endif %} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{% if datamodule %}{{ datamodule.path }}{% else %}New Datamodule{% endif %}</h1>
+    {% if datamodule %}
+    <p>
+        Status: <strong>{{ datamodule.build_status }}</strong>
+        {% if datamodule.live_version_id %} · live version set{% endif %}
+    </p>
+    {% endif %}
+</hgroup>
+
+{% if datamodule and datamodule.last_build_error %}
+<article class="flash flash-error">Last build error: {{ datamodule.last_build_error }}</article>
+{% endif %}
+
+<form method="post"
+      action="{% if datamodule %}{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}{% else %}{{ url_for('datamodules.new') }}{% endif %}">
+    <label>Path
+        <input type="text" name="path" value="{{ datamodule.path if datamodule else '' }}"
+               placeholder="finance/monthly" required>
+    </label>
+    <label>Description
+        <input type="text" name="description" value="{{ datamodule.description if datamodule else '' }}">
+    </label>
+    <label>TTL (seconds; blank = never auto-expire, 0 = always rebuild)
+        <input type="number" name="ttl_seconds" step="1" min="0"
+               value="{% if datamodule and datamodule.ttl_seconds is not none %}{{ datamodule.ttl_seconds }}{% endif %}">
+    </label>
+    <label>Build script (DuckDB SQL)
+        <textarea name="build_script" rows="10" style="font-family:monospace;"
+                  placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
+    </label>
+    <button type="submit">{% if datamodule %}Save{% else %}Create{% endif %}</button>
+</form>
+
+{% if datamodule %}
+<div style="display:flex; gap:0.5rem; margin:1rem 0;">
+    <form method="post" action="{{ url_for('datamodules.build', uuid=datamodule.uuid) }}">
+        <button type="submit">Build now</button>
+    </form>
+    <form method="post" action="{{ url_for('datamodules.delete', uuid=datamodule.uuid) }}"
+          onsubmit="return confirm('Delete this datamodule and all its versions?');">
+        <button type="submit" class="outline secondary">Delete</button>
+    </form>
+</div>
+
+<hr>
+<header style="display:flex; justify-content:space-between; align-items:center;">
+    <h2>Reports</h2>
+    <a href="{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}" role="button" class="outline small">New Report</a>
+</header>
+{% if reports %}
+<table>
+    <thead><tr><th>Name</th><th>Macro</th><th>Kind</th><th></th></tr></thead>
+    <tbody>
+        {% for r in reports %}
+        <tr>
+            <td><a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a></td>
+            <td><code>{{ r.macro_name }}</code></td>
+            <td>{{ r.kind }}</td>
+            <td><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}">Edit</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No reports yet.</p>
+{% endif %}
+
+<hr>
+<h2>Versions</h2>
+{% if versions %}
+<table>
+    <thead><tr><th>Version</th><th>Status</th><th>Bytes</th><th>Built</th><th>Trigger</th></tr></thead>
+    <tbody>
+        {% for v in versions %}
+        <tr>
+            <td><code>{{ v.uuid[:8] }}</code></td>
+            <td>{{ v.status }}</td>
+            <td>{{ v.byte_size if v.byte_size is not none else '' }}</td>
+            <td>{{ v.build_ended_at|localdatetime }}</td>
+            <td>{{ v.triggered_by }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>Not built yet.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -18,10 +18,11 @@ make db-init             # Apply DB migrations only (no rebuild)
 ## Architecture
 - Backend: Python Flask + APSW (SQLite metadata) + DuckDB (query engine)
 - Frontend: HTMX + PicoCSS (compact styling) + dark/light mode
-- SQL templates: `{{ var }}` for Jinja structural parts, `$var` for DuckDB bind parameters
+- Core object: a **datamodule** — a versioned DuckDB database built by a script, stored under `instance/data/<uuid[:2]>/<uuid>/versions/`. "Live" is a SQLite pointer (`datamodule.live_version_id`) to an immutable snapshot; rebuilds atomic-swap a new file.
+- Reports are DuckDB **macros** layered on a datamodule, served over the live version at `/r/<uuid>.<ext>`. Bodies use `$arg` for macro parameters.
+- Schema is migration-managed: `database/migrations/NNNN_*.sql` applied forward-only by `db.apply_migrations` (ledger `schema_migrations`, `EXPECTED_SCHEMA_VERSION`).
 - Auth: Gatekeeper client (SSO)
 - Email: Outbox client
-- Results cached as Parquet files in instance/cache/
 
 ## Key Patterns
 - App factory in `src/strata/__init__.py`

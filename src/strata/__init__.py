@@ -59,14 +59,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         _load_config_from_db(app)
         _check_schema_version(db_path)
 
-    # Ensure cache directory exists. Priority: env > DB-loaded config > default.
-    cache_dir = (
-        os.environ.get("CACHE_DIRECTORY")
-        or app.config.get("CACHE_DIRECTORY")
-        or str(instance_path / "cache")
+    # Ensure the datamodule storage root exists. Priority: env > DB config > default.
+    data_root = (
+        os.environ.get("DATA_ROOT") or app.config.get("DATA_ROOT") or str(instance_path / "data")
     )
-    Path(cache_dir).mkdir(parents=True, exist_ok=True)
-    app.config["CACHE_DIRECTORY"] = cache_dir
+    Path(data_root).mkdir(parents=True, exist_ok=True)
+    app.config["DATA_ROOT"] = data_root
 
     from strata.db import close_db
 
@@ -122,13 +120,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return f"{minutes}m {remaining:.0f}s"
 
     # Register blueprints
-    from strata.blueprints import admin, api, auth, connections, reports, schedules, tags
+    from strata.blueprints import admin, auth, connections, datamodules, reports, tags
 
     app.register_blueprint(auth.bp)
+    app.register_blueprint(datamodules.bp)
     app.register_blueprint(reports.bp)
     app.register_blueprint(tags.bp)
-    app.register_blueprint(schedules.bp)
-    app.register_blueprint(api.bp)
     app.register_blueprint(admin.bp)
     app.register_blueprint(connections.bp)
 

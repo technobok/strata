@@ -22,7 +22,7 @@
             </ul>
             <ul>
                 {% if g.user %}
-                <li><a href="{{ url_for('reports.index') }}">Reports</a></li>
+                <li><a href="{{ url_for('datamodules.index') }}">Datamodules</a></li>
                 <li><a href="{{ url_for('tags.index') }}">Tags</a></li>
                 {% if g.strata_is_admin %}<li><a href="{{ url_for('admin.index') }}">Admin</a></li>{% endif %}
                 {% endif %}

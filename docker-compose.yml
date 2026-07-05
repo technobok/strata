@@ -10,7 +10,7 @@ services:
     container_name: strata-app
     volumes:
       - ./instance:/app/instance
-      - ${STRATA_CACHE_DIR:-./instance/cache}:/cache-data
+      - ${STRATA_DATA_DIR:-./instance/data}:/data-root
       - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
       - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
     ports:
@@ -29,9 +29,9 @@ services:
       # - STRATA_DB=/app/instance/strata.sqlite3
       # - STRATA_ROOT=/app
 
-      # --- Result cache (DuckDB files; can grow large) ---
-      # Mount STRATA_CACHE_DIR (host path) above; container path is fixed.
-      - CACHE_DIRECTORY=/cache-data
+      # --- Datamodule storage (built DuckDB versions + sources; can grow large) ---
+      # Mount STRATA_DATA_DIR (host path) above; container path is fixed.
+      - DATA_ROOT=/data-root
 
       # --- Gatekeeper (SSO auth — required to log in) ---
       - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
@@ -73,7 +73,7 @@ services:
     command: ["python", "-m", "worker.schedule_worker"]
     volumes:
       - ./instance:/app/instance
-      - ${STRATA_CACHE_DIR:-./instance/cache}:/cache-data
+      - ${STRATA_DATA_DIR:-./instance/data}:/data-root
       - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
       - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
     environment:
@@ -86,8 +86,8 @@ services:
       # - STRATA_DB=/app/instance/strata.sqlite3
       # - STRATA_ROOT=/app
 
-      # --- Result cache (DuckDB files; can grow large) ---
-      - CACHE_DIRECTORY=/cache-data
+      # --- Datamodule storage (built DuckDB versions + sources; can grow large) ---
+      - DATA_ROOT=/data-root
 
       # --- Gatekeeper (SSO auth) ---
       - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3

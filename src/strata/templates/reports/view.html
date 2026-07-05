@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.name }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ report.name }}</h1>
+    <p>
+        <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>
+        {% if report.description %} — {{ report.description }}{% endif %}
+    </p>
+</hgroup>
+
+<div class="form-actions" style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+    {% if g.strata_is_admin %}
+    <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
+    {% endif %}
+    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='parquet', **arg_values) }}" role="button" class="outline secondary small">Download Parquet</a>
+</div>
+
+{% if args %}
+<form method="get" action="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}">
+    <fieldset>
+        <legend>Arguments</legend>
+        <div class="grid">
+            {% for arg in args %}
+            <label>
+                {{ arg.name }}
+                {% if arg.description %}<small>({{ arg.description }})</small>{% endif %}
+                {% set current = arg_values.get(arg.name, arg.default_value or '') %}
+                {% if arg.data_type == 'date' %}
+                <input type="date" name="{{ arg.name }}" value="{{ current }}" {% if arg.required %}required{% endif %}>
+                {% elif arg.data_type == 'boolean' %}
+                <select name="{{ arg.name }}">
+                    <option value="true" {% if current == 'true' %}selected{% endif %}>True</option>
+                    <option value="false" {% if current == 'false' %}selected{% endif %}>False</option>
+                </select>
+                {% elif arg.data_type in ('integer', 'number', 'decimal') %}
+                <input type="number" name="{{ arg.name }}" value="{{ current }}"
+                       {% if arg.data_type == 'integer' %}step="1"{% else %}step="any"{% endif %}
+                       {% if arg.required %}required{% endif %}>
+                {% else %}
+                <input type="text" name="{{ arg.name }}" value="{{ current }}" {% if arg.required %}required{% endif %}>
+                {% endif %}
+            </label>
+            {% endfor %}
+        </div>
+    </fieldset>
+    <button type="submit">Run</button>
+</form>
+{% endif %}
+
+<hr>
+{% include "reports/_table.html" %}
+{% endblock %}

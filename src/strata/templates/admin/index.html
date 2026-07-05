@@ -10,11 +10,11 @@
         <header>System Stats</header>
         <table>
             <tbody>
+                <tr><td>Datamodules</td><td>{{ stats.datamodule }}</td></tr>
+                <tr><td>Versions</td><td>{{ stats.datamodule_version }}</td></tr>
                 <tr><td>Reports</td><td>{{ stats.report }}</td></tr>
-                <tr><td>Report Runs</td><td>{{ stats.report_run }}</td></tr>
                 <tr><td>Schedules (total)</td><td>{{ stats.schedule }}</td></tr>
                 <tr><td>Schedules (active)</td><td>{{ stats.active_schedules }}</td></tr>
-                <tr><td>API Links</td><td>{{ stats.api_link }}</td></tr>
                 <tr><td>Tags</td><td>{{ stats.tag }}</td></tr>
             </tbody>
         </table>
@@ -25,7 +25,7 @@
             <button type="button" class="outline" onclick="location.href='{{ url_for('admin.config') }}'">Configuration</button>
             <button type="button" class="outline" onclick="location.href='{{ url_for('admin.sql_console') }}'">SQL Console</button>
             <button type="button" class="outline" onclick="location.href='{{ url_for('connections.index') }}'">Connections</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('reports.index') }}'">All Reports</button>
+            <button type="button" class="outline" onclick="location.href='{{ url_for('datamodules.index') }}'">Datamodules</button>
         </div>
     </article>
 </div>

@@ -11,14 +11,14 @@
 {% if g.user %}
 <div class="grid">
     <article>
-        <header><strong>Reports</strong></header>
-        <p>Create, run, and manage parameterised SQL reports.</p>
+        <header><strong>Datamodules</strong></header>
+        <p>Build versioned DuckDB databases from a script and serve reports over them.</p>
         <footer>
-            <a href="{{ url_for('reports.index') }}" role="button">View Reports</a>
+            <a href="{{ url_for('datamodules.index') }}" role="button">View Datamodules</a>
         </footer>
     </article>
 </div>
 {% else %}
-<p>Please <a href="{{ url_for('auth.login') }}">log in</a> to access reports.</p>
+<p>Please <a href="{{ url_for('auth.login') }}">log in</a> to access datamodules.</p>
 {% endif %}
 {% endblock %}

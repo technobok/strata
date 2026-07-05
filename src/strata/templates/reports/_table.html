@@ -1,0 +1,27 @@
+{% if arg_error %}
+<article class="flash flash-error">{{ arg_error }}</article>
+{% elif result and result.error %}
+<article class="flash flash-error">{{ result.error }}</article>
+{% elif result and result.columns %}
+<div class="run-info">
+    <span>{{ result.row_count }} row{{ 's' if result.row_count != 1 else '' }}</span>
+</div>
+<div class="results-container">
+    <table>
+        <thead>
+            <tr>
+                {% for col in result.columns %}<th>{{ col }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in result.rows %}
+            <tr>
+                {% for cell in row %}<td>{{ cell if cell is not none else '' }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% elif result %}
+<p>Query returned no results.</p>
+{% endif %}

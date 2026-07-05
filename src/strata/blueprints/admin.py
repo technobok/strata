@@ -39,7 +39,7 @@ def index() -> str:
 
     # Gather stats
     stats: dict[str, int] = {}
-    for table in ("report", "report_run", "schedule", "api_link", "tag"):
+    for table in ("datamodule", "datamodule_version", "report", "schedule", "tag"):
         try:
             row = db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
             stats[table] = int(row[0]) if row else 0

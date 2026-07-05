@@ -37,10 +37,12 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry("server.dev_host", ConfigType.STRING, "127.0.0.1", "Bind address for dev server"),
     ConfigEntry("server.dev_port", ConfigType.INT, 5000, "Port for dev server"),
     ConfigEntry("server.debug", ConfigType.BOOL, False, "Enable Flask debug mode"),
-    # -- cache --
-    ConfigEntry("cache.directory", ConfigType.STRING, "instance/cache", "Result cache directory"),
+    # -- data storage --
     ConfigEntry(
-        "cache.retention_days", ConfigType.INT, 30, "Days to keep cached results before cleanup"
+        "data.root",
+        ConfigType.STRING,
+        "instance/data",
+        "Root directory for datamodule storage (built versions + uploaded sources)",
     ),
     # -- auth --
     ConfigEntry(
@@ -146,8 +148,7 @@ KEY_MAP: dict[str, str] = {
     "server.dev_host": "DEV_HOST",
     "server.dev_port": "DEV_PORT",
     "server.debug": "DEBUG",
-    "cache.directory": "CACHE_DIRECTORY",
-    "cache.retention_days": "CACHE_RETENTION_DAYS",
+    "data.root": "DATA_ROOT",
     "auth.admin_group": "AUTH_ADMIN_GROUP",
     "gatekeeper.db_path": "GATEKEEPER_DB_PATH",
     "gatekeeper.url": "GATEKEEPER_URL",
@@ -167,7 +168,7 @@ KEY_MAP: dict[str, str] = {
 ENV_OVERRIDES: dict[str, str] = {
     "server.host": "HOST",
     "server.port": "PORT",
-    "cache.directory": "CACHE_DIRECTORY",
+    "data.root": "DATA_ROOT",
     "auth.admin_group": "STRATA_ADMIN_GROUP",
     "gatekeeper.db_path": "GATEKEEPER_DB",
     "mail.sender": "MAIL_SENDER",

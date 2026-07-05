@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}{% if report %}{{ report.name }}{% else %}New Report{% endif %} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{% if report %}{{ report.name }}{% else %}New Report{% endif %}</h1>
+    <p>Datamodule: <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a></p>
+</hgroup>
+
+<form method="post"
+      action="{% if report %}{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}{% else %}{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}{% endif %}">
+    <div class="grid">
+        <label>Name
+            <input type="text" name="name" value="{{ report.name if report else '' }}" required>
+        </label>
+        <label>Macro name (SQL identifier)
+            <input type="text" name="macro_name" value="{{ report.macro_name if report else '' }}"
+                   placeholder="nums" required>
+        </label>
+        <label>Default format
+            <select name="default_format">
+                {% for f in ('html', 'parquet') %}
+                <option value="{{ f }}" {% if report and report.default_format == f %}selected{% endif %}>{{ f }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+
+    <label>Body SQL (reference args as <code>$argname</code>)
+        <textarea name="body_sql" rows="8" style="font-family:monospace;"
+                  placeholder="SELECT n FROM t WHERE n >= $min">{{ report.body_sql if report else '' }}</textarea>
+    </label>
+
+    <fieldset>
+        <legend>Arguments</legend>
+        <table>
+            <thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Required</th></tr></thead>
+            <tbody>
+                {% set rows = (args | list) %}
+                {% for arg in rows %}
+                <tr>
+                    <td><input type="text" name="arg_name" value="{{ arg.name }}"></td>
+                    <td><select name="arg_type">
+                        {% for t in data_types %}<option value="{{ t }}" {% if arg.data_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                    </select></td>
+                    <td><input type="text" name="arg_default" value="{{ arg.default_value or '' }}"></td>
+                    <td><select name="arg_required">
+                        <option value="yes" {% if arg.required %}selected{% endif %}>yes</option>
+                        <option value="no" {% if not arg.required %}selected{% endif %}>no</option>
+                    </select></td>
+                </tr>
+                {% endfor %}
+                {% for _ in range(3) %}
+                <tr>
+                    <td><input type="text" name="arg_name" value="" placeholder="min"></td>
+                    <td><select name="arg_type">
+                        {% for t in data_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                    </select></td>
+                    <td><input type="text" name="arg_default" value=""></td>
+                    <td><select name="arg_required">
+                        <option value="yes">yes</option>
+                        <option value="no">no</option>
+                    </select></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <small>Blank-name rows are ignored. Argument order here is the macro parameter order.</small>
+    </fieldset>
+
+    <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>
+</form>
+
+{% if report %}
+<div style="display:flex; gap:0.5rem; margin-top:1rem;">
+    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Run</a>
+    <form method="post" action="{{ url_for('datamodules.report_delete', report_uuid=report.uuid) }}"
+          onsubmit="return confirm('Delete this report?');">
+        <button type="submit" class="outline secondary small">Delete</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
