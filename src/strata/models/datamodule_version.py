@@ -67,6 +67,17 @@ class DatamoduleVersion:
         return DatamoduleVersion._from_row(row) if row else None
 
     @staticmethod
+    def get_for_datamodule(datamodule_id: int, version_uuid: str) -> DatamoduleVersion | None:
+        """The version with this uuid iff it belongs to this datamodule (one query)."""
+        db = get_db()
+        row = db.execute(
+            f"SELECT {DatamoduleVersion._COLUMNS} FROM datamodule_version "
+            "WHERE datamodule_id = ? AND uuid = ?",
+            (datamodule_id, version_uuid),
+        ).fetchone()
+        return DatamoduleVersion._from_row(row) if row else None
+
+    @staticmethod
     def list_for(datamodule_id: int) -> list[DatamoduleVersion]:
         db = get_db()
         rows = db.execute(

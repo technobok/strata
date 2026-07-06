@@ -40,6 +40,38 @@ def _parse_ttl(raw: str) -> int | None:
     return int(raw)
 
 
+def _parse_retention() -> tuple[str | None, int | None, object, str | None]:
+    """Retention fields from the edit form -> (kind, count, age, error).
+
+    kind None = fields absent (the create form has none) -> leave unchanged.
+    age uses the Datamodule._UNSET sentinel for "unchanged" because None is a
+    real value (keep everything).
+    """
+    kind = request.form.get("retention_kind", "").strip()
+    if not kind:
+        return None, None, Datamodule._UNSET, None
+    if kind not in ("count", "age"):
+        return None, None, Datamodule._UNSET, "Retention policy must be 'count' or 'age'."
+    count: int | None = None
+    count_raw = request.form.get("retention_count", "").strip()
+    if count_raw:
+        try:
+            count = int(count_raw)
+        except ValueError:
+            return None, None, Datamodule._UNSET, "Retention count must be an integer."
+        if count < 1:
+            return None, None, Datamodule._UNSET, "Retention count must be at least 1."
+    age_raw = request.form.get("retention_age_seconds", "").strip()
+    age: object
+    try:
+        age = int(age_raw) if age_raw else None  # blank = keep everything
+    except ValueError:
+        return None, None, Datamodule._UNSET, "Retention age must be a whole number of seconds."
+    if isinstance(age, int) and age < 0:
+        return None, None, Datamodule._UNSET, "Retention age cannot be negative."
+    return kind, count, age, None
+
+
 def _parse_args_form() -> tuple[list[dict], str | None]:
     """Read the repeated arg rows from the report form.
 
@@ -68,7 +100,7 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
         if name in RESERVED_KEYS:
             return [], (
                 f"Argument name '{name}' is reserved for sorting/filtering "
-                "(sort, page, q, format, key)."
+                "(sort, page, q, format, key, version)."
             )
         data_type = _at(types, i, "text")
         if data_type not in DATA_TYPES:
@@ -140,12 +172,15 @@ def edit(uuid: str) -> str | Response:
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
         ttl_raw = request.form.get("ttl_seconds", "")
+        retention_kind, retention_count, retention_age, retention_error = _parse_retention()
 
         existing = Datamodule.get_by_path(path)
         if not path:
             flash("Path is required.", "error")
         elif existing is not None and existing.id != dm.id:
             flash(f"A datamodule with path '{path}' already exists.", "error")
+        elif retention_error:
+            flash(retention_error, "error")
         else:
             dm.update(
                 modified_by=g.user.username,
@@ -153,6 +188,9 @@ def edit(uuid: str) -> str | Response:
                 description=description,
                 build_script=build_script,
                 ttl_seconds=_parse_ttl(ttl_raw),
+                retention_kind=retention_kind,
+                retention_count=retention_count,
+                retention_age_seconds=retention_age,
             )
             flash("Datamodule saved.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))

@@ -17,8 +17,17 @@
 </div>
 {% endif %}
 
+{% if pinned_version %}
+<article class="version-banner">
+    Viewing historical version <code>{{ pinned_version.uuid[:8] }}</code>
+    built {{ pinned_version.build_ended_at|localdatetime }}
+    — <a href="{{ ui.back_to_live if ui and ui.back_to_live else url_for('reports.serve', report_uuid=report.uuid, ext='html') }}">back to live</a>
+</article>
+{% endif %}
+
 {% if args %}
 <form method="get" action="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}">
+    {% if pinned_version %}<input type="hidden" name="version" value="{{ pinned_version.uuid }}">{% endif %}
     <fieldset>
         <legend>Arguments</legend>
         <div class="grid">

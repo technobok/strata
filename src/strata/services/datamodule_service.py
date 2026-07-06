@@ -11,10 +11,12 @@ start and open it read-only, so a rebuild never disturbs in-flight readers
 import logging
 import os
 import re
+import shutil
 import threading
 import time
 import uuid as uuid_lib
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -90,9 +92,15 @@ def live_version_path(dm: Datamodule) -> Path | None:
     return version_path(dm.uuid, version.uuid) if version else None
 
 
-def _storage_version() -> str:
-    """Pin the DuckDB library version that wrote a snapshot (forward-read compat)."""
-    return duckdb.__version__
+def _storage_version(conn: duckdb.DuckDBPyConnection) -> str:
+    """The effective storage_compatibility_version this snapshot was written with.
+
+    Read from the build connection (a build script may SET its own pin); DuckDB's
+    default is a broadly-compatible floor (v0.10.2 on 1.4.x). The file itself only
+    records the minimum-reader family, so the setting value is recorded here.
+    """
+    row = conn.execute("SELECT current_setting('storage_compatibility_version')").fetchone()
+    return str(row[0]) if row else "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +235,7 @@ def build_datamodule(
             if rendered.strip():
                 conn.execute(rendered)
             conn.execute("CHECKPOINT")
+            storage_version = _storage_version(conn)
         finally:
             conn.close()
         os.rename(tmp_file, final_file)
@@ -245,7 +254,6 @@ def build_datamodule(
     duration_ms = int((time.monotonic() - start) * 1000)
     byte_size = final_file.stat().st_size
     ended_at = datetime.now(UTC).isoformat()
-    storage_version = _storage_version()
 
     # Atomic success flip: this version ready + live pointer + supersede older.
     with transaction() as cur:
@@ -264,6 +272,19 @@ def build_datamodule(
             "storage_version = ?, last_build_error = NULL, modified_at = ? WHERE id = ?",
             (version.id, storage_version, ended_at, dm.id),
         )
+
+    # Retention runs best-effort after every successful flip; never fails a build.
+    try:
+        pruned = prune_versions(dm)
+        if pruned.rows_deleted:
+            log.info(
+                "pruned %d version(s), freed %d bytes (uuid=%s)",
+                pruned.rows_deleted,
+                pruned.bytes_freed,
+                dm.uuid,
+            )
+    except Exception as exc:
+        log.warning("post-build prune failed (uuid=%s): %s", dm.uuid, exc)
 
     result = DatamoduleVersion.get_by_id(version.id)
     assert result is not None
@@ -320,3 +341,180 @@ def ensure_fresh(
         if version is not None and not _is_stale(fresh, version, effective_ttl):
             return version
         return build_datamodule(fresh, triggered_by, _stack=_stack)
+
+
+# ---------------------------------------------------------------------------
+# Retention (prune old versions: rows AND files)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PruneResult:
+    rows_deleted: int = 0
+    files_deleted: int = 0
+    bytes_freed: int = 0
+    victims: list[str] = field(default_factory=list)  # "ab12cd34 (superseded)"
+
+
+def prune_candidates(dm: Datamodule) -> list[DatamoduleVersion]:
+    """Version rows the retention policy would delete.
+
+    Never the live version, never in-flight ``building`` rows. Re-reads the
+    datamodule row: right after a build the caller's dataclass still carries
+    the pre-flip live_version_id and policy.
+    """
+    fresh = Datamodule.get_by_id(dm.id)
+    if fresh is None:
+        return []
+    versions = DatamoduleVersion.list_for(fresh.id)
+    eligible = [v for v in versions if v.status != "building" and v.id != fresh.live_version_id]
+    if fresh.retention_kind == "age":
+        if fresh.retention_age_seconds is None:
+            return []  # blank age = keep everything
+        cutoff = (datetime.now(UTC) - timedelta(seconds=fresh.retention_age_seconds)).isoformat()
+        return [v for v in eligible if (v.build_ended_at or v.created_at) < cutoff]
+    # count: keep the newest N non-building rows (failures consume slots);
+    # the live version is additionally always kept.
+    keep = max(1, fresh.retention_count)
+    ranked = sorted(
+        (v for v in versions if v.status != "building"),
+        key=lambda v: ((v.build_ended_at or v.created_at), v.id),
+        reverse=True,
+    )
+    window = {v.id for v in ranked[:keep]}
+    return [v for v in eligible if v.id not in window]
+
+
+def prune_versions(dm: Datamodule) -> PruneResult:
+    """Enforce the retention policy: unlink each victim's file, then delete its row.
+
+    The DELETE re-checks live/building in SQL, so a stale candidate list can
+    never null the live pointer (live_version_id is FK ON DELETE SET NULL).
+    An in-flight reader of an unlinked file finishes on its own inode.
+    """
+    result = PruneResult()
+    for v in prune_candidates(dm):
+        path = version_path(dm.uuid, v.uuid)
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            result.files_deleted += 1
+            result.bytes_freed += size
+        except FileNotFoundError:
+            pass  # failed builds never produced a file
+        except OSError as exc:
+            log.warning("prune: could not remove %s: %s", path, exc)
+            continue  # keep the row so the file stays discoverable
+        with transaction() as cur:
+            cur.execute(
+                "DELETE FROM datamodule_version WHERE id = ? AND status != 'building' "
+                "AND id != COALESCE((SELECT live_version_id FROM datamodule WHERE id = ?), -1)",
+                (v.id, dm.id),
+            )
+            changed = cur.execute("SELECT changes()").fetchone()
+        if changed and changed[0] > 0:
+            result.rows_deleted += 1
+            result.victims.append(f"{v.uuid[:8]} ({v.status})")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Reconcile (retention sweep + filesystem/DB consistency)
+# ---------------------------------------------------------------------------
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_FAN_RE = re.compile(r"^[0-9a-f]{2}$")
+_TMP_MAX_AGE_SECONDS = 24 * 3600
+
+
+@dataclass
+class ReconcileReport:
+    dry_run: bool
+    prune_lines: list[str] = field(default_factory=list)  # "<path>: ab12cd34 (superseded)"
+    rows_deleted: int = 0
+    files_deleted: int = 0
+    bytes_freed: int = 0
+    orphan_dirs: list[str] = field(default_factory=list)
+    stale_tmp: list[str] = field(default_factory=list)
+    orphan_files: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def reconcile(dry_run: bool = False) -> ReconcileReport:
+    """Enforce retention everywhere and sweep the data root back into consistency.
+
+    Removes: versions beyond each datamodule's retention policy, tmp files older
+    than a day (crashed builds), version files with no DB row, and whole
+    datamodule directories whose datamodule row was deleted. A live version with
+    a missing file is only ever WARNED about. Prune runs first so its unlinked
+    files never double-count as orphans.
+    """
+    report = ReconcileReport(dry_run=dry_run)
+    dms = Datamodule.get_all()
+    known = {dm.uuid for dm in dms}
+
+    for dm in dms:
+        if dry_run:
+            for v in prune_candidates(dm):
+                report.prune_lines.append(f"{dm.path}: {v.uuid[:8]} ({v.status})")
+                report.rows_deleted += 1
+                try:
+                    size = version_path(dm.uuid, v.uuid).stat().st_size
+                    report.files_deleted += 1
+                    report.bytes_freed += size
+                except OSError:
+                    pass
+        else:
+            pruned = prune_versions(dm)
+            report.prune_lines.extend(f"{dm.path}: {victim}" for victim in pruned.victims)
+            report.rows_deleted += pruned.rows_deleted
+            report.files_deleted += pruned.files_deleted
+            report.bytes_freed += pruned.bytes_freed
+
+        base = dm_dir(dm.uuid)
+        if not base.exists():
+            continue
+
+        now = time.time()
+        for f in sorted((base / "tmp").glob("*.duckdb")):
+            try:
+                if now - f.stat().st_mtime > _TMP_MAX_AGE_SECONDS:
+                    report.stale_tmp.append(str(f))
+                    if not dry_run:
+                        f.unlink()
+            except OSError:
+                continue  # racing an in-flight build
+
+        version_uuids = {v.uuid for v in DatamoduleVersion.list_for(dm.id)}
+        for f in sorted((base / "versions").glob("*.duckdb")):
+            if f.stem in version_uuids:
+                continue
+            report.orphan_files.append(str(f))
+            if not dry_run:
+                try:
+                    f.unlink()
+                except OSError:
+                    continue
+
+        live = live_version(dm)
+        if live is not None and not version_path(dm.uuid, live.uuid).exists():
+            report.warnings.append(f"{dm.path}: live version {live.uuid[:8]} has no file on disk")
+
+    root = data_root()
+    if root.exists():
+        for fan in sorted(root.iterdir()):
+            if not fan.is_dir() or not _FAN_RE.fullmatch(fan.name):
+                continue
+            for d in sorted(fan.iterdir()):
+                if not d.is_dir() or not _UUID_RE.fullmatch(d.name):
+                    continue
+                if d.name[:2] != fan.name or d.name in known:
+                    continue
+                report.orphan_dirs.append(str(d))
+                if not dry_run:
+                    shutil.rmtree(d, ignore_errors=True)
+                    try:
+                        fan.rmdir()  # removes the fan-out dir only when empty
+                    except OSError:
+                        pass
+    return report

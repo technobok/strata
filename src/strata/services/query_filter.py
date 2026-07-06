@@ -22,9 +22,10 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Query keys that are never args or filters. `format` and `key` are accepted
-# and ignored for now (the URL extension is canonical; API keys are Phase 6).
-RESERVED_KEYS = frozenset({"sort", "page", "q", "format", "key"})
+# Query keys that are never args or filters. `version` pins a historical
+# datamodule version; `format` and `key` are accepted and ignored for now
+# (the URL extension is canonical; API keys are Phase 6).
+RESERVED_KEYS = frozenset({"sort", "page", "q", "format", "key", "version"})
 
 PAGE_SIZE = 200
 
@@ -60,6 +61,7 @@ class QuerySpec:
     q: list[str]
     sort_raw: list[str]
     page: int | None
+    version: str | None = None  # pinned datamodule version uuid
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,7 @@ def parse_params(
     q: list[str] = []
     sort_raw: list[str] = []
     page: int | None = None
+    version: str | None = None
     for key, value in pairs:
         if key in RESERVED_KEYS:
             if key == "q":
@@ -124,11 +127,16 @@ def parse_params(
                     raise FilterError(f"page must be a positive integer, not '{value}'") from None
                 if page < 1:
                     raise FilterError("page must be a positive integer")
+            elif key == "version":
+                if version is None and value:
+                    version = value
         elif key in arg_names:
             arg_values.setdefault(key, []).append(value)
         else:
             filters.append(RawFilter(key, value))
-    return arg_values, QuerySpec(filters=filters, q=q, sort_raw=sort_raw, page=page)
+    return arg_values, QuerySpec(
+        filters=filters, q=q, sort_raw=sort_raw, page=page, version=version
+    )
 
 
 def build_clauses(spec: QuerySpec, columns: list[tuple[str, str]]) -> Clauses:

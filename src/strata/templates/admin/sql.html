@@ -62,3 +62,14 @@
 <p><em>Statement executed; no rows to display.</em></p>
 {% endif %}
 {% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/material-darker.min.css') }}">
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/codemirror/codemirror.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/sql.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sql-editor.js') }}"></script>
+{% endblock %}

@@ -21,6 +21,7 @@ import duckdb
 from flask import Response
 
 from strata.models.datamodule import Datamodule
+from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.services import datamodule_service, query_filter, stream_service, template_service
@@ -139,13 +140,18 @@ def _bind_args(args: list[ReportArg], arg_values: dict[str, list[str]]) -> list[
 
 
 def _prepare(
-    report: Report, dm: Datamodule, arg_values: dict[str, list[str]]
+    report: Report,
+    dm: Datamodule,
+    arg_values: dict[str, list[str]],
+    pinned: DatamoduleVersion | None = None,
 ) -> tuple[duckdb.DuckDBPyConnection, str, list[Any], list[tuple[str, str]]]:
-    """Ensure fresh, attach live version read-only, register the macro, describe.
+    """Ensure fresh, attach the version read-only, register the macro, describe.
 
-    Returns (conn, final_sql, binds, columns) where columns is the DESCRIBEd
-    (name, type) per output column. Caller owns closing ``conn`` (stream_service
-    closes it after writing; run_table closes it after fetch).
+    ``pinned`` serves that historical version as-is: no TTL check, no rebuild,
+    no build_status consultation. Returns (conn, final_sql, binds, columns)
+    where columns is the DESCRIBEd (name, type) per output column. Caller owns
+    closing ``conn`` (stream_service closes it after writing; run_table closes
+    it after fetch).
     """
     if not template_service.ALIAS_RE.match(report.macro_name):
         raise ArgError(f"Invalid macro name '{report.macro_name}'")
@@ -154,8 +160,11 @@ def _prepare(
         if not template_service.ALIAS_RE.match(arg.name):
             raise ArgError(f"Invalid argument name '{arg.name}'")
 
-    effective_ttl = report.ttl_seconds if report.ttl_seconds is not None else dm.ttl_seconds
-    version = datamodule_service.ensure_fresh(dm, "ttl-pull", effective_ttl)
+    if pinned is not None:
+        version = pinned
+    else:
+        effective_ttl = report.ttl_seconds if report.ttl_seconds is not None else dm.ttl_seconds
+        version = datamodule_service.ensure_fresh(dm, "ttl-pull", effective_ttl)
     vpath = datamodule_service.version_path(dm.uuid, version.uuid)
 
     binds = _bind_args(args, arg_values)
@@ -192,6 +201,7 @@ def run_table(
     dm: Datamodule,
     arg_values: dict[str, list[str]],
     spec: query_filter.QuerySpec,
+    pinned: DatamoduleVersion | None = None,
 ) -> TableResult:
     """Run the report and return one page of rows for the HTML table.
 
@@ -201,7 +211,7 @@ def run_table(
     failing filter chip stays visible and removable.
     """
     try:
-        conn, final_sql, binds, columns = _prepare(report, dm, arg_values)
+        conn, final_sql, binds, columns = _prepare(report, dm, arg_values, pinned=pinned)
     except duckdb.Error as exc:
         return TableResult(error=f"Query error: {exc}")
     try:
@@ -253,13 +263,14 @@ def stream(
     arg_values: dict[str, list[str]],
     spec: query_filter.QuerySpec,
     fmt: str,
+    pinned: DatamoduleVersion | None = None,
 ) -> Response:
     """Stream the filtered/sorted result as parquet/csv/json/xlsx.
 
     Exports cover the full result; an explicit ``page=N`` from the caller
     yields just that slice (UI export links never carry ``page``).
     """
-    conn, final_sql, binds, columns = _prepare(report, dm, arg_values)
+    conn, final_sql, binds, columns = _prepare(report, dm, arg_values, pinned=pinned)
     try:
         clauses = query_filter.build_clauses(spec, columns)
         limit = offset = None
@@ -291,6 +302,8 @@ def arg_options_map(
 ) -> dict[int, list[tuple[str, str]]]:
     """Options for select/multiselect args, from the datamodule's *current* live version.
 
+    Deliberately live-based even when a historical version is pinned — options
+    are form affordances, memoised per live version id.
     Uses the live version as-is (never triggers a build), so a form GET is cheap.
     Each option is (value, label): a 1-column constraint_query yields (v, v); ≥2
     columns yield (value, label). No live version → empty map.

@@ -28,7 +28,7 @@
     </div>
 
     <label>Body SQL (reference args as <code>$argname</code>)
-        <textarea name="body_sql" rows="8" style="font-family:monospace;"
+        <textarea id="body_sql" class="sql-editor" name="body_sql" rows="8" style="font-family:monospace;"
                   placeholder="SELECT n FROM t WHERE n >= $min">{{ report.body_sql if report else '' }}</textarea>
     </label>
 
@@ -97,4 +97,15 @@
     </form>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/material-darker.min.css') }}">
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/codemirror/codemirror.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/sql.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sql-editor.js') }}"></script>
 {% endblock %}

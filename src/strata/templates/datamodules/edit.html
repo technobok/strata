@@ -30,8 +30,26 @@
         <input type="number" name="ttl_seconds" step="1" min="0"
                value="{% if datamodule and datamodule.ttl_seconds is not none %}{{ datamodule.ttl_seconds }}{% endif %}">
     </label>
+    {% if datamodule %}
+    <div class="grid">
+        <label>Retention policy
+            <select name="retention_kind">
+                <option value="count" {% if datamodule.retention_kind == 'count' %}selected{% endif %}>count — keep newest N versions</option>
+                <option value="age" {% if datamodule.retention_kind == 'age' %}selected{% endif %}>age — keep versions younger than</option>
+            </select>
+        </label>
+        <label>Keep count (count policy; live always kept)
+            <input type="number" name="retention_count" step="1" min="1"
+                   value="{{ datamodule.retention_count }}">
+        </label>
+        <label>Max age seconds (age policy; blank = keep all)
+            <input type="number" name="retention_age_seconds" step="1" min="0"
+                   value="{% if datamodule.retention_age_seconds is not none %}{{ datamodule.retention_age_seconds }}{% endif %}">
+        </label>
+    </div>
+    {% endif %}
     <label>Build script (DuckDB SQL)
-        <textarea name="build_script" rows="10" style="font-family:monospace;"
+        <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"
                   placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
     </label>
     <button type="submit">{% if datamodule %}Save{% else %}Create{% endif %}</button>
@@ -164,17 +182,27 @@
 
 <hr>
 <h2>Versions</h2>
+<p><small>Old versions are pruned per the retention policy after each build (and by <code>strata-admin reconcile</code>). Open a report over an older version via its links here.</small></p>
 {% if versions %}
 <table>
-    <thead><tr><th>Version</th><th>Status</th><th>Bytes</th><th>Built</th><th>Trigger</th></tr></thead>
+    <thead><tr><th>Version</th><th>Status</th><th>Duration</th><th>Bytes</th><th>Storage</th><th>Built</th><th>Trigger</th><th></th></tr></thead>
     <tbody>
         {% for v in versions %}
         <tr>
             <td><code>{{ v.uuid[:8] }}</code></td>
-            <td>{{ v.status }}</td>
+            <td>{{ v.status }}{% if v.id == datamodule.live_version_id %} <span class="status-badge status-completed">live</span>{% endif %}</td>
+            <td>{{ v.duration_ms|duration }}</td>
             <td>{{ v.byte_size if v.byte_size is not none else '' }}</td>
+            <td>{{ v.storage_version or '' }}</td>
             <td>{{ v.build_ended_at|localdatetime }}</td>
             <td>{{ v.triggered_by }}</td>
+            <td>
+                {% if v.status in ('ready', 'superseded') %}
+                {% for r in reports %}<a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html', version=v.uuid) }}">{{ r.macro_name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+                {% elif v.status == 'failed' and v.error_message %}
+                <span class="error-cell" title="{{ v.error_message }}">{{ v.error_message[:80] }}{% if v.error_message|length > 80 %}…{% endif %}</span>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
@@ -183,4 +211,15 @@
 <p>Not built yet.</p>
 {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/material-darker.min.css') }}">
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/codemirror/codemirror.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/sql.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sql-editor.js') }}"></script>
 {% endblock %}

@@ -191,3 +191,39 @@ def init_db_command() -> None:
     db_path = get_db_path()
     init_db_at(db_path)
     click.echo("Database initialized.")
+
+
+@main.command("reconcile")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Report what would be pruned/removed without changing anything.",
+)
+def reconcile_command(dry_run: bool) -> None:
+    """Enforce version retention and sweep orphaned datamodule files."""
+    from strata import create_app
+    from strata.services import datamodule_service
+
+    app = create_app()
+    with app.app_context():
+        rep = datamodule_service.reconcile(dry_run=dry_run)
+
+    verb = "would prune" if dry_run else "pruned"
+    for line in rep.prune_lines:
+        click.echo(f"{verb} version {line}")
+    verb = "would remove" if dry_run else "removed"
+    for path in rep.orphan_dirs:
+        click.echo(f"{verb} orphan datamodule dir {path}")
+    for path in rep.stale_tmp:
+        click.echo(f"{verb} stale tmp file {path}")
+    for path in rep.orphan_files:
+        click.echo(f"{verb} orphan version file {path}")
+    for warning in rep.warnings:
+        click.echo(f"WARNING: {warning}")
+    click.echo(
+        f"reconcile: {rep.rows_deleted} version row(s), {rep.files_deleted} file(s), "
+        f"{rep.bytes_freed} bytes; {len(rep.orphan_dirs)} orphan dir(s), "
+        f"{len(rep.stale_tmp)} stale tmp, {len(rep.orphan_files)} orphan file(s), "
+        f"{len(rep.warnings)} warning(s)" + (" (dry-run: no changes made)" if dry_run else "")
+    )

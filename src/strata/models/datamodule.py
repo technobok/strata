@@ -145,6 +145,9 @@ class Datamodule:
         description: str | None = None,
         build_script: str | None = None,
         ttl_seconds: object = _UNSET,
+        retention_kind: str | None = None,
+        retention_count: int | None = None,
+        retention_age_seconds: object = _UNSET,
     ) -> bool:
         """Update author-editable fields. Build-state fields are service-managed."""
         updates: list[str] = []
@@ -162,6 +165,15 @@ class Datamodule:
         if ttl_seconds is not Datamodule._UNSET:
             updates.append("ttl_seconds = ?")
             params.append(ttl_seconds)
+        if retention_kind is not None:
+            updates.append("retention_kind = ?")
+            params.append(retention_kind)
+        if retention_count is not None:
+            updates.append("retention_count = ?")
+            params.append(retention_count)
+        if retention_age_seconds is not Datamodule._UNSET:
+            updates.append("retention_age_seconds = ?")
+            params.append(retention_age_seconds)
 
         if not updates:
             return False
