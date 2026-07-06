@@ -312,6 +312,70 @@ footer small {
     font-size: 0.7em;
 }
 
+.results-container th a {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+}
+
+/* Table controls: search box, filter chips, export links */
+.table-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+}
+
+.table-controls .search-form {
+    margin: 0;
+}
+
+.table-controls .search-form input[type="search"] {
+    width: 18rem;
+    max-width: 100%;
+    margin: 0;
+}
+
+.filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.chip {
+    display: inline-block;
+    padding: 0.1rem 0.6rem;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 1rem;
+    font-size: 0.8rem;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.chip:hover {
+    border-color: var(--pico-del-color);
+    text-decoration: line-through;
+}
+
+.export-links {
+    margin-left: auto;
+    display: flex;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+}
+
+/* Pager */
+.pager {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+}
+
 /* SQL editor */
 .sql-editor textarea {
     font-family: monospace;

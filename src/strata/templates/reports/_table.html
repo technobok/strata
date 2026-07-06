@@ -1,16 +1,49 @@
 {% if arg_error %}
 <article class="flash flash-error">{{ arg_error }}</article>
-{% elif result and result.error %}
+{% endif %}
+{% if result and result.error %}
 <article class="flash flash-error">{{ result.error }}</article>
-{% elif result and result.columns %}
+{% endif %}
+
+{% if ui and (result or ui.chips) %}
+<div class="table-controls">
+    <form method="get" action="{{ ui.search_action }}" class="search-form"
+          hx-get="{{ ui.search_action }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">
+        {% for k, v in ui.search_hidden %}
+        <input type="hidden" name="{{ k }}" value="{{ v }}">
+        {% endfor %}
+        <input type="search" name="q" placeholder="Search all columns" aria-label="Search results">
+    </form>
+    {% if ui.chips %}
+    <div class="filter-chips">
+        {% for chip in ui.chips %}
+        <a class="chip" href="{{ chip.url }}" title="Remove this filter"
+           hx-get="{{ chip.url }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ chip.label }} <span aria-hidden="true">&#x2715;</span></a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="export-links">
+        {% for fmt, url in ui.exports %}
+        <a href="{{ url }}">{{ fmt }}</a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if result and not result.error and result.columns %}
 <div class="run-info">
-    <span>{{ result.row_count }} row{{ 's' if result.row_count != 1 else '' }}</span>
+    <span>{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}</span>
+    {% if result.page_count > 1 %}<span>Page {{ result.page }} of {{ result.page_count }}</span>{% endif %}
 </div>
 <div class="results-container">
     <table>
         <thead>
             <tr>
-                {% for col in result.columns %}<th>{{ col }}</th>{% endfor %}
+                {% for col in result.columns %}
+                <th class="{% if ui.sort_state.get(col) %}sort-{{ ui.sort_state[col] }}{% endif %}"><a
+                    href="{{ ui.sort_urls[col] }}" hx-get="{{ ui.sort_urls[col] }}"
+                    hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col }}</a></th>
+                {% endfor %}
             </tr>
         </thead>
         <tbody>
@@ -18,10 +51,17 @@
             <tr>
                 {% for cell in row %}<td>{{ cell if cell is not none else '' }}</td>{% endfor %}
             </tr>
+            {% else %}
+            <tr><td colspan="{{ result.columns | length }}">No rows match.</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
-{% elif result %}
-<p>Query returned no results.</p>
+{% if result.page_count > 1 or result.page > 1 %}
+<nav class="pager">
+    {% if ui.pager.prev_url %}<a href="{{ ui.pager.prev_url }}" hx-get="{{ ui.pager.prev_url }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">&lsaquo; Prev</a>{% endif %}
+    <span>Page {{ result.page }} of {{ result.page_count }}</span>
+    {% if ui.pager.next_url %}<a href="{{ ui.pager.next_url }}" hx-get="{{ ui.pager.next_url }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">Next &rsaquo;</a>{% endif %}
+</nav>
+{% endif %}
 {% endif %}

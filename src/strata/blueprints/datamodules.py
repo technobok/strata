@@ -27,6 +27,7 @@ from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.source_file import SourceFile
 from strata.services import datamodule_service
+from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
 bp = Blueprint("datamodules", __name__, url_prefix="/datamodules")
@@ -64,6 +65,11 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
             continue
         if not ALIAS_RE.match(name):
             return [], f"Argument name '{name}' must be a letter/underscore identifier."
+        if name in RESERVED_KEYS:
+            return [], (
+                f"Argument name '{name}' is reserved for sorting/filtering "
+                "(sort, page, q, format, key)."
+            )
         data_type = _at(types, i, "text")
         if data_type not in DATA_TYPES:
             return [], f"Unknown argument type '{data_type}'."

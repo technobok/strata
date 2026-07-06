@@ -11,12 +11,11 @@
     </p>
 </hgroup>
 
+{% if g.strata_is_admin %}
 <div class="form-actions" style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
-    {% if g.strata_is_admin %}
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
-    {% endif %}
-    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='parquet') }}{% if query_string %}?{{ query_string }}{% endif %}" role="button" class="outline secondary small">Download Parquet</a>
 </div>
+{% endif %}
 
 {% if args %}
 <form method="get" action="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}">
@@ -70,5 +69,7 @@
 {% endif %}
 
 <hr>
-{% include "reports/_table.html" %}
+<div id="report-container">
+    {% include "reports/_table.html" %}
+</div>
 {% endblock %}

@@ -4,7 +4,9 @@ The report body (``report.body_sql``) is the source of truth in SQLite. At serve
 time we ensure the datamodule is fresh (TTL pull), open its live version file
 read-only, register the report as a ``TEMP`` macro (so editing a body reflects
 immediately with no rebuild), bind the request args, ``DESCRIBE`` to learn the
-real output columns, and either render an HTML table or stream the result.
+real output columns, validate any sort/filter/search params against those
+columns (services/query_filter), and either render one HTML page of rows or
+stream the full filtered result.
 
 Authors reference args in the body with the familiar ``$arg`` syntax; we rewrite
 ``$arg`` -> the macro parameter ``arg`` (skipping occurrences inside string /
@@ -16,11 +18,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import duckdb
+from flask import Response
 
 from strata.models.datamodule import Datamodule
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
-from strata.services import datamodule_service, stream_service, template_service
+from strata.services import datamodule_service, query_filter, stream_service, template_service
 
 log = logging.getLogger(__name__)
 
@@ -56,8 +59,13 @@ class ArgError(Exception):
 class TableResult:
     columns: list[str] = field(default_factory=list)
     rows: list[tuple[Any, ...]] = field(default_factory=list)
-    row_count: int = 0
+    row_count: int = 0  # rows on THIS page
+    total_rows: int = 0  # filtered count across all pages
+    page: int = 1
+    page_count: int = 1
     error: str | None = None
+    applied_filters: list[query_filter.AppliedFilter] = field(default_factory=list)
+    applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -132,11 +140,12 @@ def _bind_args(args: list[ReportArg], arg_values: dict[str, list[str]]) -> list[
 
 def _prepare(
     report: Report, dm: Datamodule, arg_values: dict[str, list[str]]
-) -> tuple[duckdb.DuckDBPyConnection, str, list[Any], list[str]]:
+) -> tuple[duckdb.DuckDBPyConnection, str, list[Any], list[tuple[str, str]]]:
     """Ensure fresh, attach live version read-only, register the macro, describe.
 
-    Returns (conn, final_sql, binds, columns). Caller owns closing ``conn``
-    (stream_service closes it after COPY; run_table closes it after fetch).
+    Returns (conn, final_sql, binds, columns) where columns is the DESCRIBEd
+    (name, type) per output column. Caller owns closing ``conn`` (stream_service
+    closes it after writing; run_table closes it after fetch).
     """
     if not template_service.ALIAS_RE.match(report.macro_name):
         raise ArgError(f"Invalid macro name '{report.macro_name}'")
@@ -170,7 +179,7 @@ def _prepare(
         )
         call = f"{report.macro_name}({placeholders})"
         described = conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
-        columns = [str(row[0]) for row in described]
+        columns = [(str(row[0]), str(row[1])) for row in described]
         final_sql = f"SELECT * FROM {call}"
     except Exception:
         conn.close()
@@ -178,34 +187,97 @@ def _prepare(
     return conn, final_sql, binds, columns
 
 
-def run_table(report: Report, dm: Datamodule, arg_values: dict[str, list[str]]) -> TableResult:
-    """Run the report and return columns + rows for an HTML table.
+def run_table(
+    report: Report,
+    dm: Datamodule,
+    arg_values: dict[str, list[str]],
+    spec: query_filter.QuerySpec,
+) -> TableResult:
+    """Run the report and return one page of rows for the HTML table.
 
-    Phase 1 buffers rows (small skeleton data); pagination lands in Phase 4.
-    ArgError propagates (400); DuckDB errors (e.g. a bad macro body) are
-    captured into the result so the serve page can show them inline.
+    ArgError and FilterError propagate (rendered inline by the blueprint).
+    DuckDB errors — a bad macro body or an uncastable filter value — are
+    captured into the result, which still carries the applied filters so a
+    failing filter chip stays visible and removable.
     """
     try:
         conn, final_sql, binds, columns = _prepare(report, dm, arg_values)
     except duckdb.Error as exc:
         return TableResult(error=f"Query error: {exc}")
     try:
-        rows = conn.execute(final_sql, binds).fetchall()
+        clauses = query_filter.build_clauses(spec, columns)
+    except query_filter.FilterError:
+        conn.close()
+        raise
+    col_names = [name for name, _ in columns]
+    page = spec.page or 1
+    try:
+        # One extra count execution per HTML view; the datamodule is a local
+        # DuckDB file, so this is cheap relative to rendering.
+        count_sql, count_binds = query_filter.wrap_count(final_sql, clauses)
+        count_row = conn.execute(count_sql, binds + count_binds).fetchone()
+        total = int(count_row[0]) if count_row else 0
+        select_sql, extra = query_filter.wrap_select(
+            final_sql,
+            clauses,
+            limit=query_filter.PAGE_SIZE,
+            offset=(page - 1) * query_filter.PAGE_SIZE,
+        )
+        rows = conn.execute(select_sql, binds + extra).fetchall()
     except duckdb.Error as exc:
-        return TableResult(error=f"Query error: {exc}")
+        return TableResult(
+            error=f"Query error: {exc}",
+            columns=col_names,
+            page=page,
+            applied_filters=clauses.filters,
+            applied_sort=clauses.sort,
+        )
     finally:
         conn.close()
-    return TableResult(columns=columns, rows=rows, row_count=len(rows))
+    page_count = max(1, (total + query_filter.PAGE_SIZE - 1) // query_filter.PAGE_SIZE)
+    return TableResult(
+        columns=col_names,
+        rows=rows,
+        row_count=len(rows),
+        total_rows=total,
+        page=page,
+        page_count=page_count,
+        applied_filters=clauses.filters,
+        applied_sort=clauses.sort,
+    )
 
 
-def stream(report: Report, dm: Datamodule, arg_values: dict[str, list[str]], fmt: str) -> Any:
-    """Stream the report result in ``fmt`` (Phase 1: parquet)."""
-    conn, final_sql, binds, _ = _prepare(report, dm, arg_values)
-    download_name = f"{report.macro_name}.{fmt}"
-    if fmt == "parquet":
-        return stream_service.stream_parquet(conn, final_sql, binds, download_name)
-    conn.close()
-    raise ArgError(f"Unsupported format '{fmt}'")
+def stream(
+    report: Report,
+    dm: Datamodule,
+    arg_values: dict[str, list[str]],
+    spec: query_filter.QuerySpec,
+    fmt: str,
+) -> Response:
+    """Stream the filtered/sorted result as parquet/csv/json/xlsx.
+
+    Exports cover the full result; an explicit ``page=N`` from the caller
+    yields just that slice (UI export links never carry ``page``).
+    """
+    conn, final_sql, binds, columns = _prepare(report, dm, arg_values)
+    try:
+        clauses = query_filter.build_clauses(spec, columns)
+        limit = offset = None
+        if spec.page is not None:
+            limit = query_filter.PAGE_SIZE
+            offset = (spec.page - 1) * query_filter.PAGE_SIZE
+        select_sql, extra = query_filter.wrap_select(final_sql, clauses, limit=limit, offset=offset)
+        download_name = f"{report.macro_name}.{fmt}"
+        if fmt == "xlsx":
+            return stream_service.stream_xlsx(
+                conn, select_sql, binds + extra, download_name, [name for name, _ in columns]
+            )
+        if fmt in stream_service.COPY_FORMATS:
+            return stream_service.stream_copy(conn, select_sql, binds + extra, fmt, download_name)
+        raise ArgError(f"Unsupported format '{fmt}'")
+    except Exception:
+        conn.close()  # idempotent — the stream writers close on their own paths
+        raise
 
 
 # Constraint-query options, memoised per (arg_id, live_version_id). Editing a
