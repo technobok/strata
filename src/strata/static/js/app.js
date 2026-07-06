@@ -73,3 +73,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set as cookie for full page requests
     document.cookie = 'tz=' + tz + ';path=/;SameSite=Lax';
 })();
+
+// Copy-to-clipboard for [data-copy] buttons (API key one-time reveal).
+// navigator.clipboard needs a secure context (https/localhost); elsewhere the
+// button is a no-op and the text stays selectable.
+document.addEventListener('click', function(event) {
+    var btn = event.target.closest('[data-copy]');
+    if (!btn || !navigator.clipboard) return;
+    navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function() {
+        var original = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(function() { btn.textContent = original; }, 1500);
+    });
+});

@@ -333,6 +333,32 @@ footer small {
     font-size: 0.85rem;
 }
 
+/* One-time API token reveal (not .flash: app.js auto-dismisses those) */
+.token-reveal {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--pico-primary);
+    border-radius: var(--pico-border-radius);
+}
+
+.token-reveal .token-line {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.25rem 0;
+}
+
+.token-reveal .token-line code {
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.token-reveal .token-line button {
+    width: auto;
+    margin-bottom: 0;
+}
+
 /* Table controls: search box, filter chips, export links */
 .table-controls {
     display: flex;

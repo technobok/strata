@@ -4,6 +4,9 @@ Authoring is admin-gated in Phase 1 (the author/runner split lands in Phase 9).
 The public serve path for running a report lives in blueprints/reports.py.
 """
 
+import json
+from datetime import date
+
 from flask import (
     Blueprint,
     flash,
@@ -12,12 +15,14 @@ from flask import (
     render_template,
     request,
     send_file,
+    session,
     url_for,
 )
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
+from strata.models.api_key import ApiKey
 from strata.models.connection import Connection
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_connection import DatamoduleConnection
@@ -70,6 +75,68 @@ def _parse_retention() -> tuple[str | None, int | None, object, str | None]:
     if isinstance(age, int) and age < 0:
         return None, None, Datamodule._UNSET, "Retention age cannot be negative."
     return kind, count, age, None
+
+
+def _parse_fixed_args(text: str) -> tuple[dict[str, str | list[str]], str | None]:
+    """API-key fixed args: one ``name=value`` per line -> dict.
+
+    A repeated name accumulates a JSON list (how a multiselect arg is fixed).
+    """
+    fixed: dict[str, str | list[str]] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "=" not in line:
+            return {}, f"Fixed args: '{line}' is not name=value."
+        name, value = line.split("=", 1)
+        name = name.strip()
+        if not ALIAS_RE.match(name):
+            return {}, f"Fixed args: '{name}' is not a valid argument name."
+        value = value.strip()
+        existing = fixed.get(name)
+        if existing is None:
+            fixed[name] = value
+        elif isinstance(existing, list):
+            existing.append(value)
+        else:
+            fixed[name] = [existing, value]
+    return fixed, None
+
+
+def _parse_whitelist(raw: str) -> tuple[list[str] | None, str | None]:
+    """Comma-separated caller-suppliable arg names; blank = no restriction."""
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    for name in names:
+        if not ALIAS_RE.match(name):
+            return None, f"Caller-suppliable args: '{name}' is not a valid argument name."
+    return names, None
+
+
+def _parse_expires(raw: str) -> tuple[str | None, str | None]:
+    """Optional date -> valid through the end of that day UTC."""
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    try:
+        day = date.fromisoformat(raw)
+    except ValueError:
+        return None, "Expiry must be a date (YYYY-MM-DD)."
+    return f"{day.isoformat()}T23:59:59+00:00", None
+
+
+def _apikey_datamodule(key: ApiKey) -> Datamodule | None:
+    """Owning datamodule (direct for dm scope, via the report otherwise)."""
+    if key.datamodule_id is not None:
+        return Datamodule.get_by_id(key.datamodule_id)
+    if key.report_id is not None:
+        rpt = Report.get_by_id(key.report_id)
+        if rpt is not None:
+            return Datamodule.get_by_id(rpt.datamodule_id)
+    return None
 
 
 def _parse_args_form() -> tuple[list[dict], str | None]:
@@ -199,10 +266,45 @@ def edit(uuid: str) -> str | Response:
     dep_names = {d.depends_on_id: Datamodule.get_by_id(d.depends_on_id) for d in deps}
     conns = DatamoduleConnection.get_for_datamodule(dm.id)
     conn_names = {c.connection_id: Connection.get_by_id(c.connection_id) for c in conns}
+    reports = Report.get_for_datamodule(dm.id)
+
+    # One-time API-token reveal: create/rotate stashed the plaintext in the
+    # session; it renders exactly once, with ready-made PowerQuery URLs.
+    api_keys = ApiKey.get_for_datamodule(dm.id)
+    reveal = session.pop("new_api_token", None)
+    reveal_urls: list[tuple[str, str]] = []
+    if reveal:
+        reveal_key = ApiKey.get_by_uuid(reveal.get("key_uuid", ""))
+        if reveal_key is None:
+            reveal = None
+        else:
+            targets = (
+                [r for r in reports if r.id == reveal_key.report_id]
+                if reveal_key.scope_type == "report"
+                else reports
+            )
+            reveal_urls = [
+                (
+                    r.name,
+                    url_for(
+                        "reports.serve",
+                        report_uuid=r.uuid,
+                        ext="parquet",
+                        key=reveal["token"],
+                        _external=True,
+                    ),
+                )
+                for r in targets
+            ]
+
     return render_template(
         "datamodules/edit.html",
         datamodule=dm,
-        reports=Report.get_for_datamodule(dm.id),
+        reports=reports,
+        report_by_id={r.id: r for r in reports},
+        api_keys=api_keys,
+        reveal=reveal,
+        reveal_urls=reveal_urls,
         versions=DatamoduleVersion.list_for(dm.id),
         sources=SourceFile.get_for_datamodule(dm.id),
         dependencies=deps,
@@ -357,6 +459,107 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Build inputs: source files, dependencies, connections
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# API keys (unauthenticated data access for Excel/PowerQuery)
+# ---------------------------------------------------------------------------
+
+
+def _apikey_redirect(dm: Datamodule | None) -> Response:
+    if dm is None:
+        return redirect(url_for("datamodules.index"))
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid) + "#api-keys")
+
+
+@bp.route("/<uuid>/apikeys", methods=["POST"])
+@admin_required
+def apikey_create(uuid: str) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+
+    name = request.form.get("name", "").strip()
+    scope = request.form.get("scope", "datamodule")
+    fixed, fixed_error = _parse_fixed_args(request.form.get("fixed_args", ""))
+    whitelist, wl_error = _parse_whitelist(request.form.get("whitelist", ""))
+    expires_at, exp_error = _parse_expires(request.form.get("expires", ""))
+
+    error = fixed_error or wl_error or exp_error
+    if not name:
+        error = "API key name is required."
+    scope_type = "datamodule"
+    datamodule_id: int | None = dm.id
+    report_id: int | None = None
+    if error is None and scope != "datamodule":
+        rpt = (
+            Report.get_by_uuid(scope.removeprefix("report:"))
+            if scope.startswith("report:")
+            else None
+        )
+        if rpt is None or rpt.datamodule_id != dm.id:
+            error = "Scope report not found on this datamodule."
+        else:
+            scope_type = "report"
+            datamodule_id = None
+            report_id = rpt.id
+    if error is not None:
+        flash(error, "error")
+        return _apikey_redirect(dm)
+
+    key, token = ApiKey.create(
+        name=name,
+        scope_type=scope_type,
+        datamodule_id=datamodule_id,
+        report_id=report_id,
+        fixed_args_json=json.dumps(fixed) if fixed else None,
+        parameterised_args_json=json.dumps(whitelist) if whitelist is not None else None,
+        expires_at=expires_at,
+        created_by=g.user.username,
+    )
+    session["new_api_token"] = {"token": token, "key_uuid": key.uuid}
+    flash(
+        f"API key '{key.name}' created — copy the token below; it cannot be shown again.",
+        "success",
+    )
+    return _apikey_redirect(dm)
+
+
+@bp.route("/apikeys/<key_uuid>/rotate", methods=["POST"])
+@admin_required
+def apikey_rotate(key_uuid: str) -> Response:
+    key = ApiKey.get_by_uuid(key_uuid)
+    if key is None:
+        raise NotFound()
+    dm = _apikey_datamodule(key)
+    token = key.rotate()
+    session["new_api_token"] = {"token": token, "key_uuid": key.uuid}
+    flash(f"API key '{key.name}' rotated — the old token no longer works.", "success")
+    return _apikey_redirect(dm)
+
+
+@bp.route("/apikeys/<key_uuid>/toggle", methods=["POST"])
+@admin_required
+def apikey_toggle(key_uuid: str) -> Response:
+    key = ApiKey.get_by_uuid(key_uuid)
+    if key is None:
+        raise NotFound()
+    dm = _apikey_datamodule(key)
+    key.set_enabled(not key.enabled)
+    flash(f"API key '{key.name}' {'enabled' if key.enabled else 'disabled'}.", "success")
+    return _apikey_redirect(dm)
+
+
+@bp.route("/apikeys/<key_uuid>/delete", methods=["POST"])
+@admin_required
+def apikey_delete(key_uuid: str) -> Response:
+    key = ApiKey.get_by_uuid(key_uuid)
+    if key is None:
+        raise NotFound()
+    dm = _apikey_datamodule(key)  # resolve before delete (needs the report row)
+    key.delete()
+    flash(f"API key '{key.name}' deleted.", "success")
+    return _apikey_redirect(dm)
 
 
 @bp.route("/<uuid>/sources", methods=["POST"])

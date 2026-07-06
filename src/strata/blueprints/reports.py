@@ -4,19 +4,25 @@
 a report over its datamodule's live version, rebuilding first if the datamodule
 is TTL-stale. Query params: declared args by name, ``field__op=value`` filters,
 ``q`` substring search, ``sort=-a,b`` and ``page=N`` — all validated against
-the macro's real output columns (services/query_filter). Authoring lives in
-blueprints/datamodules.py; API-key access arrives in Phase 6.
+the macro's real output columns (services/query_filter). Auth: a session user,
+or for data formats an API key via ``?key=<token>`` (hashed lookup, scope +
+expiry checked, access-logged; html always requires a session). Authoring
+lives in blueprints/datamodules.py.
 """
 
+import logging
+import time
 from typing import Any
 from urllib.parse import urlencode
 
 import duckdb
-from flask import Blueprint, render_template, request, url_for
+from flask import Blueprint, g, redirect, render_template, request, url_for
 from flask import Response as FlaskResponse
 from werkzeug.exceptions import NotFound
+from werkzeug.wrappers import Response as WerkzeugResponse
 
-from strata.blueprints.auth import login_required
+from strata.models.api_key import ApiKey, hash_token
+from strata.models.api_key_access_log import ApiKeyAccessLog
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
@@ -24,6 +30,8 @@ from strata.models.report_arg import ReportArg
 from strata.services import datamodule_service, query_filter, report_service, stream_service
 from strata.services.query_filter import FilterError, QuerySpec
 from strata.services.report_service import ArgError, TableResult
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("reports", __name__)
 
@@ -35,8 +43,7 @@ _DROP_KEYS = ("page", "format", "key")
 
 
 @bp.route("/r/<report_uuid>.<ext>")
-@login_required
-def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
+def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     resolved = report_service.resolve(report_uuid)
     if resolved is None:
         raise NotFound()
@@ -44,6 +51,16 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
 
     if ext not in _SUPPORTED:
         return FlaskResponse(f"Unsupported format '{ext}'", status=400)
+
+    # Session users pass straight through; anonymous callers need a valid
+    # ?key= and get data formats only (html keeps the SSO redirect).
+    api_key: ApiKey | None = None
+    if g.get("user") is None:
+        if ext == "html":
+            return redirect(url_for("auth.login", next=request.url))
+        api_key, deny = _authenticate_key(report, ext)
+        if deny is not None:
+            return deny
 
     pinned, version_error = _resolve_pinned(dm)
 
@@ -54,11 +71,21 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
     if ext != "html":
         if version_error is not None:
             return FlaskResponse(version_error, status=400)
+        started = time.perf_counter()
+        resp: FlaskResponse | None = None
+        error_text = ""
         try:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
-            return report_service.stream(report, dm, arg_values, spec, ext, pinned=pinned)
+            if api_key is not None:
+                arg_values = _apply_key_args(api_key, arg_values)
+            resp = report_service.stream(report, dm, arg_values, spec, ext, pinned=pinned)
         except (ArgError, FilterError, duckdb.Error) as exc:
-            return FlaskResponse(str(exc), status=400)
+            error_text = str(exc)
+        if api_key is not None:
+            _log_key_access(api_key, report, ext, 200 if resp is not None else 400, started, resp)
+            if resp is not None:
+                api_key.record_use()
+        return resp if resp is not None else FlaskResponse(error_text, status=400)
 
     options = report_service.arg_options_map(report, dm, args)
 
@@ -91,6 +118,79 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | str:
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
         return render_template("reports/_table.html", **context)
     return render_template("reports/view.html", **context)
+
+
+def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskResponse | None]:
+    """Anonymous data request: authenticate ``?key=``.
+
+    (key, None) on success; (None, 401/403 response) otherwise. The 403 text is
+    uniform — it never reveals whether the token, expiry, or scope failed — but
+    a matched key row gets a status-403 access-log entry.
+    """
+    token = request.args.get("key", "")
+    if not token:
+        return None, FlaskResponse("authentication required", status=401)
+    key = ApiKey.get_by_token_hash(hash_token(token))
+    if key is None:
+        return None, FlaskResponse("invalid API key", status=403)
+    in_scope = (key.scope_type == "report" and key.report_id == report.id) or (
+        key.scope_type == "datamodule" and key.datamodule_id == report.datamodule_id
+    )
+    if not key.is_valid() or not in_scope:
+        _log_key_access(key, report, ext, 403, None, None)
+        return None, FlaskResponse("invalid API key", status=403)
+    return key, None
+
+
+def _apply_key_args(key: ApiKey, arg_values: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Key arg-locking: the whitelist filters caller args, then fixed args
+    overlay (fixed always wins). Absent args fall to report defaults in
+    _bind_args; filters/sort/page/q/version were already partitioned out.
+    """
+    allowed = key.parameterised_args()
+    if allowed is not None:
+        allowed_set = set(allowed)
+        arg_values = {k: v for k, v in arg_values.items() if k in allowed_set}
+    else:
+        arg_values = dict(arg_values)
+    for name, value in key.fixed_args().items():
+        values = value if isinstance(value, list) else [value]
+        arg_values[name] = [str(v) for v in values]
+    return arg_values
+
+
+def _log_key_access(
+    key: ApiKey,
+    report: Report,
+    ext: str,
+    status: int,
+    started: float | None,
+    resp: FlaskResponse | None,
+) -> None:
+    """Best-effort access-log row; a write failure never breaks serving."""
+    duration_ms = int((time.perf_counter() - started) * 1000) if started is not None else None
+    bytes_sent = None
+    row_count = None
+    if resp is not None:
+        content_length = resp.headers.get("Content-Length")
+        if content_length and content_length.isdigit():
+            bytes_sent = int(content_length)
+        rows = resp.headers.get("X-Row-Count")
+        if rows and rows.isdigit():
+            row_count = int(rows)
+    try:
+        ApiKeyAccessLog.record(
+            api_key_id=key.id,
+            report_id=report.id,
+            remote_addr=request.remote_addr,
+            fmt=ext,
+            row_count=row_count,
+            bytes_sent=bytes_sent,
+            duration_ms=duration_ms,
+            status=status,
+        )
+    except Exception:
+        log.exception("api_key access-log write failed")
 
 
 def _resolve_pinned(dm: Datamodule) -> tuple[DatamoduleVersion | None, str | None]:

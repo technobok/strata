@@ -57,12 +57,18 @@ def _stream_file(path: str) -> Iterator[bytes]:
             pass
 
 
-def _attachment(path: str, content_type: str, download_name: str) -> Response:
-    return Response(
-        _stream_file(path),
-        mimetype=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
-    )
+def _attachment(
+    path: str, content_type: str, download_name: str, row_count: int | None = None
+) -> Response:
+    # The temp file is complete before streaming starts, so the exact
+    # Content-Length is known (Flask won't derive it from a generator body).
+    headers = {
+        "Content-Disposition": f'attachment; filename="{download_name}"',
+        "Content-Length": str(os.path.getsize(path)),
+    }
+    if row_count is not None:
+        headers["X-Row-Count"] = str(row_count)
+    return Response(_stream_file(path), mimetype=content_type, headers=headers)
 
 
 def stream_copy(
@@ -81,14 +87,16 @@ def stream_copy(
     fd, tmp_path = tempfile.mkstemp(suffix=f".{fmt}")
     os.close(fd)
     try:
-        conn.execute(f"COPY ({final_sql}) TO '{tmp_path}' {options}", binds)
+        cursor = conn.execute(f"COPY ({final_sql}) TO '{tmp_path}' {options}", binds)
+        row = cursor.fetchone()  # COPY returns the rows-copied count
+        rows_copied = int(row[0]) if row else None
     except Exception:
         os.unlink(tmp_path)
         raise
     finally:
         conn.close()
 
-    return _attachment(tmp_path, content_type, download_name)
+    return _attachment(tmp_path, content_type, download_name, row_count=rows_copied)
 
 
 def _xlsx_value(value: Any) -> Any:
@@ -175,4 +183,4 @@ def stream_xlsx(
     finally:
         conn.close()
 
-    return _attachment(tmp_path, XLSX_CONTENT_TYPE, download_name)
+    return _attachment(tmp_path, XLSX_CONTENT_TYPE, download_name, row_count=nrows)
