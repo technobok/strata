@@ -1,4 +1,4 @@
-.PHONY: help sync install init-db run rundev worker check clean config-list config-set docker-up docker-down db-init rebuild
+.PHONY: help sync install init-db run rundev check clean config-list config-set docker-up docker-down db-init rebuild
 
 SHELL := /bin/bash
 VENV_DIR := $(or $(VIRTUAL_ENV),.venv)
@@ -17,7 +17,6 @@ help:
 	@echo "init-db  - Create a blank database"
 	@echo "run      - Run server with production settings (HOST:PORT)"
 	@echo "rundev   - Run server with dev settings (DEV_HOST:DEV_PORT, debug=True)"
-	@echo "worker   - Run the schedule worker"
 	@echo "config-list  - Show all config settings"
 	@echo "config-set KEY=key VAL=value  - Set a config value"
 	@echo "check    - Run ruff and ty for code quality"
@@ -45,10 +44,6 @@ run:
 rundev:
 	@echo "--- Starting server (dev settings, debug=True) ---"
 	@$(WEB) --dev
-
-worker:
-	@echo "--- Starting schedule worker ---"
-	@$(PYTHON) -m worker.schedule_worker
 
 config-list:
 	@$(ADMIN) config list

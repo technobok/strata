@@ -93,7 +93,7 @@ REGISTRY: list[ConfigEntry] = [
         "storage.strata_root",
         ConfigType.STRING,
         "",
-        "Project root used to resolve database/schema.sql at init-db time. "
+        "Project root used to resolve database/migrations/ at init-db time. "
         "Bootstrap-only — set via STRATA_ROOT.",
     ),
 ]

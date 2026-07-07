@@ -20,7 +20,7 @@
         </label>
         <label>Default format
             <select name="default_format">
-                {% for f in ('html', 'parquet') %}
+                {% for f in ('html', 'parquet', 'csv', 'json', 'xlsx') %}
                 <option value="{{ f }}" {% if report and report.default_format == f %}selected{% endif %}>{{ f }}</option>
                 {% endfor %}
             </select>

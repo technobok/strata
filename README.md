@@ -1,63 +1,117 @@
 # Strata
 
-A reporting system that uses DuckDB as its query engine, allowing users to author, run, schedule, and distribute parameterised SQL reports across multiple data sources.
+A reporting system built around **datamodules**: persistent, versioned DuckDB databases built by SQL scripts, with parameterised reports served as DuckDB macros over the live version — as interactive HTML or streamed Parquet/CSV/JSON/XLSX, including unauthenticated access for Excel/PowerQuery via hashed API keys.
 
 ## Features
 
-- **Two-layer SQL templating** — `{{ var }}` for Jinja2 structural parts (table names, connection strings), `$var` for DuckDB bind parameters (dates, codes, filter values)
-- **External-DB connections** — encrypted connection records (SQLite, PostgreSQL via `{% do conn('name') %}`; ODBC via `{{ q('name', 'SELECT …') }}`)
-- **Materialised reports** — opt a report into writing its result to a named DuckDB file; reference it from other reports via `{{ ref('name') }}`
-- **Automatic parameter extraction** — Jinja AST parsing and regex scanning detect parameters from SQL templates
-- **DuckDB result cache** — query results cached as DuckDB files, enabling fast re-sorting, filtering, and export without re-execution
-- **HTMX results table** — sort and filter cached results inline without page reload
-- **Multi-format export** — download results as XLSX (formatted Excel tables via openpyxl) or Parquet, with a `?format=` parameter on all download endpoints
-- **Custom scheduling** — user-friendly JSON schedule definitions with business-day awareness (first/last working day of month), no cron syntax
-- **Email delivery** — scheduled reports sent via Outbox with inline HTML tables and XLSX attachments
-- **PowerQuery API links** — GUID-based URLs for Excel/Power BI to pull report data directly as XLSX, Parquet, or JSON
-- **Programmatic API** — JSON endpoints for running reports and retrieving results
-- **Client library** — `StrataClient` with local (direct DB) and HTTP (remote API) backends
-- **Tag system** — 32-colour palette for organising reports
-- **FTS5 search** — full-text search across report names, descriptions, and tags
-- **Access control** — user/group ACLs with run/edit permissions (open by default)
+- **Datamodules** — a DuckDB database built by a plain SQL script; every successful build is an immutable, versioned snapshot; "live" flips atomically, so readers are never disturbed
+- **TTL freshness** — request within the TTL serves the current version; past it, the datamodule rebuilds before responding (single-flight; blank TTL = never expire, `0` = always rebuild)
+- **Build inputs** — uploaded source files via `source('name')`, other datamodules ATTACHed as dependencies by local name (TTL-pulled, cycles rejected), and external databases (SQLite/PostgreSQL/ODBC) via encrypted connections
+- **Reports as macros** — a report is a DuckDB table macro (`$arg` parameters) stored in SQLite and applied at serve time, so editing a report never requires a rebuild
+- **Typed arguments** — text/integer/number/decimal/date/time/boolean; input, select, and multiselect widgets; options driven by a constraint query against the live data; defaults and required flags
+- **Sort / filter / search grammar** — `field__op=value` filters, full-text `q=` search, `sort=-a,b`, pagination — every field validated against the query's real output columns, every value parameter-bound
+- **Multi-format serving** — `/r/<uuid>.html|parquet|csv|json|xlsx`, all streamed with constant memory and exact `Content-Length`
+- **Version pinning** — `?version=<version_uuid>` serves any retained historical snapshot (never triggers a rebuild)
+- **Retention + reconcile** — per-datamodule keep-newest-N or age-window pruning after each build, plus `strata-admin reconcile` to sweep orphaned files
+- **API keys for Excel/PowerQuery** — named, revocable, sha256-hashed bearer tokens (`?key=…`) with per-key fixed/whitelisted arguments and an access log; the full PowerQuery URL is generated for copy/paste when a key is created
+- **HTMX results table** — sortable headers, search box, removable filter chips, pager, and export links without page reloads
+- **CodeMirror SQL editors** — build scripts, report macros, and the admin SQL console (vendored, theme-aware)
+- **Tag system** — 32-colour palette for organising datamodules
 - **Dark/light mode** — PicoCSS with theme toggle
 - **Admin panel** — system stats, configuration editor, read-only SQL console with schema sidebar, and external-connection manager
 
 ## Stack
 
-- Python 3.14, Flask, APSW (SQLite for metadata), DuckDB (query engine)
-- HTMX + PicoCSS + dark/light mode
+- Python 3.14, Flask, APSW (SQLite for metadata), DuckDB (build + query engine)
+- HTMX + PicoCSS + CodeMirror (all vendored, no frontend build step)
 - [Gatekeeper](../gatekeeper/) client for SSO authentication
-- [Outbox](../outbox/) client for email delivery
+- [Outbox](../outbox/) client for email delivery (used by the future schedules phase)
 - [webreports-caddy](../webreports-caddy/) (optional) reverse proxy when serving on a subpath
-- openpyxl for XLSX export, cryptography (Fernet) for connection params at rest
+- openpyxl for XLSX export, pytz (DuckDB TIMESTAMPTZ results), cryptography (Fernet) for connection params at rest
 - uv for dependency management, ruff + ty for code quality
 
-## Architecture
+## Concepts
+
+### Datamodules, versions, and the atomic swap
+
+A **datamodule** has a human path (e.g. `finance/monthly`), a DuckDB **build script**, and a TTL. Building runs the script into a scratch file, `CHECKPOINT`s it, and atomically publishes it as an immutable snapshot; a single SQLite transaction then marks the version ready and flips the datamodule's live pointer. In-flight readers keep their own file handle, so a rebuild never disturbs them.
 
 ```
-┌────────── platform-net (docker network) ──────────┐
-│                                                   │
-│   ┌────────────┐   ┌──────────────┐               │
-│   │ strata-app │──▶│  strata-     │               │
-│   │ (gunicorn) │   │  worker      │               │
-│   └─────┬──────┘   └──────┬───────┘               │
-│         │                 │                       │
-│         │   /app/instance/strata.sqlite3          │
-│         │   /cache-data/<hash>.duckdb             │
-│         │   /cache-data/named/<name>.duckdb       │
-│         ▼                 ▼                       │
-│   ┌──────────────────────────────┐                │
-│   │ /gatekeeper-data (read user) │  ◀── gatekeeper sibling
-│   │ /outbox-data    (queue mail) │  ◀── outbox sibling
-│   └──────────────────────────────┘                │
-└───────────────────────────────────────────────────┘
-            ▲
-            │  reverse proxy (optional, e.g. webreports-caddy)
-            ▼
-        clients (browser, Power BI, scripts)
+DATA_ROOT/<uuid[:2]>/<uuid>/
+    versions/<version_uuid>.duckdb   # immutable snapshots, one per successful build
+    sources/<stored_name>            # uploaded build inputs (Excel/CSV/Parquet/…)
+    tmp/<version_uuid>.duckdb        # in-progress build (same filesystem → atomic rename)
 ```
 
-Strata runs two long-lived containers: **`strata-app`** (gunicorn, serves the web UI + APIs) and **`strata-worker`** (background loop that runs scheduled reports). Both share an SQLite metadata DB (`strata.sqlite3`) and a result cache directory of DuckDB files. Authentication and email delivery are delegated to sibling services — `gatekeeper` (for SSO) and `outbox` (for SMTP queueing) — whose own SQLite files are mounted in read-write so strata's clients can talk to them locally.
+"Live" is only a pointer in the SQLite metadata DB (`datamodule.live_version_id`) — renaming or moving a datamodule is pure metadata, and old versions stay browsable until retention prunes them.
+
+**Freshness**: each serve checks the TTL (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. Stale requests rebuild inline under a single-flight lock, then serve the new version.
+
+### Build inputs
+
+- **Source files** — upload on the datamodule page, reference in the script as `source('sales.xlsx')`; it expands to the on-disk path as a SQL string literal (e.g. inside `read_xlsx(...)`).
+- **Dependencies** — other datamodules ATTACHed read-only by a local name before the script runs. Each dependency is TTL-refreshed first, so pipelines are just dependencies with different TTLs. Cycles are rejected at add time.
+- **Connections** — encrypted connection records ATTACHed into the build: SQLite and PostgreSQL become schemas named after the local name (`warehouse.dbo.orders`); ODBC connections become a session handle used as `odbc_query(getvariable('conn_<name>'), 'SELECT …')`.
+
+### Reports
+
+A **report** is a DuckDB table macro over its datamodule, stored in SQLite and applied as a `TEMP` macro at serve time — editing the body is instant, no rebuild. Bodies reference declared arguments with `$name`:
+
+```sql
+SELECT * FROM sales
+WHERE region = $region
+  AND order_date >= $from_date
+```
+
+Arguments have a type (`text`/`integer`/`number`/`decimal`/`date`/`time`/`boolean`), a widget (`input`/`select`/`multiselect`), an optional default, a required flag, and optionally a **constraint query** run against the live data to populate select options. A multiselect binds a DuckDB LIST — filter with `list_contains($picks, col)`. (Internally macro parameters are prefixed `arg_`, so an argument named after a column can never self-compare.)
+
+## Serving reference
+
+```
+GET /r/<report_uuid>.<ext>?<args>&<grammar>     ext ∈ html | parquet | csv | json | xlsx
+Auth: session (SSO) — or, for the data formats only, ?key=<api key token>
+```
+
+Query parameters:
+
+| Form | Meaning |
+|---|---|
+| `name=value` | A declared argument (by name). If the name isn't an argument but matches an output column, it's an equality filter. |
+| `col__op=value` | Filter on an output column. Ops: `eq ne gt gte lt lte in between contains isnull`. `in`/`between` take comma-separated values; `contains` is case-insensitive; `isnull` takes true/false. |
+| `q=text` | Substring search across **all** columns (case-insensitive). Repeat `q=` to AND multiple fragments. |
+| `sort=-a,b` | Sort by `a` descending then `b` ascending, NULLs last. |
+| `page=N` | 1-based page of 200 rows. HTML is always paginated; exports return the full filtered result unless `page` is given explicitly. |
+| `version=<version_uuid>` | Pin a retained historical version (never rebuilds; the page shows a banner with a back-to-live link). |
+| `key=<token>` | API-key authentication (data formats only — see below). |
+
+Every filter/sort field is validated against the query's real output columns (`DESCRIBE`) and values are always bound as parameters — nothing user-supplied is interpolated into SQL. Unknown query keys are an error (400 on data formats, an inline message on HTML). A single `_` in a hand-typed field name matches a column with a space (`net_sales` → `net sales`) when no exact column matches. `sort`, `page`, `q`, `format`, `key`, and `version` are reserved and rejected as argument names.
+
+The HTML view adds sortable column headers, a search-all-columns box, removable chips for URL-carried filters, a pager, and per-format export links that preserve the current arguments/filters/sort.
+
+## API keys (Excel / PowerQuery)
+
+PowerQuery can't drive SSO, so **API keys** grant unauthenticated access to the *data* formats (never HTML):
+
+- Created on the datamodule page: a name, a scope (the whole datamodule or a single report), optional **fixed arguments** (always win over caller values — one `name=value` per line, repeat a name for multiselect), an optional **whitelist** of caller-suppliable argument names (blank = all), and an optional expiry date.
+- Only the sha256 of the token is stored. The plaintext token — and ready-made absolute PowerQuery URLs per report — are shown **exactly once**, at create or rotate time, with copy buttons. Paste the URL straight into Excel (Get Data → From Web); Parquet is the default format, and `.csv`/`.json`/`.xlsx` work by swapping the extension.
+- Filters, sort, search, and version pins all compose with a key; keys can be rotated (breaks existing workbooks), disabled, and deleted.
+- Every keyed request is access-logged (format, row count, bytes, duration, status, remote address), and the key's use count / last-used timestamp update on success. Invalid, disabled, expired, or out-of-scope tokens all get a uniform 403; keyless anonymous data requests get 401.
+
+## Versions and retention
+
+The datamodule page lists every retained version (status, duration, size, storage-format floor, trigger) with a **live** badge and per-report links that open the report pinned to that version. Retention is per-datamodule:
+
+- **count** — keep the newest N versions (the live one is always kept), or
+- **age** — keep versions younger than a window (blank = keep everything).
+
+Pruning runs automatically after each successful build and deletes both the version row and its file. For everything retention can't reach, run:
+
+```bash
+strata-admin reconcile --dry-run    # report what would be removed
+strata-admin reconcile              # prune + sweep
+```
+
+Reconcile enforces retention across all datamodules and sweeps orphaned datamodule directories (left behind by deletes), stale `tmp/` files from crashed builds, and version files with no database row. A live version whose file is missing is only ever warned about.
 
 ## Local development
 
@@ -70,16 +124,12 @@ make init-db
 
 # Run the dev server (127.0.0.1:5000, debug mode)
 make rundev
-
-# In another terminal, run the schedule worker
-make worker
 ```
 
-Strata can run standalone in dev — gatekeeper is optional. Without gatekeeper configured, authentication is disabled and there's no admin path; that's fine for local hacking on report features. To wire up local SSO + email:
+Strata can run standalone in dev — gatekeeper is optional. Without gatekeeper configured, authentication is disabled and there's no admin path. To wire up local SSO:
 
 ```bash
 export GATEKEEPER_DB=/abs/path/to/gatekeeper/instance/gatekeeper.sqlite3
-export OUTBOX_DB=/abs/path/to/outbox/instance/outbox.sqlite3
 make rundev
 ```
 
@@ -87,7 +137,7 @@ The dev server picks up env vars on launch; restart after changing them.
 
 ## Production deployment with Docker
 
-This is the full path from "fresh git clone on a server" to "logged-in admin viewing reports". Each numbered step depends on the ones above it.
+This is the full path from "fresh git clone on a server" to "logged-in admin building datamodules". Each numbered step depends on the ones above it.
 
 ### 1. Prerequisites
 
@@ -101,7 +151,7 @@ This is the full path from "fresh git clone on a server" to "logged-in admin vie
 
 ### 2. Bring up the sibling services first
 
-Strata can start without them but won't be useful (no auth, no email). Follow each project's README:
+Strata can start without them but won't be useful (no auth). Follow each project's README:
 
 ```bash
 cd ../gatekeeper && make rebuild && docker compose up -d
@@ -111,15 +161,15 @@ cd ../strata
 
 ### 3. Pin host paths with a `docker-compose.override.yml`
 
-The base `docker-compose.yml` defaults to local paths under `./instance/`. For a real deployment you typically want the SQLite metadata DB and the (potentially large) result cache on persistent storage. `docker-compose.override.yml` is gitignored and is the right place for site-specific values:
+The base `docker-compose.yml` defaults to local paths under `./instance/`. For a real deployment you typically want the SQLite metadata DB and the (potentially large) datamodule storage on persistent disks. `docker-compose.override.yml` is gitignored and is the right place for site-specific values:
 
 ```yaml
-# docker-compose.override.yml — production paths on xauuxweb01 as an example
+# docker-compose.override.yml — production paths as an example
 services:
   app:
     volumes:
       - /mnt/data/webreports_data/strata:/app/instance
-      - /mnt/data/strata_data:/cache-data
+      - /mnt/data/strata_data:/data-root
       - /mnt/data/webreports_data/gatekeeper:/gatekeeper-data
       - /mnt/data/webreports_data/outbox:/outbox-data
     ports:
@@ -127,13 +177,6 @@ services:
     environment:
       - PORT=5005
       - HOST=0.0.0.0
-
-  worker:
-    volumes:
-      - /mnt/data/webreports_data/strata:/app/instance
-      - /mnt/data/strata_data:/cache-data
-      - /mnt/data/webreports_data/gatekeeper:/gatekeeper-data
-      - /mnt/data/webreports_data/outbox:/outbox-data
 ```
 
 ### 4. Build images and apply schema migrations
@@ -144,13 +187,13 @@ make db-init        # creates instance/strata.sqlite3 if absent, applies migrati
 docker compose up -d
 ```
 
-`make db-init` runs `strata-admin init-db` inside a throwaway container based on the *just-built* `app` image, so the binary applying migrations is always in sync with what the long-lived containers will run. There is no separate "init image" to keep current.
+`make db-init` runs `strata-admin init-db` inside a throwaway container based on the *just-built* `app` image, so the binary applying migrations is always in sync with what the long-lived container will run.
 
-If you start `app`/`worker` against a DB whose `schema_version` is older than the code expects (e.g. you forgot `make db-init` after a `git pull`), the app aborts at boot with a clear message pointing back at `make db-init`. You won't accidentally serve traffic on a broken schema.
+If you start `app` against a DB whose `schema_version` is older than the code expects (e.g. you forgot `make db-init` after a `git pull`), the app aborts at boot with a clear message pointing back at `make db-init`. You won't accidentally serve traffic on a broken schema.
 
 ### 5. Bootstrap your first admin
 
-Strata's admin gate reads the gatekeeper user's group memberships. The default admin group is `strata-admins` (overridable via the `STRATA_ADMIN_GROUP` env var). Until at least one user is in that group, nobody can reach `/admin/*`.
+Strata's admin gate reads the gatekeeper user's group memberships. The default admin group is `strata-admins` (overridable via the `STRATA_ADMIN_GROUP` env var). Until at least one user is in that group, nobody can reach `/admin/*` or author datamodules.
 
 In gatekeeper's web UI:
 
@@ -161,8 +204,8 @@ In gatekeeper's web UI:
 Then log in to strata. The **Admin** link will be in the top nav. From `/admin` you can reach:
 
 - **SQL Console** — read-only SELECT/PRAGMA/EXPLAIN against the metadata DB, with a schema sidebar.
-- **Configuration** — DB-stored settings registry (`server.port`, `cache.directory`, etc.).
-- **Connections** — register external databases so reports can `ATTACH` them. See *Connecting via ODBC* below for the MSSQL setup.
+- **Configuration** — DB-stored settings registry (`server.port`, `data.root`, etc.).
+- **Connections** — register external databases for datamodule builds to ATTACH. See *Connecting via ODBC* below for the MSSQL setup.
 
 ### 6. After every `git pull`
 
@@ -178,7 +221,7 @@ docker compose up -d
 
 Strata's compose file ships with `PROXY_X_FORWARDED_PREFIX=1` (and the other three `PROXY_X_FORWARDED_*` flags) so `url_for()` produces correct URLs when fronted at a subpath. If you front strata with Caddy at `/strata`, make sure the proxy strips the prefix and sends `X-Forwarded-Prefix: /strata`. The reference setup is [`webreports-caddy`](../webreports-caddy/), whose Caddyfile contains a working `handle_path /strata/* { reverse_proxy strata-app:5005 { header_up X-Forwarded-Prefix /strata } }` block.
 
-Standalone deployments (no proxy) can leave the env vars at `1` — ProxyFix on a non-proxied request is a no-op because the headers simply aren't present.
+Standalone deployments (no proxy) can leave the env vars at `1` — ProxyFix on a non-proxied request is a no-op because the headers simply aren't present. The proxy flags also make the copy/paste PowerQuery URLs come out with the correct external scheme/host/prefix.
 
 ### 8. Connecting via ODBC
 
@@ -198,9 +241,15 @@ For SQL-native logins (no domain prefix), drop the NTLM fields:
 Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
-The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Reports use the connection inline via the `q()` helper — see *SQL templates and references* below.
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Bind the connection to a datamodule with a local name, then query it in the build script:
 
-For PostgreSQL there's no need to use ODBC — the dedicated `postgres` driver uses DuckDB's native postgres extension and is faster.
+```sql
+CREATE TABLE orders AS
+SELECT * FROM odbc_query(getvariable('conn_navi'),
+                         'SELECT OrderID, CustID, Total FROM dbo.Orders');
+```
+
+The inner SELECT executes on the remote SQL Server and only the result comes back to DuckDB; the rest of the build (joins with dependencies, transformations) runs in DuckDB. For PostgreSQL there's no need for ODBC — the dedicated `postgres` driver ATTACHes via DuckDB's native postgres extension and is faster.
 
 If you need Always Encrypted, MARS, or AD-password auth with UPN UIDs (`user@domain.com`), add Microsoft's `msodbcsql18` back to the runtime stage of the `Dockerfile` (see the comment block in there). Bring your own apt-repo workaround — Microsoft's signing key was still SHA1-self-signed at the time we last looked, which Debian 12's apt now rejects.
 
@@ -212,7 +261,7 @@ Every setting strata reads is in the registry at `src/strata/config.py`. The run
 
 ```bash
 make config-list
-make config-set KEY=cache.retention_days VAL=60
+make config-set KEY=auth.admin_group VAL=strata-admins
 ```
 
 ### Environment variables and registry mapping
@@ -222,148 +271,29 @@ make config-set KEY=cache.retention_days VAL=60
 | `HOST` | `server.host` | `0.0.0.0` | Bind address for gunicorn / Flask. | Compose `app` |
 | `PORT` | `server.port` | `5000` | Listen port; also drives the host port mapping. | Compose `app` |
 | `STRATA_DB` | `storage.strata_db` | `/app/instance/strata.sqlite3` | Path to the SQLite metadata DB. **Bootstrap-only** — read before the DB is open, so it must come from the env. | Compose (commented) |
-| `STRATA_ROOT` | `storage.strata_root` | (auto) | Project root used at init-db time to resolve `database/schema.sql`. **Bootstrap-only.** | Compose (commented) |
-| `STRATA_CACHE_DIR` | (host-only) | `./instance/cache` | Host directory mounted at `/cache-data`. Pin to a dedicated disk for large caches. | Compose (host substitution) |
-| `CACHE_DIRECTORY` | `cache.directory` | `/cache-data` | Where DuckDB cache and named-materialised files land inside the container. | Compose `app` + `worker` |
+| `STRATA_ROOT` | `storage.strata_root` | (auto) | Project root used at init-db time to resolve `database/migrations/`. **Bootstrap-only.** | Compose (commented) |
+| `STRATA_DATA_DIR` | (host-only) | `./instance/data` | Host directory mounted at `/data-root`. Pin to a dedicated disk — built versions can grow large. | Compose (host substitution) |
+| `DATA_ROOT` | `data.root` | `/data-root` | Root for datamodule storage (versions + sources) inside the container. | Compose `app` |
 | `GATEKEEPER_INSTANCE` | (host-only) | `../gatekeeper/instance` | Host path mounted at `/gatekeeper-data`. | Compose (host substitution) |
-| `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` + `worker` |
-| `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins. | Compose `app` + `worker` |
+| `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` |
+| `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins. | Compose `app` |
 | `OUTBOX_INSTANCE` | (host-only) | `../outbox/instance` | Host path mounted at `/outbox-data`. | Compose (host substitution) |
-| `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite. Required for scheduled email delivery. | Compose `app` + `worker` |
-| `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on outgoing schedule emails. | Compose (commented) |
-| `PROXY_X_FORWARDED_FOR` | `proxy.x_forwarded_for` | `1` | Trust hop count for `X-Forwarded-For`. | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_PROTO` | `proxy.x_forwarded_proto` | `1` | Trust hop count for `X-Forwarded-Proto`. | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_HOST` | `proxy.x_forwarded_host` | `1` | Trust hop count for `X-Forwarded-Host`. | Compose `app` + `worker` |
-| `PROXY_X_FORWARDED_PREFIX` | `proxy.x_forwarded_prefix` | `1` | **Required behind a subpath proxy** for correct `url_for()` URLs. | Compose `app` + `worker` |
-| `TZ` | (container TZ) | `UTC` | Container timezone. UI still renders timestamps in the user's local TZ. | Compose `app` + `worker` |
+| `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite (email delivery — used by the future schedules phase). | Compose `app` |
+| `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on outgoing emails (future schedules phase). | Compose (commented) |
+| `PROXY_X_FORWARDED_FOR` | `proxy.x_forwarded_for` | `1` | Trust hop count for `X-Forwarded-For`. | Compose `app` |
+| `PROXY_X_FORWARDED_PROTO` | `proxy.x_forwarded_proto` | `1` | Trust hop count for `X-Forwarded-Proto`. | Compose `app` |
+| `PROXY_X_FORWARDED_HOST` | `proxy.x_forwarded_host` | `1` | Trust hop count for `X-Forwarded-Host`. | Compose `app` |
+| `PROXY_X_FORWARDED_PREFIX` | `proxy.x_forwarded_prefix` | `1` | **Required behind a subpath proxy** for correct `url_for()` URLs. | Compose `app` |
+| `TZ` | (container TZ) | `UTC` | Container timezone. UI still renders timestamps in the user's local TZ. | Compose `app` |
 
-The host-only entries (`STRATA_CACHE_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application.
+The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application. `worker.poll_interval` remains in the registry for the future schedules phase.
 
-## SQL templates and references
+## Admin CLI
 
-Reports use a Jinja2 template plus DuckDB bind parameters:
-
-```sql
--- {{ var }}                       Jinja structural (rendered before execution)
--- $var                            DuckDB bind parameter (typed, executed safely)
--- {% do conn('name') %}           attach a SQLite/PostgreSQL connection by name
--- {{ q('name', 'inner SELECT') }} run a SELECT against an ODBC connection
--- {{ ref('name') }}               reference another materialised report
-
-SELECT *
-FROM {{ schema }}.{{ table_name }}
-WHERE company_code = $company_code
-  AND date >= $date_from
-```
-
-Structural parameters are validated (alphanumeric, underscores, dots, `$`). Value parameters are type-cast to their declared DuckDB type before execution. When saving a report, parameters are automatically extracted from the SQL template and synced with the parameter definitions.
-
-### External connections — SQLite & PostgreSQL via `conn('name')`
-
-Define a connection at `/admin/connections`, then declare it inline at the top of the report SQL. The connection's name becomes the SQL alias:
-
-```sql
-{% do conn('warehouse') %}
-{% do conn('crm') %}
-
-SELECT a.id, b.label, a.amount
-FROM   warehouse.dbo.orders a
-JOIN   crm.public.customers b ON a.cust_id = b.id
-WHERE  a.created_at >= $since
-```
-
-Each `conn(...)` call ATTACHes the source under its connection name before the query runs. Connection names are validated as SQL-safe identifiers (start with a letter/underscore, then letters/digits/underscores) so they can be used unquoted as aliases. Multiple connections per report are first-class.
-
-If you want a shorter alias in the SQL than the connection's name (e.g. for a long name), capture it with `{% set %}`:
-
-```sql
-{% set wh = conn('nav-prod-warehouse-aus') %}{# ❌ would be rejected: hyphens not allowed #}
-{% set wh = conn('nav_prod_warehouse_aus') %}
-SELECT * FROM {{ wh }}.dbo.orders
-```
-
-### External connections — ODBC via `q('name', 'SELECT …')`
-
-DuckDB's `odbc_scanner` extension is a query-function extension, not a storage one — there's no ATTACH form for it. Instead strata declares the connection by storing an `odbc_connect()` handle in a session variable (`conn_<name>`), and reports query through it via the `q()` Jinja helper:
-
-```sql
-SELECT *
-FROM   {{ q('navi_brs', 'SELECT TOP 10 OrderID, CustID, Total FROM dbo.Orders WHERE Total > 1000') }} AS o
-WHERE  o.Total > $threshold
-```
-
-`q('navi_brs', '…')` renders to `odbc_query(getvariable('conn_navi_brs'), '…')`. Calling `q()` automatically registers the connection (no separate `{% do conn('navi_brs') %}` is required, though it doesn't hurt). You can mix sqlite/postgres `conn()` and ODBC `q()` calls in the same report — strata sets up each one before the SELECT runs.
-
-The inner SELECT executes on the remote SQL Server and only the result columns/rows come back to DuckDB; the rest of the outer query (joins with materialised reports, additional filters, transformations) runs in DuckDB.
-
-### Materialised reports — `ref('name')`
-
-If a report sets **Materialise as** to e.g. `orders_daily`, its result is written to a `result` table inside `cache_dir/named/orders_daily.duckdb` on every run. Other reports can reference it inline:
-
-```sql
-SELECT customer, count(*) FROM {{ ref('orders_daily') }} GROUP BY 1
-```
-
-`{{ ref('orders_daily') }}` expands to `mat_orders_daily.result` and triggers a read-only `ATTACH` of the matching cache file before execution. Combine with a schedule on the source report to refresh on a cadence.
-
-## Schedule system
-
-Schedules are defined as structured JSON, not cron expressions. The UI presents dropdowns, time pickers, and checkboxes.
-
-Supported schedule types:
-- **Interval** — every N minutes/hours/days
-- **Daily** — at a specific time (or multiple times)
-- **Weekly** — on selected weekdays at a specific time
-- **Monthly (day)** — on a specific day of month (1–31, or last)
-- **Monthly (pattern)** — first/last working day, first/last day of month
-- **One-time** — a specific datetime (auto-disables after execution)
-
-Working days are Monday–Friday. The schedule preview shows the next 5 calculated run times. Missed runs are skipped (no catch-up); the worker calculates the next future occurrence to avoid flooding recipients with duplicate emails.
-
-## API
-
-### PowerQuery / external access
-
-API links provide GUID-based URLs that require no login:
-
-```
-GET /api/v1/link/<uuid>?format=xlsx      # Returns XLSX
-GET /api/v1/link/<uuid>?format=parquet   # Returns Parquet
-GET /api/v1/link/<uuid>/json             # Returns JSON
-```
-
-Links support fixed parameters (baked in) and parameterised params (supplied via query string). Links can be rotated (new UUID) or expired.
-
-### Programmatic access
-
-Authenticated JSON API for integration:
-
-```
-POST /api/v1/reports/<uuid>/run                    # Run a report, returns JSON results
-GET  /api/v1/runs/<run_uuid>                       # Get a run's results
-GET  /api/v1/runs/<run_uuid>/download?format=xlsx  # Download (xlsx or parquet)
-```
-
-## Client library
-
-```python
-from strata.client import StrataClient
-
-# Local mode (direct database access)
-client = StrataClient(db_path="/path/to/strata.sqlite3")
-
-# HTTP mode (remote server)
-client = StrataClient(server_url="https://strata.example.com", api_key="sk_...")
-
-# Run a report
-result = client.run_report("report-uuid", {"date_from": "2026-01-01"})
-print(result.columns, result.row_count)
-
-# Get a previous run
-result = client.get_run("run-uuid")
-
-# List available reports
-reports = client.list_reports()
+```bash
+strata-admin init-db                  # create / migrate the metadata DB
+strata-admin config list|get|set|export
+strata-admin reconcile [--dry-run]    # retention + orphaned-file sweep
 ```
 
 ## Project structure
@@ -371,33 +301,28 @@ reports = client.list_reports()
 ```
 strata/
 ├── src/strata/
-│   ├── __init__.py              # App factory
+│   ├── __init__.py              # App factory (config resolution, Jinja filters, ProxyFix)
 │   ├── web.py                   # Web entry point
 │   ├── cli.py                   # Admin CLI (Click)
 │   ├── config.py                # Typed config registry
-│   ├── db.py                    # APSW SQLite connection management
+│   ├── db.py                    # APSW SQLite connections + forward-only migration runner
 │   ├── blueprints/
 │   │   ├── auth.py              # Gatekeeper SSO
-│   │   ├── reports.py           # Report CRUD + run + results
-│   │   ├── schedules.py         # Schedule management
+│   │   ├── datamodules.py       # Datamodule + report authoring, builds, API keys
+│   │   ├── reports.py           # Public serve path /r/<uuid>.<ext>
 │   │   ├── connections.py       # External-DB connection manager (admin)
 │   │   ├── admin.py             # Admin panel, config, SQL console
-│   │   ├── api.py               # API: PowerQuery links + programmatic access
 │   │   └── tags.py              # Tag management
 │   ├── models/                  # Dataclass models with static CRUD methods
-│   ├── services/                # Business logic (template, query, cache, connection, etc.)
-│   ├── client/                  # Client library (local + HTTP backends)
-│   ├── static/                  # CSS, JS, vendor assets
+│   ├── services/                # datamodule build/prune, report serve, query grammar, streaming
+│   ├── static/                  # CSS, JS, vendored htmx/pico/codemirror
 │   └── templates/               # Jinja2 HTML templates
-├── worker/
-│   └── schedule_worker.py       # Background schedule worker (separate container)
 ├── database/
-│   └── schema.sql               # SQLite schema (idempotent CREATE IF NOT EXISTS)
+│   └── migrations/              # Forward-only NNNN_*.sql, applied by strata-admin init-db
 ├── pyproject.toml
 ├── Makefile
 ├── Dockerfile
 ├── docker-compose.yml
-├── .dockerignore
 └── wsgi.py
 ```
 
@@ -409,7 +334,6 @@ strata/
 | `make init-db` | Create / migrate the local dev DB |
 | `make rundev` | Run dev server (debug mode) |
 | `make run` | Run production server (gunicorn) |
-| `make worker` | Run the schedule worker (foreground) |
 | `make check` | Run ruff format + ruff check + ty check |
 | `make config-list` | Show all DB-stored configuration |
 | `make config-set` | Set a DB-stored config value |

@@ -102,8 +102,8 @@ def _odbc_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> N
     DuckDB's core odbc_scanner extension is a query-function extension, not a
     storage extension — there's no `ATTACH ... TYPE odbc_scanner`. Instead,
     you connect once and pass the handle to odbc_query() per SELECT. We stash
-    the handle in a session variable so the report SQL can reach it via
-    `getvariable('conn_<alias>')`, wrapped by the q() Jinja helper.
+    the handle in a session variable so build scripts can reach it via
+    `odbc_query(getvariable('conn_<alias>'), '...')`.
     """
     cs = str(params["connection_string"]).replace("'", "''")
     conn.execute(f"SET VARIABLE conn_{alias} = odbc_connect('{cs}')")

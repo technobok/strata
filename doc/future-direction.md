@@ -1,5 +1,22 @@
 # Potential future design direction for strata
 
+> **Status (2026-07):** this is the design document that drove the pivot; the
+> core of it — Phases 1–6, through commit `b5225d0` — is **implemented**. Kept
+> as-is for the rationale. Deliberate deviations from the text below:
+>
+> - There is **no live `data.db` file**: "live" is a SQLite pointer
+>   (`datamodule.live_version_id`) to an immutable `versions/<uuid>.duckdb`,
+>   and storage is sharded as `DATA_ROOT/<uuid[:2]>/<uuid>/{versions,sources,tmp}/`.
+> - API keys are **sha256-hashed bearer tokens** (datamodule- or report-scoped,
+>   with fixed/whitelisted args and a one-time reveal), not stored GUIDs.
+> - Per-report ACLs were dropped in favour of the per-instance isolation model
+>   (Phase 9).
+> - The serve grammar was extended beyond the sketch: `q=` search,
+>   `between`/`isnull` ops, `version=` pinning, `key=` auth.
+>
+> Not yet built (see `ROADMAP.md`): formatting reports/views, dashboards,
+> schedules + worker, FTS search/tag UI, client library.
+
 ## Architecture
 
 - SQLite db is used to store metadata

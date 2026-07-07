@@ -2,7 +2,7 @@
 # Usage:
 #   make rebuild           # after `git pull`: build images + apply DB migrations
 #   make db-init           # apply DB migrations only (no rebuild)
-#   docker compose up -d   # run app + worker
+#   docker compose up -d   # run the app
 
 services:
   app:
@@ -66,49 +66,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-
-  worker:
-    build: .
-    container_name: strata-worker
-    command: ["python", "-m", "worker.schedule_worker"]
-    volumes:
-      - ./instance:/app/instance
-      - ${STRATA_DATA_DIR:-./instance/data}:/data-root
-      - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
-      - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
-    environment:
-      # --- Runtime ---
-      - PYTHONUNBUFFERED=1
-      - TZ=${TZ:-UTC}
-
-      # --- Strata DB (SQLite metadata store) ---
-      # Defaults to /app/instance/strata.sqlite3 inside the container
-      # - STRATA_DB=/app/instance/strata.sqlite3
-      # - STRATA_ROOT=/app
-
-      # --- Datamodule storage (built DuckDB versions + sources; can grow large) ---
-      - DATA_ROOT=/data-root
-
-      # --- Gatekeeper (SSO auth) ---
-      - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
-      # Or HTTP mode instead of local DB:
-      # - GATEKEEPER_URL=https://gatekeeper.example.com
-      # - GATEKEEPER_API_KEY=...
-      # Mirrored from app for parity (worker doesn't currently inspect it).
-      - STRATA_ADMIN_GROUP=${STRATA_ADMIN_GROUP:-strata-admins}
-
-      # --- Outbox (outgoing email queue) ---
-      - OUTBOX_DB=/outbox-data/outbox.sqlite3
-      # - MAIL_SENDER=strata@example.com
-
-      # --- Reverse proxy (matches app service; harmless for the worker) ---
-      - PROXY_X_FORWARDED_FOR=1
-      - PROXY_X_FORWARDED_PROTO=1
-      - PROXY_X_FORWARDED_HOST=1
-      - PROXY_X_FORWARDED_PREFIX=1
-    networks:
-      - platform-net
-    restart: unless-stopped
 
 networks:
   platform-net:
