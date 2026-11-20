@@ -43,7 +43,7 @@ These replace the old Phases 7–10.
 
 | # | Phase | Goal |
 |---|---|---|
-| A | **Harden** | pytest suite; DuckDB sandbox (external access off, allowed directories, locked configuration); report bodies must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; bug fixes; pin duckdb. |
+| A | **Harden** — done 2026-11-20 (`d510d43`..`18e0a8b`) | pytest suite (`make check` = lint + test); DuckDB sandbox (`services/duck.py`); report bodies and constraint queries must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; manual builds take the build lock; reconcile reaps dead builds; bug fixes; duckdb pinned `>=1.5.2,<2`. |
 | B | **Build execution** | `strata-worker` with a SQLite job queue and leases (`build_token`/`build_lease_until`) and reaping of stuck builds; serve never builds (stale-while-revalidate); failure backoff; scheduler (`schedule` table + `services/schedule_service.py` date maths); push refresh of dependents; per-build resource caps; queues. |
 | C | **Checks + exception reports** | Check object (gate / notify); per-company templating (parity with webreports' `{codb}`/`{cocode}`); new/open/resolved diffing; mail-on-change via Outbox; run history; exceptions overview page; heartbeat alert when a check stops running; importer for `testtest` SQL rows. |
 | D | **Pilot migration** | Port 5–10 representative webreports checks (one per-company), run them alongside webreports and compare; then plan the batches. |
@@ -57,6 +57,8 @@ These replace the old Phases 7–10.
 - **Authorization-header token auth** — alternative to `?key=` so tokens stay out of proxy/server request logs.
 - **Version keep/pin flag** — mark a specific version exempt from retention (e.g. year-end snapshots).
 - **Editor assists** — DuckDB `sql_auto_complete()` completion, `$arg` name completion, EXPLAIN preview for build scripts/macros.
+- **Reproducible image** — the Dockerfile installs from `pyproject.toml` (not `uv.lock`) and pulls gatekeeper/outbox from git HEAD, so a rebuild picks up the newest versions within each constraint (`duckdb` is bounded `>=1.5.2,<2`). Use the lock instead: `uv export --frozen --no-dev` minus the two sibling path packages, installed from pinned git refs. Needs a test `docker compose build`.
+- **Non-root container** — add a `USER` to the Dockerfile. Existing deployments' bind-mounted `instance/` and data root are root-owned, so this needs a one-time `chown` step in the deploy notes.
 - **Row/time caps on serving** — guardrails for pathological queries.
 - **Operations** — metrics endpoint, structured JSON logging, backup CLI (SQLite + data root).
 - **Holiday table** — schedule business-day awareness beyond Mon–Fri (feeds Phase B).
