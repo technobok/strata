@@ -6,7 +6,8 @@ requires-python = ">=3.14"
 dependencies = [
     "flask>=3.0",
     "apsw>=3.45",
-    "duckdb>=1.0",
+    # odbc_scanner ships in the core extension repo from 1.5.2; 2.0 is unevaluated.
+    "duckdb>=1.5.2,<2",
     "gatekeeper",
     "outbox",
     "openpyxl>=3.1",
