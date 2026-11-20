@@ -65,6 +65,17 @@ WHERE region = $region
 
 Arguments have a type (`text`/`integer`/`number`/`decimal`/`date`/`time`/`boolean`), a widget (`input`/`select`/`multiselect`), an optional default, a required flag, and optionally a **constraint query** run against the live data to populate select options. A multiselect binds a DuckDB LIST — filter with `list_contains($picks, col)`. (Internally macro parameters are prefixed `arg_`, so an argument named after a column can never self-compare.)
 
+A report body and a constraint query must each be **exactly one SELECT statement** (`WITH …`, `FROM …`, `VALUES`, and `UNION` all count; wrap a bare `PIVOT` as `SELECT * FROM (PIVOT …)`). Anything else is refused when the report is saved and again at serve time.
+
+### The DuckDB sandbox
+
+Every DuckDB connection that runs author SQL is locked down once its trusted setup is done (`services/duck.py`), using DuckDB's own `enable_external_access = false` + `allowed_directories` + `lock_configuration`:
+
+- **Serving** (report bodies, constraint queries) — the live version file is ATTACHed read-only first; the SQL can then reach only that data. File reads, `COPY`, `ATTACH`, `INSTALL`/`LOAD`, and changing any setting are refused. Exports are written under `DATA_ROOT/_exports/` and spills under `DATA_ROOT/_tmp/`.
+- **Builds** — dependencies and connections are attached first; the script can then read only its own datamodule's `sources/` (and write its `tmp/`). The `excel` extension is preloaded so `read_xlsx(source('…'))` keeps working; other extensions must be loaded by a bound connection's driver.
+- **Escape hatch** — set `build.sandbox = false` in `/admin/config` if a build that worked before fails with a `Permission Error` (e.g. a connection driver that turns out to need external access, or a script that reads from an `https://` URL). Serving is always sandboxed.
+- **Known gap** — once the `sqlite_scanner` extension is loaded (only for a build that binds a SQLite connection), DuckDB's SQLite reader does not apply the directory restriction, so that build can open other SQLite files.
+
 ## Serving reference
 
 ```

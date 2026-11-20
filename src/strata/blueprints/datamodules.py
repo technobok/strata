@@ -31,7 +31,7 @@ from strata.models.dependency import Dependency
 from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.source_file import SourceFile
-from strata.services import datamodule_service
+from strata.services import datamodule_service, duck
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
@@ -428,6 +428,15 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
     args, arg_error = _parse_args_form()
     if arg_error:
         return arg_error
+    try:
+        duck.validate_select(body_sql, "The report body")
+        for arg in args:
+            if arg["constraint_query"]:
+                duck.validate_select(
+                    arg["constraint_query"], f"The constraint query for '{arg['name']}'"
+                )
+    except duck.SqlShapeError as exc:
+        return str(exc)
 
     existing = Report.get_by_uuid(report.uuid) if report else None
     try:

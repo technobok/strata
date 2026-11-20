@@ -23,6 +23,8 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 
+from strata.services import duck
+
 log = logging.getLogger(__name__)
 
 _CHUNK = 64 * 1024
@@ -84,7 +86,7 @@ def stream_copy(
     the connection).
     """
     options, content_type = COPY_FORMATS[fmt]
-    fd, tmp_path = tempfile.mkstemp(suffix=f".{fmt}")
+    fd, tmp_path = tempfile.mkstemp(suffix=f".{fmt}", dir=duck.exports_dir())
     os.close(fd)
     try:
         cursor = conn.execute(f"COPY ({final_sql}) TO '{tmp_path}' {options}", binds)
@@ -123,7 +125,7 @@ def stream_xlsx(
     _XLSX_PROBE_ROWS rows are buffered up front to size the columns, which
     write-only mode requires before the first append.
     """
-    fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
+    fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=duck.exports_dir())
     os.close(fd)
     try:
         cursor = conn.execute(final_sql, binds)

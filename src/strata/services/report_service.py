@@ -24,7 +24,7 @@ from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
-from strata.services import datamodule_service, query_filter, stream_service, template_service
+from strata.services import datamodule_service, duck, query_filter, stream_service, template_service
 
 log = logging.getLogger(__name__)
 
@@ -168,11 +168,13 @@ def _prepare(
     vpath = datamodule_service.version_path(dm.uuid, version.uuid)
 
     binds = _bind_args(args, arg_values)
-
-    conn = duckdb.connect(":memory:")
     try:
-        conn.execute(f"ATTACH '{vpath}' AS d (READ_ONLY)")
-        conn.execute("USE d")
+        duck.validate_select(report.body_sql, "The report body")
+    except duck.SqlShapeError as exc:
+        raise ArgError(str(exc)) from exc
+
+    conn = duck.serve_conn(vpath)
+    try:
         params = ", ".join(f"{_PARAM_PREFIX}{arg.name}" for arg in args)
         body = _rewrite_body(report.body_sql)
         conn.execute(
@@ -324,17 +326,16 @@ def arg_options_map(
                 result[arg.id] = cached
                 continue
             if conn is None:
-                conn = duckdb.connect(":memory:")
-                conn.execute(f"ATTACH '{vpath}' AS d (READ_ONLY)")
-                conn.execute("USE d")
+                conn = duck.serve_conn(vpath)
             try:
+                duck.validate_select(arg.constraint_query, "The constraint query")
                 rows = conn.execute(arg.constraint_query).fetchall()
                 opts = [
                     (str(r[0]), str(r[1]) if len(r) > 1 and r[1] is not None else str(r[0]))
                     for r in rows
                     if r[0] is not None
                 ]
-            except duckdb.Error as exc:
+            except (duckdb.Error, duck.SqlShapeError) as exc:
                 log.warning("constraint_query for arg '%s' failed: %s", arg.name, exc)
                 opts = []
             _options_cache[key] = opts

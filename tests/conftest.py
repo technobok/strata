@@ -97,6 +97,23 @@ class Strata:
         resp = self.client.post(f"/datamodules/{dm_uuid}/build")
         assert resp.status_code == 302
 
+    def set_script(self, dm_uuid: str, script: str) -> None:
+        dm = self.datamodule(dm_uuid)
+        resp = self.client.post(
+            f"/datamodules/{dm_uuid}/edit", data={"path": dm.path, "build_script": script}
+        )
+        assert resp.status_code == 302
+
+    def upload_source(self, dm_uuid: str, filename: str, content: bytes) -> None:
+        import io
+
+        resp = self.client.post(
+            f"/datamodules/{dm_uuid}/sources",
+            data={"file": (io.BytesIO(content), filename)},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 302
+
     def new_report(
         self,
         dm_uuid: str,

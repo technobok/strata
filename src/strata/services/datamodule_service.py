@@ -31,6 +31,7 @@ from strata.models.datamodule_connection import DatamoduleConnection
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.dependency import Dependency
 from strata.models.source_file import SourceFile
+from strata.services import duck
 from strata.services.connection_service import attach_into
 
 log = logging.getLogger(__name__)
@@ -232,6 +233,9 @@ def build_datamodule(
                 conn.execute(f"ATTACH '{dep_path}' AS {local_name} (READ_ONLY)")
             for local_name, crow in conn_attachments:
                 attach_into(conn, local_name, crow.driver, crow.params)
+            # Trusted setup is done: from here the author's script can only
+            # read this datamodule's sources/ and write its tmp/ (services/duck).
+            duck.lock_down_build(conn, base)
             if rendered.strip():
                 conn.execute(rendered)
             conn.execute("CHECKPOINT")

@@ -72,6 +72,14 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry(
         "worker.poll_interval", ConfigType.INT, 30, "Schedule worker poll interval in seconds"
     ),
+    # -- builds --
+    ConfigEntry(
+        "build.sandbox",
+        ConfigType.BOOL,
+        True,
+        "Lock build scripts to their own datamodule's sources/ and tmp/ (DuckDB external "
+        "access off). Turn off only if a connection driver fails under the sandbox.",
+    ),
     # -- proxy --
     ConfigEntry("proxy.x_forwarded_for", ConfigType.INT, 0, "Trust X-Forwarded-For (hop count)"),
     ConfigEntry(
@@ -156,6 +164,7 @@ KEY_MAP: dict[str, str] = {
     "mail.sender": "MAIL_SENDER",
     "outbox.db_path": "OUTBOX_DB_PATH",
     "worker.poll_interval": "WORKER_POLL_INTERVAL",
+    "build.sandbox": "BUILD_SANDBOX",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
     "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",

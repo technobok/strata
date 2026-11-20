@@ -37,6 +37,7 @@ make db-init             # Apply DB migrations only (no rebuild)
 - Blueprints in `src/strata/blueprints/`
 - Services in `src/strata/services/`
 - External DB connections live in the `connection` table, params encrypted with Fernet keyed off `app_setting.secret_key`. Adding a driver = registering a `DriverSpec` in `src/strata/services/connection_service.py:DRIVERS`.
+- **Every DuckDB connection that runs author SQL goes through `services/duck.py`** (`serve_conn`, `lock_down_build`): trusted setup (ATTACH, extension LOAD) first, then `lock_down` (external access off, allowed directories, locked config). Never call `duckdb.connect` for author SQL directly. Report bodies/constraint queries must pass `duck.validate_select` (exactly one SELECT). `build.sandbox` (config) is the build-side escape hatch.
 - Flash messages auto-dismiss after 5s (`app.js`) — persistent notices (version banner, token reveal) use their own classes, never `.flash`.
 
 ## Git Commits

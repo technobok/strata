@@ -4,6 +4,7 @@ import logging
 import os
 
 import apsw
+import apsw.ext
 from flask import (
     Blueprint,
     flash,
@@ -23,7 +24,7 @@ from strata.config import (
     parse_value,
     resolve_effective,
 )
-from strata.db import get_db
+from strata.db import get_db, get_db_path
 from strata.models.app_setting import clear_setting, set_setting
 
 log = logging.getLogger(__name__)
@@ -155,6 +156,37 @@ def _get_schema() -> list[dict[str, object]]:
     return tables
 
 
+def _deny_attach(operation: int, *_: object) -> int:
+    if operation in (apsw.SQLITE_ATTACH, apsw.SQLITE_DETACH):
+        return apsw.SQLITE_DENY
+    return apsw.SQLITE_OK
+
+
+def _run_readonly(query: str) -> tuple[list[str], list[tuple]]:
+    """Run one statement on a read-only connection to the metadata DB.
+
+    The connection is opened read-only and refuses ATTACH, so nothing typed in
+    the console can change the metadata DB or open another database file. A
+    second statement after the first is refused rather than silently run.
+    """
+    conn = apsw.Connection(get_db_path(), flags=apsw.SQLITE_OPEN_READONLY)
+    try:
+        conn.authorizer = _deny_attach
+        remaining = apsw.ext.query_info(conn, query).query_remaining
+        if remaining and remaining.strip():
+            raise ValueError("Run one statement at a time.")
+        cursor = conn.execute(query)
+        # APSW raises ExecutionCompleteError if the cursor has no remaining
+        # rows (empty SELECT, side-effect PRAGMA, etc.).
+        try:
+            columns = [desc[0] for desc in cursor.description]
+        except apsw.ExecutionCompleteError:
+            columns = []
+        return columns, cursor.fetchall()
+    finally:
+        conn.close()
+
+
 @bp.route("/sql", methods=["GET", "POST"])
 @admin_required
 def sql_console() -> str:
@@ -176,19 +208,11 @@ def sql_console() -> str:
             if first_word not in ("SELECT", "PRAGMA", "EXPLAIN"):
                 error = "Only SELECT, PRAGMA, and EXPLAIN queries are allowed."
             else:
-                db = get_db()
                 try:
-                    cursor = db.execute(query)
-                    # APSW raises ExecutionCompleteError if the cursor has no
-                    # remaining rows (empty SELECT, side-effect PRAGMA, etc.).
-                    try:
-                        columns = [desc[0] for desc in cursor.description]
-                    except apsw.ExecutionCompleteError:
-                        columns = []
-                    rows = cursor.fetchall()
+                    columns, rows = _run_readonly(query)
                     row_count = len(rows)
                     executed = True
-                except apsw.SQLError as e:
+                except (apsw.Error, ValueError) as e:
                     error = str(e)
 
     return render_template(
