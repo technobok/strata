@@ -334,7 +334,9 @@ strata/
 | `make init-db` | Create / migrate the local dev DB |
 | `make rundev` | Run dev server (debug mode) |
 | `make run` | Run production server (gunicorn) |
-| `make check` | Run ruff format + ruff check + ty check |
+| `make check` | `lint` + `test` (run before every commit) |
+| `make lint` | ruff format + ruff check + ty check |
+| `make test` | Run the pytest suite |
 | `make config-list` | Show all DB-stored configuration |
 | `make config-set` | Set a DB-stored config value |
 | `make rebuild` | After `git pull`: rebuild images + apply DB migrations |

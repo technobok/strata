@@ -5,7 +5,9 @@
 make sync                # Install dependencies (local dev)
 make init-db             # Create / migrate the local dev DB
 make rundev              # Run dev server
-make check               # ruff format + ruff check + ty check
+make check               # lint + test — run before every commit
+make lint                # ruff format + ruff check + ty check
+make test                # pytest suite (tests/; fresh DB + DATA_ROOT per test)
 make config-list         # Show config
 make config-set KEY=key VAL=value  # Set config
 strata-admin reconcile --dry-run   # Retention + orphaned-file sweep (drop --dry-run to apply)
@@ -27,6 +29,7 @@ make db-init             # Apply DB migrations only (no rebuild)
 - Auth: Gatekeeper client (SSO). Email via Outbox arrives with the Phase B/C scheduler + exception reports (see ROADMAP.md); `mail.*`/`worker.*` config entries are reserved for it.
 
 ## Key Patterns
+- Tests drive the real routes through the Flask test client (`tests/conftest.py`): a fresh SQLite DB + DATA_ROOT per test, an injected admin user (`X-User: viewer` = non-admin, `X-Anon: 1` = anonymous), and the `strata` fixture's authoring helpers.
 - App factory in `src/strata/__init__.py`
 - APSW db module with Flask-context and standalone transactions in `src/strata/db.py`
 - Typed config registry in `src/strata/config.py`

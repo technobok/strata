@@ -1,4 +1,4 @@
-.PHONY: help sync install init-db run rundev check clean config-list config-set docker-up docker-down db-init rebuild
+.PHONY: help sync install init-db run rundev check lint test clean config-list config-set docker-up docker-down db-init rebuild
 
 SHELL := /bin/bash
 VENV_DIR := $(or $(VIRTUAL_ENV),.venv)
@@ -19,7 +19,9 @@ help:
 	@echo "rundev   - Run server with dev settings (DEV_HOST:DEV_PORT, debug=True)"
 	@echo "config-list  - Show all config settings"
 	@echo "config-set KEY=key VAL=value  - Set a config value"
-	@echo "check    - Run ruff and ty for code quality"
+	@echo "check    - lint + test (run before every commit)"
+	@echo "lint     - ruff format + ruff check + ty check"
+	@echo "test     - Run the pytest suite"
 	@echo "clean    - Remove temporary files and database"
 	@echo ""
 	@echo "Database: instance/strata.sqlite3 (default)"
@@ -51,11 +53,19 @@ config-list:
 config-set:
 	@$(ADMIN) config set $(KEY) '$(VAL)'
 
-check:
+check: lint test
+
+lint:
 	@echo "--- Running code quality checks ---"
-	@$(RUFF) format src
-	@$(RUFF) check src --fix
+	@$(RUFF) format src tests
+	@$(RUFF) check src tests --fix
 	@if [ -z "$$VIRTUAL_ENV" ]; then unset VIRTUAL_ENV; fi; $(TY) check src
+
+# basetemp keeps test databases on disk under the gitignored instance/ dir;
+# pytest wipes and recreates it on every run.
+test:
+	@echo "--- Running tests ---"
+	@$(PYTHON) -m pytest -q --basetemp=instance/pytest
 
 docker-up:
 	@mkdir -p instance
@@ -80,4 +90,4 @@ clean:
 	@find . -type f -name '*.py[co]' -delete
 	@find . -type d -name '__pycache__' -delete
 	@rm -f instance/strata.sqlite3
-	@rm -rf instance/data
+	@rm -rf instance/data instance/pytest

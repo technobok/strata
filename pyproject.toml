@@ -50,3 +50,11 @@ lint.ignore = ["E501"]
 
 [tool.ty.environment]
 python-version = "3.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    # openpyxl warns even though stream_xlsx pre-populates the table columns.
+    "ignore:In write-only mode you must add table columns manually:UserWarning",
+]
