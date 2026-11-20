@@ -1,7 +1,8 @@
 """Report model — a DuckDB macro layered on a datamodule.
 
 kind='query' is a parameterised data report whose ``body_sql`` is an author
-SELECT; kind='view' (Phase 7) is a system-generated formatting macro. The macro
+SELECT; kind='view' is reserved and unused (formatting is per-column metadata
+rendered by the server — ROADMAP Phase F). The macro
 body is the source of truth in SQLite and is registered as a TEMP macro over the
 read-only live version at serve time (see report_service), so editing a body is
 an instant UPDATE with no rebuild.

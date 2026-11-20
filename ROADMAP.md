@@ -16,14 +16,40 @@ data-API + tabular-report product — shipped as Phases 1–6.
 | 5 | `019aaf5` | Version pinning (`?version=`); retention prune (count/age) + post-build hook; `strata-admin reconcile`; true storage-format recording; versions UI; vendored CodeMirror editors |
 | 6 | `b5225d0` | Hashed API keys (`?key=`, data formats only) with fixed/whitelisted args, access log, one-time token reveal + PowerQuery URLs |
 
+## Direction (decided 2026-11-20)
+
+Strata replaces the **reporting core** of webreports: the `testtest`/`cronserver`
+exception checks, the data preparation (`syncdb`, `rprtsales`) and the page reports.
+Jobs that change data (move/rebalance/EDI/fixit import files) stay outside Strata;
+Strata is read-only on its sources.
+
+- **Authors** are IT only, writing SQL. The UI stays SQL-first; the DuckDB sandbox is
+  defence in depth, and there is no author/runner group split.
+- **Checks** are one primitive with two uses: a *gate* (rows fail the build before the
+  swap, so the old version stays live) or *notify* (a scheduled exception report).
+- **Exception reports mail on change.** A check declares key columns; each run is diffed
+  against the last (new / still open / resolved) and mail goes out only when something
+  changed, listing all open rows with an xlsx attachment and a live link.
+- **Freshness is pushed**: the scheduler and upstream completion enqueue builds; the serve
+  path never builds and shows when the data was built.
+- **BI** stays in Excel/PowerQuery. Strata adds only KPI tiles and simple charts; the
+  dashboard composer (old Phase 10) is dropped.
+- **Formatting** is per-column metadata rendered by the server with autoescaping. DuckDB
+  never emits HTML; the old Phase 7 column-builder design is dropped.
+
 ## Next phases
+
+These replace the old Phases 7–10.
 
 | # | Phase | Goal |
 |---|---|---|
-| 7 | **Formatting views (safe HTML)** | `format_view` + `format_column` column-by-column builder (tables exist in the schema); generated view macros emit inner-cell HTML through system escaping primitives (`strata_text/num/date/link`); the server owns the `<td>` wrapper + a CSS-class whitelist; golden XSS tests. |
-| 8 | **Peripheral repoint** | Schedules retargeted at datamodules (`rebuild` pre-warm + `email` actions) with a **rewritten** worker (`services/schedule_service.py` next-run math is kept for this); FTS search screen (`datamodule_fts`); tag UI wiring; client library against `/r/<uuid>.<ext>`. |
-| 9 | **Trust model + sensitive instance** | Author/runner group split (`author_required` vs `login_required`); site-level access gate; per-instance config; a second isolated deployment (own `DATA_ROOT` + DB + groups) for sensitive data; documented per-build resource caps. |
-| 10 | **Dashboards & charts** | View variants emitting hero tiles or ECharts specs; grid dashboards composing sub-reports with shared args; vendored `echarts.min.js`. |
+| A | **Harden** | pytest suite; DuckDB sandbox (external access off, allowed directories, locked configuration); report bodies must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; bug fixes; pin duckdb. |
+| B | **Build execution** | `strata-worker` with a SQLite job queue and leases (`build_token`/`build_lease_until`) and reaping of stuck builds; serve never builds (stale-while-revalidate); failure backoff; scheduler (`schedule` table + `services/schedule_service.py` date maths); push refresh of dependents; per-build resource caps; queues. |
+| C | **Checks + exception reports** | Check object (gate / notify); per-company templating (parity with webreports' `{codb}`/`{cocode}`); new/open/resolved diffing; mail-on-change via Outbox; run history; exceptions overview page; heartbeat alert when a check stops running; importer for `testtest` SQL rows. |
+| D | **Pilot migration** | Port 5–10 representative webreports checks (one per-company), run them alongside webreports and compare; then plan the batches. |
+| E | **Data layer** | Incremental datamodules (previous version ATTACHed as `prev` + a watermark); lineage (row counts, dependency versions, content-addressed sources); catalog page + FTS (`datamodule_fts`); decide whether `syncdb` keeps feeding coredb. |
+| F | **Presentation** | Formatting metadata (format, align, class whitelist, links to reports with an argument mapping; also drives xlsx number formats); KPI tiles + simple charts. |
+| G | **Sensitive instance** | A second isolated deployment (own `DATA_ROOT` + DB + groups) for payroll-type data, when needed. |
 
 ## Backlog (unscheduled, carried forward)
 
@@ -31,11 +57,9 @@ data-API + tabular-report product — shipped as Phases 1–6.
 - **Authorization-header token auth** — alternative to `?key=` so tokens stay out of proxy/server request logs.
 - **Version keep/pin flag** — mark a specific version exempt from retention (e.g. year-end snapshots).
 - **Editor assists** — DuckDB `sql_auto_complete()` completion, `$arg` name completion, EXPLAIN preview for build scripts/macros.
-- **Per-build resource caps** — `memory_limit`, `threads`, `max_temp_directory_size`, statement timeout on build connections (Phase 9 documents; this implements).
 - **Row/time caps on serving** — guardrails for pathological queries.
 - **Operations** — metrics endpoint, structured JSON logging, backup CLI (SQLite + data root).
-- **Holiday table** — schedule business-day awareness beyond Mon–Fri (feeds Phase 8).
-- **Exception-report mode** — deliver scheduled output only when the result is non-empty (feeds Phase 8).
+- **Holiday table** — schedule business-day awareness beyond Mon–Fri (feeds Phase B).
 - **API keys admin view** — global list across datamodules + per-key access-log browser.
 - **Serving niceties** — `page_size` parameter, multi-column sort from the UI (grammar already supports it).
 - **tom-select** — vendored but unwired; wire it (e.g. multiselect args, tag pickers) or drop it.

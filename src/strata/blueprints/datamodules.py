@@ -1,6 +1,6 @@
 """Datamodules blueprint — author datamodules, build them, define query reports.
 
-Authoring is admin-gated in Phase 1 (the author/runner split lands in Phase 9).
+Authoring is admin-gated: authors are IT only, so there is no author/runner split.
 The public serve path for running a report lives in blueprints/reports.py.
 """
 

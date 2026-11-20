@@ -10,12 +10,16 @@
 > - API keys are **sha256-hashed bearer tokens** (datamodule- or report-scoped,
 >   with fixed/whitelisted args and a one-time reveal), not stored GUIDs.
 > - Per-report ACLs were dropped in favour of the per-instance isolation model
->   (Phase 9).
+>   (ROADMAP Phase G).
 > - The serve grammar was extended beyond the sketch: `q=` search,
 >   `between`/`isnull` ops, `version=` pinning, `key=` auth.
 >
-> Not yet built (see `ROADMAP.md`): formatting reports/views, dashboards,
-> schedules + worker, FTS search/tag UI, client library.
+> **Superseded (2026-11-20, see `ROADMAP.md` "Direction"):** the "Formatting
+> Reports" section below is replaced by per-column formatting metadata rendered
+> by the server — DuckDB never builds `<td>` HTML. The dashboard ideas (grid
+> layouts, sub-report composition) are dropped in favour of Excel/PowerQuery
+> plus light KPI tiles and charts. Scheduled exception reports, a background
+> worker, and incremental builds are the next priorities (Phases A–E).
 
 ## Architecture
 

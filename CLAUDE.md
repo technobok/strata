@@ -24,7 +24,7 @@ make db-init             # Apply DB migrations only (no rebuild)
 - Serve query grammar (`services/query_filter.py`): declared args by name; `col__op=value` filters (eq/ne/gt/gte/lt/lte/in/between/contains/isnull); bare `col=v`; `q=` all-column search; `sort=-a,b`; `page=N` (200/page); `version=<version_uuid>` pins a historical snapshot (never rebuilds). Fields are DESCRIBE-validated, values parameter-bound; unknown keys error. Reserved (rejected as arg names): sort, page, q, format, key, version.
 - API keys: sha256-hashed bearer tokens (`?key=`) grant unauthenticated access to **data formats only** (html stays SSO); datamodule- or report-scoped; fixed args always win, optional whitelist restricts caller args; every keyed request is access-logged. Plaintext token shown exactly once at create/rotate.
 - Schema is migration-managed: `database/migrations/NNNN_*.sql` applied forward-only by `db.apply_migrations` (ledger `schema_migrations`, `EXPECTED_SCHEMA_VERSION`).
-- Auth: Gatekeeper client (SSO). Email via Outbox arrives with the Phase-8 schedules rewrite (see ROADMAP.md); `mail.*`/`worker.*` config entries are reserved for it.
+- Auth: Gatekeeper client (SSO). Email via Outbox arrives with the Phase B/C scheduler + exception reports (see ROADMAP.md); `mail.*`/`worker.*` config entries are reserved for it.
 
 ## Key Patterns
 - App factory in `src/strata/__init__.py`
