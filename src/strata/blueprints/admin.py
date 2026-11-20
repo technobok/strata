@@ -54,7 +54,16 @@ def index() -> str:
     except apsw.SQLError:
         stats["active_schedules"] = 0
 
-    return render_template("admin/index.html", stats=stats, registry=REGISTRY)
+    from strata.models.build_job import BuildJob
+    from strata.models.worker_process import WorkerProcess
+
+    return render_template(
+        "admin/index.html",
+        stats=stats,
+        registry=REGISTRY,
+        workers=WorkerProcess.alive(),
+        job_counts=BuildJob.counts_by_status(),
+    )
 
 
 @bp.route("/config", methods=["GET", "POST"])

@@ -1,4 +1,4 @@
-"""Build-path stopgaps: the manual build lock, and reconcile's crash cleanup."""
+"""Build leases (cross-process single-flight) and reconcile's crash cleanup."""
 
 import os
 import threading
@@ -11,12 +11,48 @@ from tests.conftest import Strata
 TWO_DAYS_AGO = time.time() - 2 * 86400
 
 
-def test_manual_build_waits_for_the_single_flight_lock(strata: Strata) -> None:
-    dm_uuid = strata.new_datamodule()
-    from strata.services import datamodule_service
+def _dm_id(strata: Strata, dm_uuid: str) -> int:
+    return strata.datamodule(dm_uuid).id
 
-    lock = datamodule_service._lock_for(dm_uuid)
-    lock.acquire()
+
+def _dead_builder(strata: Strata, dm_uuid: str, lease_until: datetime) -> str:
+    """Simulate a builder that crashed: a lease it no longer renews + its 'building' row."""
+    with strata.app.app_context():
+        from strata.db import transaction
+        from strata.models.datamodule_version import DatamoduleVersion
+
+        dm = strata.datamodule(dm_uuid)
+        version = DatamoduleVersion.create_building(dm.id, "ttl-pull", dm.build_script)
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET build_status = 'building', build_token = 'dead', "
+                "build_lease_until = ? WHERE id = ?",
+                (lease_until.isoformat(), dm.id),
+            )
+        return version.uuid
+
+
+def test_a_held_lease_cannot_be_taken(strata: Strata) -> None:
+    dm_id = _dm_id(strata, strata.new_datamodule())
+    with strata.app.app_context():
+        from strata.services.datamodule_service import BuildLease
+
+        first = BuildLease.try_acquire(dm_id)
+        assert first is not None
+        assert BuildLease.try_acquire(dm_id) is None
+        first.release()
+        second = BuildLease.try_acquire(dm_id)
+        assert second is not None
+        second.release()
+
+
+def test_manual_build_waits_for_the_lease(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    with strata.app.app_context():
+        from strata.services.datamodule_service import BuildLease
+
+        lease = BuildLease.try_acquire(_dm_id(strata, dm_uuid))
+        assert lease is not None
     done = threading.Event()
 
     def press_build() -> None:
@@ -26,12 +62,45 @@ def test_manual_build_waits_for_the_single_flight_lock(strata: Strata) -> None:
     worker = threading.Thread(target=press_build)
     try:
         worker.start()
-        assert not done.wait(timeout=0.5), "the build ran without taking the lock"
+        assert not done.wait(timeout=1.5), "the build ran while another process held the lease"
     finally:
-        lock.release()
+        with strata.app.app_context():
+            lease.release()
     worker.join(timeout=30)
     assert done.is_set()
     assert strata.datamodule(dm_uuid).build_status == "ready"
+
+
+def test_an_expired_lease_is_taken_over_and_its_rows_failed(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    _dead_builder(strata, dm_uuid, datetime.now(UTC) - timedelta(seconds=5))
+    strata.build(dm_uuid)
+    statuses = sorted(v.status for v in strata.versions(dm_uuid))
+    assert statuses == ["failed", "ready"]
+    failed = next(v for v in strata.versions(dm_uuid) if v.status == "failed")
+    assert "died" in (failed.error_message or "")
+
+
+def test_the_lease_is_renewed_during_a_long_build(strata: Strata, monkeypatch) -> None:
+    from strata.services import datamodule_service
+
+    monkeypatch.setattr(datamodule_service, "HEARTBEAT_SECONDS", 0.2)
+    dm_uuid = strata.new_datamodule()
+    seen: list[str] = []
+    with strata.app.app_context():
+        lease = datamodule_service.BuildLease.try_acquire(_dm_id(strata, dm_uuid))
+        assert lease is not None
+        first = strata.datamodule(dm_uuid).build_lease_until
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            current = strata.datamodule(dm_uuid).build_lease_until
+            if current != first:
+                seen.append(current)
+                break
+            time.sleep(0.1)
+        lease.release()
+    assert seen, "the heartbeat never moved build_lease_until"
+    assert strata.datamodule(dm_uuid).build_token is None
 
 
 def _reconcile(strata: Strata, dry_run: bool):
@@ -41,26 +110,9 @@ def _reconcile(strata: Strata, dry_run: bool):
         return datamodule_service.reconcile(dry_run=dry_run)
 
 
-def _stuck_build(strata: Strata, dm_uuid: str, started: datetime) -> str:
-    """A version row left 'building' by a process that died."""
-    with strata.app.app_context():
-        from strata.db import transaction
-        from strata.models.datamodule_version import DatamoduleVersion
-
-        dm = strata.datamodule(dm_uuid)
-        version = DatamoduleVersion.create_building(dm.id, "ttl-pull", dm.build_script)
-        with transaction() as cur:
-            cur.execute(
-                "UPDATE datamodule_version SET build_started_at = ?, created_at = ? WHERE id = ?",
-                (started.isoformat(), started.isoformat(), version.id),
-            )
-            cur.execute("UPDATE datamodule SET build_status = 'building' WHERE id = ?", (dm.id,))
-        return version.uuid
-
-
-def test_reconcile_marks_long_dead_builds_failed(strata: Strata) -> None:
+def test_reconcile_fails_builds_whose_lease_expired(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
-    stuck = _stuck_build(strata, dm_uuid, datetime.now(UTC) - timedelta(days=2))
+    stuck = _dead_builder(strata, dm_uuid, datetime.now(UTC) - timedelta(minutes=5))
 
     preview = _reconcile(strata, dry_run=True)
     assert preview.stuck_builds == [f"test/sales: {stuck[:8]}"]
@@ -71,12 +123,12 @@ def test_reconcile_marks_long_dead_builds_failed(strata: Strata) -> None:
     assert version.status == "failed"
     dm = strata.datamodule(dm_uuid)
     assert dm.build_status == "failed"
-    assert "never finished" in (dm.last_build_error or "")
+    assert "died" in (dm.last_build_error or "")
 
 
-def test_reconcile_leaves_a_recent_build_alone(strata: Strata) -> None:
+def test_reconcile_leaves_a_build_with_a_live_lease_alone(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
-    _stuck_build(strata, dm_uuid, datetime.now(UTC) - timedelta(minutes=5))
+    _dead_builder(strata, dm_uuid, datetime.now(UTC) + timedelta(minutes=1))
     report = _reconcile(strata, dry_run=False)
     assert report.stuck_builds == []
     [version] = strata.versions(dm_uuid)

@@ -1,4 +1,4 @@
-.PHONY: help sync install init-db run rundev check lint test clean config-list config-set docker-up docker-down db-init rebuild
+.PHONY: help sync install init-db run rundev worker check lint test clean config-list config-set docker-up docker-down db-init rebuild
 
 SHELL := /bin/bash
 VENV_DIR := $(or $(VIRTUAL_ENV),.venv)
@@ -17,6 +17,7 @@ help:
 	@echo "init-db  - Create a blank database"
 	@echo "run      - Run server with production settings (HOST:PORT)"
 	@echo "rundev   - Run server with dev settings (DEV_HOST:DEV_PORT, debug=True)"
+	@echo "worker   - Run the build worker (production builds; rundev builds inline)"
 	@echo "config-list  - Show all config settings"
 	@echo "config-set KEY=key VAL=value  - Set a config value"
 	@echo "check    - lint + test (run before every commit)"
@@ -46,6 +47,11 @@ run:
 rundev:
 	@echo "--- Starting server (dev settings, debug=True) ---"
 	@$(WEB) --dev
+
+# Runs queued builds. Not needed with `make rundev` (dev builds run inline).
+worker:
+	@echo "--- Starting build worker ---"
+	@$(VENV_DIR)/bin/strata-worker
 
 config-list:
 	@$(ADMIN) config list

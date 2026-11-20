@@ -23,6 +23,8 @@ def main(host: str | None, port: int | None, workers: int, dev: bool) -> None:
     app = create_app()
 
     if dev:
+        # No separate worker in dev: requested builds run in the request.
+        app.config["WORKER_INLINE"] = True
         run_host = host or os.environ.get("HOST") or app.config.get("DEV_HOST", "127.0.0.1")
         run_port = port or _int_env("PORT") or app.config.get("DEV_PORT", 5000)
         app.run(debug=True, host=run_host, port=run_port)

@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 strata-admin = "strata.cli:main"
 strata-web = "strata.web:main"
+strata-worker = "strata.worker:main"
 
 [project.optional-dependencies]
 dev = [

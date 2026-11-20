@@ -45,7 +45,16 @@ DATA_ROOT/<uuid[:2]>/<uuid>/
 
 "Live" is only a pointer in the SQLite metadata DB (`datamodule.live_version_id`) — renaming or moving a datamodule is pure metadata, and old versions stay browsable until retention prunes them.
 
-**Freshness**: each serve checks the TTL (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. Stale requests rebuild inline under a single-flight lock, then serve the new version.
+**Freshness**: each serve checks the TTL (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. Stale requests rebuild under the datamodule's build lease, then serve the new version. *(Phase B2 moves this into the worker too.)*
+
+### Builds, the worker, and the build lease
+
+Builds run in a separate **`strata-worker`** process. The Build button (and, from Phase B3, schedules) records a **build job**; the worker claims it and builds. Requests coalesce — one queued job per datamodule — and a forced request made while a build is running queues exactly one follow-up, so an edit made mid-build is still built.
+
+- **One build per datamodule, across processes**: whoever builds holds a lease on the datamodule row, renewed every 15 s. A builder that dies stops renewing; within 60 s the lease expires, the next builder takes over, and the dead build's version is marked failed. The worker also sweeps for dead builds and for jobs whose worker vanished.
+- **Queues and concurrency**: each datamodule names a worker queue (default `default`). A worker runs `--concurrency` builds at once (setting `worker.concurrency`, default 2) from the queues it is given (`--queue`, repeatable). Run a second worker on a `long` queue to keep slow extracts from delaying quick ones.
+- **Health**: workers check in every 10 s. The admin page lists live workers and job counts; a datamodule page warns when no worker has checked in for 2 minutes.
+- **Development**: `make rundev` builds inline in the request (no worker needed); production runs `make worker` or the compose `worker` service.
 
 ### Build inputs
 
@@ -197,8 +206,10 @@ services:
 ```bash
 docker compose build
 make db-init        # creates instance/strata.sqlite3 if absent, applies migrations
-docker compose up -d
+docker compose up -d    # starts both `app` (web) and `worker` (builds)
 ```
+
+The `worker` service runs `strata-worker` from the same image with the same volumes; without it, builds are queued but never run (the admin page and each datamodule page say so).
 
 `make db-init` runs `strata-admin init-db` inside a throwaway container based on the *just-built* `app` image, so the binary applying migrations is always in sync with what the long-lived container will run.
 
@@ -307,14 +318,15 @@ DB-only settings worth knowing (no env var; restart the app after changing the `
 | `PROXY_X_FORWARDED_PREFIX` | `proxy.x_forwarded_prefix` | `1` | **Required behind a subpath proxy** for correct `url_for()` URLs. | Compose `app` |
 | `TZ` | (container TZ) | `UTC` | Container timezone. UI still renders timestamps in the user's local TZ. | Compose `app` |
 
-The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application. `worker.poll_interval` remains in the registry for the future schedules phase.
+The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application. `worker.poll_interval` (default 30 s) is how often the worker sweeps for dead builds and checks schedules; `worker.concurrency` (default 2) is how many builds one worker runs at once.
 
 ## Admin CLI
 
 ```bash
 strata-admin init-db                  # create / migrate the metadata DB
 strata-admin config list|get|set|export
-strata-admin reconcile [--dry-run]    # retention + orphaned-file sweep
+strata-admin reconcile [--dry-run]    # retention + orphaned-file sweep + dead builds
+strata-worker [--queue Q]... [--concurrency N] [--once]   # run queued builds
 ```
 
 ## Project structure

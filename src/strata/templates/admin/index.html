@@ -20,6 +20,26 @@
         </table>
     </article>
     <article>
+        <header>Build workers</header>
+        {% if workers %}
+        <table>
+            <thead><tr><th>Worker</th><th>Queues</th><th>Threads</th><th>Last seen</th></tr></thead>
+            <tbody>
+                {% for w in workers %}
+                <tr><td><code>{{ w.id }}</code></td><td>{{ w.queues }}</td><td>{{ w.concurrency }}</td><td>{{ w.last_seen_at|localdatetime }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p><mark>No strata-worker has checked in for 2 minutes: queued builds will not run.</mark></p>
+        {% endif %}
+        <p><small>Jobs:
+            {{ job_counts.get('queued', 0) }} queued ·
+            {{ job_counts.get('running', 0) }} running ·
+            {{ job_counts.get('failed', 0) }} failed ·
+            {{ job_counts.get('done', 0) }} done</small></p>
+    </article>
+    <article>
         <header>Quick Links</header>
         <div style="display:flex; flex-direction:column; gap:0.5rem;">
             <button type="button" class="outline" onclick="location.href='{{ url_for('admin.config') }}'">Configuration</button>

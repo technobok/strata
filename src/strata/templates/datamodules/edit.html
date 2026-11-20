@@ -5,12 +5,7 @@
 {% block content %}
 <hgroup>
     <h1>{% if datamodule %}{{ datamodule.path }}{% else %}New Datamodule{% endif %}</h1>
-    {% if datamodule %}
-    <p>
-        Status: <strong>{{ datamodule.build_status }}</strong>
-        {% if datamodule.live_version_id %} · live version set{% endif %}
-    </p>
-    {% endif %}
+    {% if datamodule %}{% include "datamodules/_status.html" %}{% endif %}
 </hgroup>
 
 {% if datamodule and datamodule.last_build_error %}
@@ -45,6 +40,10 @@
         <label>Max age seconds (age policy; blank = keep all)
             <input type="number" name="retention_age_seconds" step="1" min="0"
                    value="{% if datamodule.retention_age_seconds is not none %}{{ datamodule.retention_age_seconds }}{% endif %}">
+        </label>
+        <label>Worker queue
+            <input type="text" name="build_queue" value="{{ datamodule.build_queue }}"
+                   pattern="[a-z0-9_-]{1,32}" title="lowercase letters, digits, - and _">
         </label>
     </div>
     {% endif %}
@@ -261,6 +260,29 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
     </div>
     <button type="submit" class="outline">Create API key</button>
 </form>
+
+<hr>
+<h2>Build jobs</h2>
+<p><small>Builds run in a <code>strata-worker</code> process (queue <code>{{ datamodule.build_queue }}</code>). Requests coalesce: one queued build per datamodule.</small></p>
+{% if jobs %}
+<table>
+    <thead><tr><th>Requested</th><th>Reason</th><th>Status</th><th>Started</th><th>Finished</th><th></th></tr></thead>
+    <tbody>
+        {% for job in jobs %}
+        <tr>
+            <td>{{ job.requested_at|localdatetime }}</td>
+            <td>{{ job.reason }}{% if job.force %} <small>(forced)</small>{% endif %}</td>
+            <td>{{ job.status }}</td>
+            <td>{{ job.started_at|localdatetime }}</td>
+            <td>{{ job.finished_at|localdatetime }}</td>
+            <td>{% if job.error %}<span class="error-cell" title="{{ job.error }}">{{ job.error[:80] }}{% if job.error|length > 80 %}…{% endif %}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No builds requested yet.</p>
+{% endif %}
 
 <hr>
 <h2>Versions</h2>

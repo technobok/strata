@@ -5,12 +5,14 @@ The public serve path for running a report lives in blueprints/reports.py.
 """
 
 import json
+import re
 from datetime import date
 
 from flask import (
     Blueprint,
     flash,
     g,
+    make_response,
     redirect,
     render_template,
     request,
@@ -23,6 +25,7 @@ from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
 from strata.models.api_key import ApiKey
+from strata.models.build_job import BuildJob
 from strata.models.connection import Connection
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_connection import DatamoduleConnection
@@ -31,11 +34,14 @@ from strata.models.dependency import Dependency
 from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.source_file import SourceFile
-from strata.services import datamodule_service, duck
+from strata.models.worker_process import WorkerProcess
+from strata.services import build_queue, datamodule_service, duck
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
 bp = Blueprint("datamodules", __name__, url_prefix="/datamodules")
+
+_QUEUE_RE = re.compile(r"[a-z0-9_-]{1,32}")
 
 
 def _parse_ttl(raw: str) -> tuple[int | None, str | None]:
@@ -249,6 +255,7 @@ def edit(uuid: str) -> str | Response:
         build_script = request.form.get("build_script", "")
         ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
         retention_kind, retention_count, retention_age, retention_error = _parse_retention()
+        build_queue_name = request.form.get("build_queue", "").strip() or None
 
         existing = Datamodule.get_by_path(path)
         if not path:
@@ -259,6 +266,8 @@ def edit(uuid: str) -> str | Response:
             flash(retention_error, "error")
         elif ttl_error:
             flash(ttl_error, "error")
+        elif build_queue_name is not None and not _QUEUE_RE.fullmatch(build_queue_name):
+            flash("Worker queue: lowercase letters, digits, '-' and '_' only.", "error")
         else:
             dm.update(
                 modified_by=g.user.username,
@@ -269,6 +278,7 @@ def edit(uuid: str) -> str | Response:
                 retention_kind=retention_kind,
                 retention_count=retention_count,
                 retention_age_seconds=retention_age,
+                build_queue=build_queue_name,
             )
             flash("Datamodule saved.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
@@ -324,7 +334,33 @@ def edit(uuid: str) -> str | Response:
         conn_names=conn_names,
         all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
         all_connections=Connection.get_all(),
+        jobs=BuildJob.recent_for_datamodule(dm.id),
+        **_status_context(dm),
     )
+
+
+def _status_context(dm: Datamodule) -> dict[str, object]:
+    """The build-status line: active jobs, and whether any worker is alive to run them."""
+    return {
+        "active_jobs": BuildJob.active_for_datamodule(dm.id),
+        "worker_missing": not build_queue.inline_mode() and not WorkerProcess.alive(),
+    }
+
+
+@bp.route("/<uuid>/status")
+@admin_required
+def status(uuid: str) -> str | Response:
+    """HTMX-polled status line; reloads the page once the active build finishes."""
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    context = _status_context(dm)
+    html = render_template("datamodules/_status.html", datamodule=dm, **context)
+    if not context["active_jobs"]:
+        resp = make_response(html)
+        resp.headers["HX-Refresh"] = "true"
+        return resp
+    return html
 
 
 @bp.route("/<uuid>/build", methods=["POST"])
@@ -333,11 +369,13 @@ def build(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
         raise NotFound()
-    try:
-        version = datamodule_service.build_now(dm, triggered_by=g.user.username)
-        flash(f"Built version {version.uuid[:8]} ({version.byte_size} bytes).", "success")
-    except Exception as exc:
-        flash(f"Build failed: {exc}", "error")
+    job = build_queue.request_build(dm, f"manual:{g.user.username}", force=True)
+    if job.status == "done":
+        flash("Build finished.", "success")
+    elif job.status == "failed":
+        flash(f"Build failed: {job.error}", "error")
+    else:
+        flash("Build queued; the worker will run it.", "success")
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
 

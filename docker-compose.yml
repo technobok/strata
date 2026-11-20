@@ -67,6 +67,30 @@ services:
       retries: 3
       start_period: 10s
 
+  # Runs queued datamodule builds (and, from Phase B3, schedules). Same image,
+  # same volumes as app. Scale with --concurrency or a second service using
+  # `strata-worker --queue long` for long-running builds.
+  worker:
+    build: .
+    container_name: strata-worker
+    command: ["strata-worker"]
+    volumes:
+      - ./instance:/app/instance
+      - ${STRATA_DATA_DIR:-./instance/data}:/data-root
+      - ${GATEKEEPER_INSTANCE:-../gatekeeper/instance}:/gatekeeper-data
+      - ${OUTBOX_INSTANCE:-../outbox/instance}:/outbox-data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-UTC}
+      - DATA_ROOT=/data-root
+      - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
+      - OUTBOX_DB=/outbox-data/outbox.sqlite3
+    networks:
+      - platform-net
+    restart: unless-stopped
+    # Let a running build finish (or at least checkpoint) on `docker compose stop`.
+    stop_grace_period: 2m
+
 networks:
   platform-net:
     external: true

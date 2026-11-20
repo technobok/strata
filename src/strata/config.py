@@ -89,7 +89,16 @@ REGISTRY: list[ConfigEntry] = [
     ),
     # -- worker --
     ConfigEntry(
-        "worker.poll_interval", ConfigType.INT, 30, "Schedule worker poll interval in seconds"
+        "worker.poll_interval",
+        ConfigType.INT,
+        30,
+        "Seconds between the worker's sweeps (dead builds, orphaned jobs) and schedule checks",
+    ),
+    ConfigEntry(
+        "worker.concurrency",
+        ConfigType.INT,
+        2,
+        "Builds one strata-worker process runs at once (override with --concurrency)",
     ),
     # -- builds --
     ConfigEntry(
@@ -186,6 +195,7 @@ KEY_MAP: dict[str, str] = {
     "mail.sender": "MAIL_SENDER",
     "outbox.db_path": "OUTBOX_DB_PATH",
     "worker.poll_interval": "WORKER_POLL_INTERVAL",
+    "worker.concurrency": "WORKER_CONCURRENCY",
     "build.sandbox": "BUILD_SANDBOX",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",

@@ -38,12 +38,13 @@ class Datamodule:
     modified_by: str
     created_at: str
     modified_at: str
+    build_queue: str = "default"
 
     _COLUMNS = (
         "id, uuid, path, description, build_script, ttl_seconds, valid_until, "
         "retention_kind, retention_count, retention_age_seconds, storage_version, "
         "live_version_id, build_status, build_token, build_lease_until, last_build_error, "
-        "created_by, modified_by, created_at, modified_at"
+        "created_by, modified_by, created_at, modified_at, build_queue"
     )
 
     @staticmethod
@@ -69,6 +70,7 @@ class Datamodule:
             modified_by=str(row[17]),
             created_at=str(row[18]),
             modified_at=str(row[19]),
+            build_queue=str(row[20]),
         )
 
     @staticmethod
@@ -148,6 +150,7 @@ class Datamodule:
         retention_kind: str | None = None,
         retention_count: int | None = None,
         retention_age_seconds: object = _UNSET,
+        build_queue: str | None = None,
     ) -> bool:
         """Update author-editable fields. Build-state fields are service-managed."""
         updates: list[str] = []
@@ -174,6 +177,9 @@ class Datamodule:
         if retention_age_seconds is not Datamodule._UNSET:
             updates.append("retention_age_seconds = ?")
             params.append(retention_age_seconds)
+        if build_queue is not None:
+            updates.append("build_queue = ?")
+            params.append(build_queue)
 
         if not updates:
             return False

@@ -54,7 +54,8 @@ def app(tmp_path, monkeypatch) -> Iterator[Flask]:
     from strata.db import close_standalone_db, init_db_at
 
     init_db_at(str(db_path))
-    application = create_app({"TESTING": True, "SECRET_KEY": "test-secret"})
+    # WORKER_INLINE: requested builds run synchronously in the caller (no worker).
+    application = create_app({"TESTING": True, "SECRET_KEY": "test-secret", "WORKER_INLINE": True})
 
     def _inject_user() -> None:
         if request.headers.get("X-Anon"):

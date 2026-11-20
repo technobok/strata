@@ -4,8 +4,13 @@ A build writes a brand-new immutable ``versions/<uuid>.duckdb`` file, then a
 single SQLite transaction marks the version ready and flips
 ``datamodule.live_version_id``. Servers resolve the live version at request
 start and open it read-only, so a rebuild never disturbs in-flight readers
-(they finish on their own inode). Single-flight is in-process only in Phase 1
-(a per-uuid lock); the cross-process SQLite lease is a later phase.
+(they finish on their own inode).
+
+Single-flight is a cross-process lease on the datamodule row
+(``build_token`` / ``build_lease_until``): whoever builds holds it, a daemon
+thread renews it every HEARTBEAT_SECONDS, and an expired lease means the
+builder died. A version row is 'building' only while its builder holds the
+lease, so taking over an expired lease fails the dead builder's rows.
 """
 
 import logging
@@ -19,12 +24,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import apsw
 import duckdb
 from flask import current_app
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from strata.db import transaction
+from strata.db import get_db, get_db_path, transaction
 from strata.models.connection import Connection
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_connection import DatamoduleConnection
@@ -40,18 +46,131 @@ log = logging.getLogger(__name__)
 # file. Best-effort raw-text match (like template_service.find_refs).
 _SOURCE_RE = re.compile(r"source\(\s*(['\"])(.*?)\1\s*\)")
 
-# Per-datamodule in-process build locks (single-flight within one process).
-_build_locks: dict[str, threading.Lock] = {}
-_build_locks_guard = threading.Lock()
+# ---------------------------------------------------------------------------
+# Build lease (cross-process single-flight)
+# ---------------------------------------------------------------------------
+
+LEASE_SECONDS = 60
+HEARTBEAT_SECONDS = 15
+LEASE_POLL_SECONDS = 1.0
+DEAD_BUILD_ERROR = "build stopped: the process running it died or was killed"
 
 
-def _lock_for(dm_uuid: str) -> threading.Lock:
-    with _build_locks_guard:
-        lock = _build_locks.get(dm_uuid)
-        if lock is None:
-            lock = threading.Lock()
-            _build_locks[dm_uuid] = lock
-        return lock
+def _iso(dt: datetime) -> str:
+    return dt.isoformat()
+
+
+class BuildLease:
+    """A held build lease on one datamodule, renewed from a daemon thread.
+
+    The heartbeat uses its own SQLite connection (APSW connections are not
+    shared across threads here). DuckDB releases the GIL while it executes, so
+    the heartbeat keeps running during a long build.
+    """
+
+    def __init__(self, dm_id: int, token: str) -> None:
+        self.dm_id = dm_id
+        self.token = token
+        self._db_path = get_db_path()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._beat, name=f"lease-{dm_id}", daemon=True)
+        self._thread.start()
+
+    @staticmethod
+    def try_acquire(dm_id: int) -> BuildLease | None:
+        now = datetime.now(UTC)
+        token = uuid_lib.uuid4().hex
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET build_token = ?, build_lease_until = ? WHERE id = ? "
+                "AND (build_token IS NULL OR build_lease_until IS NULL OR build_lease_until < ?)",
+                (token, _iso(now + timedelta(seconds=LEASE_SECONDS)), dm_id, _iso(now)),
+            )
+            if int(cur.execute("SELECT changes()").fetchone()[0]) == 0:  # type: ignore[index]
+                return None
+            # Any row still 'building' belonged to a builder whose lease expired.
+            cur.execute(
+                "UPDATE datamodule_version SET status = 'failed', build_ended_at = ?, "
+                "error_message = ? WHERE datamodule_id = ? AND status = 'building'",
+                (_iso(now), DEAD_BUILD_ERROR, dm_id),
+            )
+        return BuildLease(dm_id, token)
+
+    @staticmethod
+    def acquire_waiting(dm_id: int) -> BuildLease:
+        """Take the lease, waiting while another builder holds it.
+
+        Always ends: a live holder finishes, a dead one's lease expires within
+        LEASE_SECONDS.
+        """
+        while True:
+            lease = BuildLease.try_acquire(dm_id)
+            if lease is not None:
+                return lease
+            time.sleep(LEASE_POLL_SECONDS)
+
+    def _beat(self) -> None:
+        conn = apsw.Connection(self._db_path)
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        try:
+            while not self._stop.wait(HEARTBEAT_SECONDS):
+                until = _iso(datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS))
+                try:
+                    conn.execute(
+                        "UPDATE datamodule SET build_lease_until = ? "
+                        "WHERE id = ? AND build_token = ?",
+                        (until, self.dm_id, self.token),
+                    )
+                except apsw.Error as exc:
+                    log.warning("lease heartbeat failed (dm=%s): %s", self.dm_id, exc)
+        finally:
+            conn.close()
+
+    def release(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=10)
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET build_token = NULL, build_lease_until = NULL "
+                "WHERE id = ? AND build_token = ?",
+                (self.dm_id, self.token),
+            )
+
+
+def reap_dead_builds(dry_run: bool = False) -> list[str]:
+    """Fail 'building' rows (and statuses) whose datamodule has no valid lease.
+
+    Returns "<path>: <version uuid prefix>" per dead build. Used by reconcile
+    and the worker's periodic sweep; a takeover in BuildLease.try_acquire does
+    the same for one datamodule.
+    """
+    now = _iso(datetime.now(UTC))
+    no_lease = "(d.build_token IS NULL OR d.build_lease_until IS NULL OR d.build_lease_until < ?)"
+    rows = (
+        get_db()
+        .execute(
+            "SELECT d.path, v.id, v.uuid FROM datamodule_version v "
+            "JOIN datamodule d ON d.id = v.datamodule_id "
+            f"WHERE v.status = 'building' AND {no_lease} ORDER BY d.path, v.id",
+            (now,),
+        )
+        .fetchall()
+    )
+    if not dry_run:
+        with transaction() as cur:
+            for _, version_id, _ in rows:
+                cur.execute(
+                    "UPDATE datamodule_version SET status = 'failed', build_ended_at = ?, "
+                    "error_message = ? WHERE id = ? AND status = 'building'",
+                    (now, DEAD_BUILD_ERROR, version_id),
+                )
+            cur.execute(
+                "UPDATE datamodule SET build_status = 'failed', last_build_error = ? "
+                "WHERE build_status = 'building' AND id IN (SELECT d.id FROM datamodule d "
+                f"WHERE {no_lease})",
+                (DEAD_BUILD_ERROR, now),
+            )
+    return [f"{path}: {str(vuuid)[:8]}" for path, _, vuuid in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +314,25 @@ def _resolve_connections(dm: Datamodule) -> list[tuple[str, Connection]]:
 def build_datamodule(
     dm: Datamodule, triggered_by: str, _stack: frozenset[int] = frozenset()
 ) -> DatamoduleVersion:
-    """Build the datamodule into a new version and swap it live.
+    """Build unconditionally under the datamodule's lease (waiting for it if held).
+
+    A forced build: if someone else is building, wait for them, then build the
+    current script anyway.
+    """
+    lease = BuildLease.acquire_waiting(dm.id)
+    try:
+        fresh = Datamodule.get_by_id(dm.id)
+        if fresh is None:
+            raise RuntimeError("datamodule was deleted")
+        return _build_leased(fresh, triggered_by, _stack)
+    finally:
+        lease.release()
+
+
+def _build_leased(
+    dm: Datamodule, triggered_by: str, _stack: frozenset[int] = frozenset()
+) -> DatamoduleVersion:
+    """Build the datamodule into a new version and swap it live (lease held).
 
     Before running the build script, dependencies are ensure_fresh-ed (TTL pull)
     and ATTACHed read-only by local_name, bound connections are attached via
@@ -343,28 +480,18 @@ def ensure_fresh(
     if version is not None and not _is_stale(dm, version, effective_ttl):
         return version
 
-    with _lock_for(dm.uuid):
-        # Re-read under the lock: a concurrent request may have rebuilt already.
-        fresh = Datamodule.get_by_id(dm.id)
-        assert fresh is not None
-        version = live_version(fresh)
-        if version is not None and not _is_stale(fresh, version, effective_ttl):
-            return version
-        return build_datamodule(fresh, triggered_by, _stack=_stack)
-
-
-def build_now(dm: Datamodule, triggered_by: str) -> DatamoduleVersion:
-    """Rebuild unconditionally, under the same per-datamodule lock as ensure_fresh.
-
-    The manual Build button: if a TTL rebuild is already running in this
-    process, wait for it and then build again (the author asked for a fresh
-    build of the current script).
-    """
-    with _lock_for(dm.uuid):
+    lease = BuildLease.acquire_waiting(dm.id)
+    try:
+        # Re-read under the lease: the builder we waited for may have rebuilt it.
         fresh = Datamodule.get_by_id(dm.id)
         if fresh is None:
             raise RuntimeError("datamodule was deleted")
-        return build_datamodule(fresh, triggered_by)
+        version = live_version(fresh)
+        if version is not None and not _is_stale(fresh, version, effective_ttl):
+            return version
+        return _build_leased(fresh, triggered_by, _stack)
+    finally:
+        lease.release()
 
 
 # ---------------------------------------------------------------------------
@@ -449,10 +576,6 @@ def prune_versions(dm: Datamodule) -> PruneResult:
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FAN_RE = re.compile(r"^[0-9a-f]{2}$")
 _TMP_MAX_AGE_SECONDS = 24 * 3600
-# A version row still 'building' after this long belongs to a process that died
-# (the build never reached its success flip or failure handler).
-_STUCK_BUILD_SECONDS = 24 * 3600
-_STUCK_BUILD_ERROR = "build never finished (its process died); marked failed by reconcile"
 
 
 @dataclass
@@ -483,8 +606,8 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
     dms = Datamodule.get_all()
     known = {dm.uuid for dm in dms}
 
+    report.stuck_builds = reap_dead_builds(dry_run=dry_run)
     for dm in dms:
-        _reap_stuck_builds(dm, report)
         if dry_run:
             for v in prune_candidates(dm):
                 report.prune_lines.append(f"{dm.path}: {v.uuid[:8]} ({v.status})")
@@ -565,26 +688,3 @@ def _sweep_old(directory: Path, dry_run: bool) -> list[str]:
         except OSError:
             continue  # racing an in-flight build or export
     return swept
-
-
-def _reap_stuck_builds(dm: Datamodule, report: ReconcileReport) -> None:
-    """Mark long-dead 'building' versions failed, and the datamodule with them.
-
-    A process killed mid-build (OOM, worker restart) never reaches either the
-    success flip or the failure handler, so its version row stays 'building'
-    forever, and retention never prunes 'building' rows.
-    """
-    cutoff = (datetime.now(UTC) - timedelta(seconds=_STUCK_BUILD_SECONDS)).isoformat()
-    building = [v for v in DatamoduleVersion.list_for(dm.id) if v.status == "building"]
-    stuck = [v for v in building if (v.build_started_at or v.created_at) < cutoff]
-    for v in stuck:
-        report.stuck_builds.append(f"{dm.path}: {v.uuid[:8]}")
-        if not report.dry_run:
-            v.mark_failed(_STUCK_BUILD_ERROR, None)
-    if stuck and len(stuck) == len(building) and not report.dry_run:
-        with transaction() as cur:
-            cur.execute(
-                "UPDATE datamodule SET build_status = 'failed', last_build_error = ? "
-                "WHERE id = ? AND build_status = 'building'",
-                (_STUCK_BUILD_ERROR, dm.id),
-            )
