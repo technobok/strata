@@ -37,6 +37,19 @@ REGISTRY: list[ConfigEntry] = [
     ConfigEntry("server.dev_host", ConfigType.STRING, "127.0.0.1", "Bind address for dev server"),
     ConfigEntry("server.dev_port", ConfigType.INT, 5000, "Port for dev server"),
     ConfigEntry("server.debug", ConfigType.BOOL, False, "Enable Flask debug mode"),
+    ConfigEntry(
+        "server.threads",
+        ConfigType.INT,
+        8,
+        "Request threads per gunicorn worker (gthread). Restart to apply.",
+    ),
+    ConfigEntry(
+        "server.timeout",
+        ConfigType.INT,
+        120,
+        "Seconds a gunicorn worker may go silent before it is restarted (not a per-request "
+        "limit under gthread). Restart to apply.",
+    ),
     # -- data storage --
     ConfigEntry(
         "data.root",
@@ -156,6 +169,8 @@ KEY_MAP: dict[str, str] = {
     "server.dev_host": "DEV_HOST",
     "server.dev_port": "DEV_PORT",
     "server.debug": "DEBUG",
+    "server.threads": "SERVER_THREADS",
+    "server.timeout": "SERVER_TIMEOUT",
     "data.root": "DATA_ROOT",
     "auth.admin_group": "AUTH_ADMIN_GROUP",
     "gatekeeper.db_path": "GATEKEEPER_DB_PATH",

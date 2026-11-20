@@ -275,6 +275,14 @@ make config-list
 make config-set KEY=auth.admin_group VAL=strata-admins
 ```
 
+DB-only settings worth knowing (no env var; restart the app after changing the `server.*` ones):
+
+| Registry key | Default | Purpose |
+|---|---|---|
+| `server.threads` | `8` | Request threads per gunicorn worker. Strata runs gunicorn's `gthread` worker, so a long export or build is not killed by the worker timeout. |
+| `server.timeout` | `120` | Seconds a worker may go silent before gunicorn restarts it (a liveness check, not a per-request limit). |
+| `build.sandbox` | `true` | Lock build scripts to their own `sources/` and `tmp/` (see *The DuckDB sandbox*). |
+
 ### Environment variables and registry mapping
 
 | Variable | Registry key | Default | Purpose | Where set |

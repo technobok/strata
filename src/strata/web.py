@@ -32,10 +32,19 @@ def main(host: str | None, port: int | None, workers: int, dev: bool) -> None:
 
         import gunicorn.app.base
 
+        # gthread: requests run on threads while each worker's main loop keeps
+        # heartbeating, so a long export or build is not killed at `timeout`
+        # (with the sync worker it was: any request over 30s died).
+        threads = int(app.config.get("SERVER_THREADS", 8))
+        timeout = int(app.config.get("SERVER_TIMEOUT", 120))
+
         class StrataApp(gunicorn.app.base.BaseApplication):
             def load_config(self) -> None:
                 self.cfg.set("bind", f"{run_host}:{run_port}")  # type: ignore[union-attr]
                 self.cfg.set("workers", str(workers))  # type: ignore[union-attr]
+                self.cfg.set("worker_class", "gthread")  # type: ignore[union-attr]
+                self.cfg.set("threads", str(threads))  # type: ignore[union-attr]
+                self.cfg.set("timeout", str(timeout))  # type: ignore[union-attr]
                 self.cfg.set("preload_app", True)  # type: ignore[union-attr]
 
             def load(self) -> Flask:
