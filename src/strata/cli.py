@@ -219,11 +219,16 @@ def reconcile_command(dry_run: bool) -> None:
         click.echo(f"{verb} stale tmp file {path}")
     for path in rep.orphan_files:
         click.echo(f"{verb} orphan version file {path}")
+    for path in rep.stale_scratch:
+        click.echo(f"{verb} stale export/spill entry {path}")
+    for line in rep.stuck_builds:
+        click.echo(f"{'would mark' if dry_run else 'marked'} stuck build failed: {line}")
     for warning in rep.warnings:
         click.echo(f"WARNING: {warning}")
     click.echo(
         f"reconcile: {rep.rows_deleted} version row(s), {rep.files_deleted} file(s), "
         f"{rep.bytes_freed} bytes; {len(rep.orphan_dirs)} orphan dir(s), "
         f"{len(rep.stale_tmp)} stale tmp, {len(rep.orphan_files)} orphan file(s), "
+        f"{len(rep.stale_scratch)} stale export/spill, {len(rep.stuck_builds)} stuck build(s), "
         f"{len(rep.warnings)} warning(s)" + (" (dry-run: no changes made)" if dry_run else "")
     )

@@ -323,7 +323,7 @@ def build(uuid: str) -> Response:
     if dm is None:
         raise NotFound()
     try:
-        version = datamodule_service.build_datamodule(dm, triggered_by=g.user.username)
+        version = datamodule_service.build_now(dm, triggered_by=g.user.username)
         flash(f"Built version {version.uuid[:8]} ({version.byte_size} bytes).", "success")
     except Exception as exc:
         flash(f"Build failed: {exc}", "error")

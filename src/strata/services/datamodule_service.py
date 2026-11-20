@@ -347,6 +347,20 @@ def ensure_fresh(
         return build_datamodule(fresh, triggered_by, _stack=_stack)
 
 
+def build_now(dm: Datamodule, triggered_by: str) -> DatamoduleVersion:
+    """Rebuild unconditionally, under the same per-datamodule lock as ensure_fresh.
+
+    The manual Build button: if a TTL rebuild is already running in this
+    process, wait for it and then build again (the author asked for a fresh
+    build of the current script).
+    """
+    with _lock_for(dm.uuid):
+        fresh = Datamodule.get_by_id(dm.id)
+        if fresh is None:
+            raise RuntimeError("datamodule was deleted")
+        return build_datamodule(fresh, triggered_by)
+
+
 # ---------------------------------------------------------------------------
 # Retention (prune old versions: rows AND files)
 # ---------------------------------------------------------------------------
@@ -429,6 +443,10 @@ def prune_versions(dm: Datamodule) -> PruneResult:
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FAN_RE = re.compile(r"^[0-9a-f]{2}$")
 _TMP_MAX_AGE_SECONDS = 24 * 3600
+# A version row still 'building' after this long belongs to a process that died
+# (the build never reached its success flip or failure handler).
+_STUCK_BUILD_SECONDS = 24 * 3600
+_STUCK_BUILD_ERROR = "build never finished (its process died); marked failed by reconcile"
 
 
 @dataclass
@@ -441,6 +459,8 @@ class ReconcileReport:
     orphan_dirs: list[str] = field(default_factory=list)
     stale_tmp: list[str] = field(default_factory=list)
     orphan_files: list[str] = field(default_factory=list)
+    stuck_builds: list[str] = field(default_factory=list)  # "<path>: ab12cd34"
+    stale_scratch: list[str] = field(default_factory=list)  # DATA_ROOT/_exports + _tmp
     warnings: list[str] = field(default_factory=list)
 
 
@@ -458,6 +478,7 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
     known = {dm.uuid for dm in dms}
 
     for dm in dms:
+        _reap_stuck_builds(dm, report)
         if dry_run:
             for v in prune_candidates(dm):
                 report.prune_lines.append(f"{dm.path}: {v.uuid[:8]} ({v.status})")
@@ -479,15 +500,8 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
         if not base.exists():
             continue
 
-        now = time.time()
-        for f in sorted((base / "tmp").glob("*.duckdb")):
-            try:
-                if now - f.stat().st_mtime > _TMP_MAX_AGE_SECONDS:
-                    report.stale_tmp.append(str(f))
-                    if not dry_run:
-                        f.unlink()
-            except OSError:
-                continue  # racing an in-flight build
+        # Crashed builds leave <uuid>.duckdb plus its .wal and .tmp/ spill dir.
+        report.stale_tmp.extend(_sweep_old(base / "tmp", dry_run))
 
         version_uuids = {v.uuid for v in DatamoduleVersion.list_for(dm.id)}
         for f in sorted((base / "versions").glob("*.duckdb")):
@@ -505,6 +519,8 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
             report.warnings.append(f"{dm.path}: live version {live.uuid[:8]} has no file on disk")
 
     root = data_root()
+    for scratch in ("_exports", "_tmp"):  # serve-path exports and spill dirs
+        report.stale_scratch.extend(_sweep_old(root / scratch, dry_run))
     if root.exists():
         for fan in sorted(root.iterdir()):
             if not fan.is_dir() or not _FAN_RE.fullmatch(fan.name):
@@ -522,3 +538,47 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
                     except OSError:
                         pass
     return report
+
+
+def _sweep_old(directory: Path, dry_run: bool) -> list[str]:
+    """Remove (or list) entries of ``directory`` untouched for over a day."""
+    swept: list[str] = []
+    if not directory.is_dir():
+        return swept
+    now = time.time()
+    for entry in sorted(directory.iterdir()):
+        try:
+            if now - entry.stat().st_mtime <= _TMP_MAX_AGE_SECONDS:
+                continue
+            swept.append(str(entry))
+            if not dry_run:
+                if entry.is_dir():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    entry.unlink()
+        except OSError:
+            continue  # racing an in-flight build or export
+    return swept
+
+
+def _reap_stuck_builds(dm: Datamodule, report: ReconcileReport) -> None:
+    """Mark long-dead 'building' versions failed, and the datamodule with them.
+
+    A process killed mid-build (OOM, worker restart) never reaches either the
+    success flip or the failure handler, so its version row stays 'building'
+    forever, and retention never prunes 'building' rows.
+    """
+    cutoff = (datetime.now(UTC) - timedelta(seconds=_STUCK_BUILD_SECONDS)).isoformat()
+    building = [v for v in DatamoduleVersion.list_for(dm.id) if v.status == "building"]
+    stuck = [v for v in building if (v.build_started_at or v.created_at) < cutoff]
+    for v in stuck:
+        report.stuck_builds.append(f"{dm.path}: {v.uuid[:8]}")
+        if not report.dry_run:
+            v.mark_failed(_STUCK_BUILD_ERROR, None)
+    if stuck and len(stuck) == len(building) and not report.dry_run:
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET build_status = 'failed', last_build_error = ? "
+                "WHERE id = ? AND build_status = 'building'",
+                (_STUCK_BUILD_ERROR, dm.id),
+            )

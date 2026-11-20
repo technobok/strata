@@ -109,7 +109,7 @@ class DatamoduleVersion:
         assert created is not None
         return created
 
-    def mark_failed(self, error_message: str, duration_ms: int) -> None:
+    def mark_failed(self, error_message: str, duration_ms: int | None) -> None:
         now = datetime.now(UTC).isoformat()
         with transaction() as cursor:
             cursor.execute(
