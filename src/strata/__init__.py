@@ -65,6 +65,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     )
     Path(data_root).mkdir(parents=True, exist_ok=True)
     app.config["DATA_ROOT"] = data_root
+    app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 512)) * 1024 * 1024
 
     from strata.db import close_db
 

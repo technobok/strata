@@ -172,7 +172,9 @@ class Tag:
 
     def usage_count(self) -> int:
         db = get_db()
-        row = db.execute("SELECT COUNT(*) FROM report_tag WHERE tag_id = ?", (self.id,)).fetchone()
+        row = db.execute(
+            "SELECT COUNT(*) FROM datamodule_tag WHERE tag_id = ?", (self.id,)
+        ).fetchone()
         return int(row[0]) if row else 0
 
     def is_light(self) -> bool:

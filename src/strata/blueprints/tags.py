@@ -6,7 +6,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
-from strata.blueprints.auth import login_required
+from strata.blueprints.auth import admin_required, login_required
 from strata.models.tag import TAG_COLORS, Tag
 
 bp = Blueprint("tags", __name__, url_prefix="/tags")
@@ -22,7 +22,7 @@ def index() -> str:
 
 
 @bp.route("/new", methods=["GET", "POST"])
-@login_required
+@admin_required
 def new() -> str | Response:
     """Create a new tag."""
     if request.method == "POST":
@@ -46,7 +46,7 @@ def new() -> str | Response:
 
 
 @bp.route("/<int:tag_id>/edit", methods=["GET", "POST"])
-@login_required
+@admin_required
 def edit(tag_id: int) -> str | Response:
     """Edit a tag."""
     tag = Tag.get_by_id(tag_id)
@@ -66,7 +66,7 @@ def edit(tag_id: int) -> str | Response:
 
 
 @bp.route("/<int:tag_id>/delete", methods=["POST"])
-@login_required
+@admin_required
 def delete(tag_id: int) -> Response:
     """Delete a tag."""
     tag = Tag.get_by_id(tag_id)

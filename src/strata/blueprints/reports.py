@@ -57,7 +57,11 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     api_key: ApiKey | None = None
     if g.get("user") is None:
         if ext == "html":
-            return redirect(url_for("auth.login", next=request.url))
+            # Never carry an API key into the login redirect (it would land in
+            # gatekeeper's URL and logs); the key cannot open html anyway.
+            query = urlencode([(k, v) for k, v in request.args.items(multi=True) if k != "key"])
+            next_url = request.base_url + (f"?{query}" if query else "")
+            return redirect(url_for("auth.login", next=next_url))
         api_key, deny = _authenticate_key(report, ext)
         if deny is not None:
             return deny

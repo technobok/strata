@@ -44,6 +44,12 @@ REGISTRY: list[ConfigEntry] = [
         "Request threads per gunicorn worker (gthread). Restart to apply.",
     ),
     ConfigEntry(
+        "server.max_upload_mb",
+        ConfigType.INT,
+        512,
+        "Largest accepted request body in MB (source-file uploads); larger gets HTTP 413",
+    ),
+    ConfigEntry(
         "server.timeout",
         ConfigType.INT,
         120,
@@ -171,6 +177,7 @@ KEY_MAP: dict[str, str] = {
     "server.debug": "DEBUG",
     "server.threads": "SERVER_THREADS",
     "server.timeout": "SERVER_TIMEOUT",
+    "server.max_upload_mb": "MAX_UPLOAD_MB",
     "data.root": "DATA_ROOT",
     "auth.admin_group": "AUTH_ADMIN_GROUP",
     "gatekeeper.db_path": "GATEKEEPER_DB_PATH",

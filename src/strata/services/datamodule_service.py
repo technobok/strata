@@ -305,10 +305,14 @@ def _is_stale(dm: Datamodule, version: DatamoduleVersion, effective_ttl: int | N
     now = datetime.now(UTC)
     if dm.valid_until:
         try:
-            if now > datetime.fromisoformat(dm.valid_until):
-                return True
+            deadline = datetime.fromisoformat(dm.valid_until)
         except ValueError:
-            pass
+            deadline = None
+        if deadline is not None:
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=UTC)  # stored values are UTC
+            if now > deadline:
+                return True
     if effective_ttl is None:
         return False  # never auto-expire
     if effective_ttl <= 0:
@@ -318,6 +322,8 @@ def _is_stale(dm: Datamodule, version: DatamoduleVersion, effective_ttl: int | N
         built_at = datetime.fromisoformat(built)
     except ValueError:
         return True
+    if built_at.tzinfo is None:
+        built_at = built_at.replace(tzinfo=UTC)
     return (now - built_at).total_seconds() > effective_ttl
 
 

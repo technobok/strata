@@ -38,11 +38,18 @@ from strata.services.template_service import ALIAS_RE
 bp = Blueprint("datamodules", __name__, url_prefix="/datamodules")
 
 
-def _parse_ttl(raw: str) -> int | None:
+def _parse_ttl(raw: str) -> tuple[int | None, str | None]:
+    """TTL form field -> (seconds, error). Blank = never expire; 0 = always rebuild."""
     raw = raw.strip()
     if raw == "":
-        return None
-    return int(raw)
+        return None, None
+    try:
+        seconds = int(raw)
+    except ValueError:
+        return None, f"TTL must be a whole number of seconds, not '{raw}'."
+    if seconds < 0:
+        return None, "TTL cannot be negative (blank = never expire, 0 = always rebuild)."
+    return seconds, None
 
 
 def _parse_retention() -> tuple[str | None, int | None, object, str | None]:
@@ -207,19 +214,21 @@ def new() -> str | Response:
         path = request.form.get("path", "").strip()
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
-        ttl_raw = request.form.get("ttl_seconds", "")
+        ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
 
         if not path:
             flash("Path is required.", "error")
         elif Datamodule.get_by_path(path) is not None:
             flash(f"A datamodule with path '{path}' already exists.", "error")
+        elif ttl_error:
+            flash(ttl_error, "error")
         else:
             dm = Datamodule.create(
                 path=path,
                 created_by=g.user.username,
                 description=description,
                 build_script=build_script,
-                ttl_seconds=_parse_ttl(ttl_raw),
+                ttl_seconds=ttl,
             )
             flash("Datamodule created. Build it to produce a live version.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
@@ -238,7 +247,7 @@ def edit(uuid: str) -> str | Response:
         path = request.form.get("path", "").strip()
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
-        ttl_raw = request.form.get("ttl_seconds", "")
+        ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
         retention_kind, retention_count, retention_age, retention_error = _parse_retention()
 
         existing = Datamodule.get_by_path(path)
@@ -248,13 +257,15 @@ def edit(uuid: str) -> str | Response:
             flash(f"A datamodule with path '{path}' already exists.", "error")
         elif retention_error:
             flash(retention_error, "error")
+        elif ttl_error:
+            flash(ttl_error, "error")
         else:
             dm.update(
                 modified_by=g.user.username,
                 path=path,
                 description=description,
                 build_script=build_script,
-                ttl_seconds=_parse_ttl(ttl_raw),
+                ttl_seconds=ttl,
                 retention_kind=retention_kind,
                 retention_count=retention_count,
                 retention_age_seconds=retention_age,
