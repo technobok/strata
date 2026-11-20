@@ -168,3 +168,29 @@ def test_build_sandbox_can_be_switched_off(strata: Strata) -> None:
     strata.set_script(dm_uuid, "CREATE TABLE h AS SELECT * FROM read_text('/etc/hostname')")
     strata.build(dm_uuid)
     assert strata.datamodule(dm_uuid).build_status == "ready", _last_error(strata, dm_uuid)
+
+
+def test_build_script_may_set_session_options(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    strata.set_script(
+        dm_uuid,
+        "SET TimeZone = 'Australia/Brisbane';\n"
+        "SET threads = 2;\n"
+        "SET storage_compatibility_version = 'v1.0.0';\n"
+        "CREATE TABLE t AS SELECT current_setting('TimeZone') AS tz",
+    )
+    strata.build(dm_uuid)
+    assert strata.datamodule(dm_uuid).build_status == "ready", _last_error(strata, dm_uuid)
+
+
+@pytest.mark.parametrize(
+    "escape",
+    # (SET enable_external_access = true is refused by DuckDB at runtime even
+    # without a sandbox, so it proves nothing here; see the probes.)
+    ["SET allowed_directories = ['/']", "SET temp_directory = '/etc/strata-spill'"],
+)
+def test_build_script_cannot_reopen_the_sandbox(strata: Strata, escape: str) -> None:
+    dm_uuid = strata.new_datamodule()
+    strata.set_script(dm_uuid, f"{escape};\nCREATE TABLE t AS SELECT 1 AS x")
+    strata.build(dm_uuid)
+    assert strata.datamodule(dm_uuid).build_status == "failed"

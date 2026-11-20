@@ -4,8 +4,7 @@ Strata runs SQL written by authors: build scripts, report bodies and
 constraint queries. Each connection first does its trusted setup (ATTACH the
 version file, dependencies and bound connections; LOAD extensions), then calls
 ``lock_down``. After that the connection can only touch the directories it was
-given, cannot install or load extensions, and cannot change any setting back
-(``lock_configuration``).
+given and cannot install or load extensions.
 
 Behaviour probed on DuckDB 1.5.6:
 
@@ -14,9 +13,22 @@ Behaviour probed on DuckDB 1.5.6:
 - databases ATTACHed before the lockdown stay queryable, and spilling works
   when ``temp_directory`` is inside an allowed directory (DuckDB creates the
   directory on demand and deletes it when the connection closes).
+- once external access is off DuckDB itself refuses to switch it back on or
+  to widen ``allowed_directories``, and every setting that writes a file
+  (profiling_output, log_query_path, temp_directory, secret_directory,
+  extension_directory) is refused. So ``lock_configuration`` is not what keeps
+  the sandbox closed. Builds therefore leave it off: a build script may still
+  ``SET TimeZone``, ``threads``, ``memory_limit``,
+  ``storage_compatibility_version`` and so on. Serving turns it on (a single
+  SELECT cannot SET anything anyway).
 - GAP: once ``sqlite_scanner`` is loaded, ``ATTACH ... (TYPE sqlite)`` and
   ``sqlite_scan()`` bypass the file checks. It is therefore loaded only for a
   build that binds a sqlite connection, and never on the serve path.
+- DuckDB BUG: ``enable_logging(storage='file', ...)`` aimed outside the allowed
+  directories, followed by any query, aborts the whole process (SIGABRT),
+  whether or not the configuration is locked. ``SELECT * FROM
+  enable_logging(...)`` passes ``validate_select``, so an author can crash a web
+  worker this way (gunicorn restarts it). Not mitigated: authors are IT only.
 
 The build sandbox can be switched off with the ``build.sandbox`` setting (an
 escape hatch in case a connection driver turns out to need external access).
@@ -52,15 +64,18 @@ def _dir_prefix(path: Path) -> str:
     return str(path).rstrip("/") + "/"
 
 
-def lock_down(conn: duckdb.DuckDBPyConnection, directories: Iterable[Path] = ()) -> None:
-    """Restrict ``conn`` to ``directories`` and freeze its configuration."""
+def lock_down(
+    conn: duckdb.DuckDBPyConnection, directories: Iterable[Path] = (), *, freeze: bool = True
+) -> None:
+    """Restrict ``conn`` to ``directories``; ``freeze`` also locks every setting."""
     conn.execute("SET autoinstall_known_extensions = false")
     conn.execute("SET autoload_known_extensions = false")
     dirs = [_dir_prefix(d) for d in directories]
     if dirs:
         conn.execute(f"SET allowed_directories = {_sql_list(dirs)}")
     conn.execute("SET enable_external_access = false")
-    conn.execute("SET lock_configuration = true")
+    if freeze:
+        conn.execute("SET lock_configuration = true")
 
 
 def data_root() -> Path:
@@ -128,7 +143,9 @@ def lock_down_build(conn: duckdb.DuckDBPyConnection, dm_dir: Path) -> None:
     if not build_sandbox_enabled():
         return
     preload_build_extensions(conn)
-    lock_down(conn, [dm_dir / "sources", dm_dir / "tmp"])
+    # Not frozen: scripts may SET session options (TimeZone, threads, ...);
+    # external access stays off regardless (see the module docstring).
+    lock_down(conn, [dm_dir / "sources", dm_dir / "tmp"], freeze=False)
 
 
 def validate_select(sql: str, what: str = "Query") -> None:

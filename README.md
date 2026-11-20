@@ -74,7 +74,9 @@ Every DuckDB connection that runs author SQL is locked down once its trusted set
 - **Serving** (report bodies, constraint queries) — the live version file is ATTACHed read-only first; the SQL can then reach only that data. File reads, `COPY`, `ATTACH`, `INSTALL`/`LOAD`, and changing any setting are refused. Exports are written under `DATA_ROOT/_exports/` and spills under `DATA_ROOT/_tmp/`.
 - **Builds** — dependencies and connections are attached first; the script can then read only its own datamodule's `sources/` (and write its `tmp/`). The `excel` extension is preloaded so `read_xlsx(source('…'))` keeps working; other extensions must be loaded by a bound connection's driver.
 - **Escape hatch** — set `build.sandbox = false` in `/admin/config` if a build that worked before fails with a `Permission Error` (e.g. a connection driver that turns out to need external access, or a script that reads from an `https://` URL). Serving is always sandboxed.
+- **Session options** — a build script may still `SET TimeZone`, `threads`, `memory_limit`, `storage_compatibility_version` and the like; DuckDB itself refuses to turn external access back on or widen the allowed directories.
 - **Known gap** — once the `sqlite_scanner` extension is loaded (only for a build that binds a SQLite connection), DuckDB's SQLite reader does not apply the directory restriction, so that build can open other SQLite files.
+- **Known DuckDB bug** — `enable_logging(storage='file', …)` pointed outside the allowed directories, followed by any query, aborts the whole process. A report body that does this crashes the web worker serving it (gunicorn restarts it).
 
 ## Serving reference
 
