@@ -20,9 +20,13 @@ from strata.config import (
     BOOTSTRAP_ONLY,
     ENV_OVERRIDES,
     REGISTRY,
+    Applies,
+    ConfigEntry,
     ConfigType,
     parse_value,
     resolve_effective,
+    resolve_entry,
+    serialize_value,
 )
 from strata.db import get_db, get_db_path
 from strata.models.app_setting import clear_setting, set_setting
@@ -72,19 +76,22 @@ def config() -> str | Response:
     """View and edit application configuration.
 
     Each row resolves to (effective, source) where source is 'env', 'db', or
-    'default'. Env-overridden rows render read-only. Bootstrap-only rows (the
-    DB / project-root paths needed before the DB opens) are also read-only.
+    'default', and says when a change takes effect (``ConfigEntry.applies``).
+    Env-overridden rows render read-only. Bootstrap-only rows (the DB /
+    project-root paths needed before the DB opens) are also read-only.
     """
     if request.method == "POST":
         action = request.form.get("action", "save")
         if action == "clear":
             key = request.form.get("clear_key", "")
-            if any(e.key == key for e in REGISTRY) and key not in BOOTSTRAP_ONLY:
+            entry = resolve_entry(key)
+            if entry is not None and key not in BOOTSTRAP_ONLY:
                 clear_setting(key)
-                flash(f"Cleared '{key}' (now using default).", "success")
+                flash(f"Cleared '{key}' (now using the default; {entry.applies.value}).", "success")
             return redirect(url_for("admin.config"))
 
         # action == 'save': iterate all registry entries.
+        before = _effective_stored()
         inert_overrides: list[str] = []
         errors: list[str] = []
         for entry in REGISTRY:
@@ -132,7 +139,9 @@ def config() -> str | Response:
                 "info",
             )
         if not errors:
-            flash("Configuration saved. Most changes need an app restart.", "success")
+            after = _effective_stored()
+            changed = [e for e in REGISTRY if before[e.key] != after[e.key]]
+            flash(_saved_message(changed), "success")
         return redirect(url_for("admin.config"))
 
     rows = []
@@ -146,10 +155,30 @@ def config() -> str | Response:
                 "env_name": ENV_OVERRIDES.get(entry.key, ""),
                 "bootstrap_only": entry.key in BOOTSTRAP_ONLY,
                 "type": entry.type.value,
+                "applies": entry.applies,
             }
         )
 
-    return render_template("admin/config.html", rows=rows)
+    return render_template("admin/config.html", rows=rows, live=Applies.LIVE)
+
+
+def _effective_stored() -> dict[str, str]:
+    """Each setting's stored value, or its default when no row is stored."""
+    stored = {str(k): str(v) for k, v in get_db().execute("SELECT key, value FROM app_setting")}
+    return {e.key: stored.get(e.key, serialize_value(e, e.default)) for e in REGISTRY}
+
+
+def _saved_message(changed: list[ConfigEntry]) -> str:
+    """'Configuration saved. Applies immediately: a. Restart the app: b.'"""
+    if not changed:
+        return "Configuration saved (no changes)."
+    parts = []
+    for applies in Applies:
+        keys = [e.key for e in changed if e.applies is applies]
+        if keys:
+            label = applies.value[0].upper() + applies.value[1:]
+            parts.append(f"{label}: {', '.join(keys)}.")
+    return "Configuration saved. " + " ".join(parts)
 
 
 def _get_schema() -> list[dict[str, object]]:

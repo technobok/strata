@@ -157,6 +157,25 @@ class Strata:
         assert revealed, self.flashes()
         return revealed["token"]
 
+    def set_config(self, settings: dict[str, str | int | bool]) -> None:
+        """Save settings through /admin/config, as an admin would (no restart)."""
+        from strata.config import ConfigType, resolve_entry
+
+        data: dict[str, str] = {"action": "save"}
+        for key, value in settings.items():
+            entry = resolve_entry(key)
+            assert entry is not None, key
+            data[f"config_{key}_present"] = "1"
+            if entry.type is ConfigType.BOOL:
+                if value:
+                    data[f"config_{key}"] = "on"
+            else:
+                data[f"config_{key}"] = str(value)
+        resp = self.client.post("/admin/config", data=data)
+        assert resp.status_code == 302
+        errors = [msg for cat, msg in self.flashes() if cat == "error"]
+        assert not errors, errors
+
     def flashes(self) -> list[tuple[str, str]]:
         with self.client.session_transaction() as sess:
             return list(sess.get("_flashes", []))

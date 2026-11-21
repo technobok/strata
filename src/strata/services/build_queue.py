@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from flask import current_app
 
+from strata.config import live_int
 from strata.models.build_job import BuildJob
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
@@ -89,7 +90,7 @@ class Served:
 
 
 def max_wait_seconds() -> float:
-    return float(current_app.config.get("SERVE_MAX_WAIT_SECONDS", 60))
+    return float(live_int("serve.max_wait_seconds"))
 
 
 def wait_for(job: BuildJob, seconds: float) -> BuildJob:

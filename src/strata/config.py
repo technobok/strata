@@ -3,8 +3,15 @@
 Every configurable setting is declared here with its key, type, default,
 description, and whether it contains a secret.  The registry is the single
 source of truth for what settings exist.
+
+Settings marked ``Applies.LIVE`` are read from ``app_setting`` when used
+(``live_str``/``live_int``/``live_bool``/``live_list``, cached 5 s), so a change
+in /admin/config reaches the web app and the worker without a restart. Every
+other setting is loaded into ``app.config`` once, at ``create_app``.
 """
 
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -17,6 +24,15 @@ class ConfigType(Enum):
     STRING_LIST = "string_list"
 
 
+class Applies(Enum):
+    """When a changed setting takes effect (shown on /admin/config)."""
+
+    LIVE = "applies immediately"
+    APP = "restart the app"
+    WORKER = "restart the worker"
+    BOTH = "restart app + worker"
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigEntry:
     key: str
@@ -24,6 +40,7 @@ class ConfigEntry:
     default: str | int | bool | list[str]
     description: str
     secret: bool = False
+    applies: Applies = Applies.BOTH
 
 
 # ---------------------------------------------------------------------------
@@ -32,29 +49,50 @@ class ConfigEntry:
 
 REGISTRY: list[ConfigEntry] = [
     # -- server --
-    ConfigEntry("server.host", ConfigType.STRING, "0.0.0.0", "Bind address for production server"),
-    ConfigEntry("server.port", ConfigType.INT, 5000, "Port for production server"),
-    ConfigEntry("server.dev_host", ConfigType.STRING, "127.0.0.1", "Bind address for dev server"),
-    ConfigEntry("server.dev_port", ConfigType.INT, 5000, "Port for dev server"),
-    ConfigEntry("server.debug", ConfigType.BOOL, False, "Enable Flask debug mode"),
+    ConfigEntry(
+        "server.host",
+        ConfigType.STRING,
+        "0.0.0.0",
+        "Bind address for production server",
+        applies=Applies.APP,
+    ),
+    ConfigEntry(
+        "server.port", ConfigType.INT, 5000, "Port for production server", applies=Applies.APP
+    ),
+    ConfigEntry(
+        "server.dev_host",
+        ConfigType.STRING,
+        "127.0.0.1",
+        "Bind address for dev server",
+        applies=Applies.APP,
+    ),
+    ConfigEntry(
+        "server.dev_port", ConfigType.INT, 5000, "Port for dev server", applies=Applies.APP
+    ),
+    ConfigEntry(
+        "server.debug", ConfigType.BOOL, False, "Enable Flask debug mode", applies=Applies.APP
+    ),
     ConfigEntry(
         "server.threads",
         ConfigType.INT,
         8,
-        "Request threads per gunicorn worker (gthread). Restart to apply.",
+        "Request threads per gunicorn worker (gthread)",
+        applies=Applies.APP,
     ),
     ConfigEntry(
         "server.max_upload_mb",
         ConfigType.INT,
         512,
         "Largest accepted request body in MB (source-file uploads); larger gets HTTP 413",
+        applies=Applies.APP,
     ),
     ConfigEntry(
         "server.timeout",
         ConfigType.INT,
         120,
         "Seconds a gunicorn worker may go silent before it is restarted (not a per-request "
-        "limit under gthread). Restart to apply.",
+        "limit under gthread)",
+        applies=Applies.APP,
     ),
     # -- data storage --
     ConfigEntry(
@@ -69,6 +107,7 @@ REGISTRY: list[ConfigEntry] = [
         ConfigType.STRING,
         "strata-admins",
         "Gatekeeper group whose members get strata admin access",
+        applies=Applies.APP,
     ),
     # -- gatekeeper --
     ConfigEntry("gatekeeper.db_path", ConfigType.STRING, "", "Path to Gatekeeper SQLite database"),
@@ -92,13 +131,16 @@ REGISTRY: list[ConfigEntry] = [
         "worker.poll_interval",
         ConfigType.INT,
         30,
-        "Seconds between the worker's sweeps (dead builds, orphaned jobs) and schedule checks",
+        "Seconds between the worker's sweeps for dead builds and orphaned jobs (due schedules "
+        "are checked every 10 s regardless)",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "worker.concurrency",
         ConfigType.INT,
         2,
         "Builds one strata-worker process runs at once (override with --concurrency)",
+        applies=Applies.WORKER,
     ),
     # -- serving --
     ConfigEntry(
@@ -107,6 +149,7 @@ REGISTRY: list[ConfigEntry] = [
         60,
         "How long a report request waits for the rebuild of stale data before serving the "
         "previous version, marked stale (PowerQuery gives up after 100s)",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "serve.memory_limit",
@@ -114,6 +157,7 @@ REGISTRY: list[ConfigEntry] = [
         "2GB",
         "DuckDB memory limit for each report query (spills to disk beyond it); blank = DuckDB's "
         "default (80% of RAM)",
+        applies=Applies.LIVE,
     ),
     # -- schedules --
     ConfigEntry(
@@ -121,6 +165,7 @@ REGISTRY: list[ConfigEntry] = [
         ConfigType.STRING_LIST,
         ["Australia/Brisbane", "Australia/Sydney", "Pacific/Auckland"],
         "Timezones offered for schedules (IANA names, comma-separated); the first is the default",
+        applies=Applies.LIVE,
     ),
     # -- builds --
     ConfigEntry(
@@ -129,18 +174,21 @@ REGISTRY: list[ConfigEntry] = [
         "4GB",
         "DuckDB memory limit per build (spills to disk beyond it). Sized for 2 concurrent "
         "builds on 16 GB; a script may SET its own. Blank = DuckDB's default (80% of RAM)",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "build.threads",
         ConfigType.INT,
         0,
         "DuckDB threads per build; 0 = DuckDB's default (one per core)",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "build.timeout_seconds",
         ConfigType.INT,
         3600,
         "A build still running after this many seconds is interrupted and fails; 0 = no limit",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "build.sandbox",
@@ -148,15 +196,36 @@ REGISTRY: list[ConfigEntry] = [
         True,
         "Lock build scripts to their own datamodule's sources/ and tmp/ (DuckDB external "
         "access off). Turn off only if a connection driver fails under the sandbox.",
+        applies=Applies.LIVE,
     ),
     # -- proxy --
-    ConfigEntry("proxy.x_forwarded_for", ConfigType.INT, 0, "Trust X-Forwarded-For (hop count)"),
     ConfigEntry(
-        "proxy.x_forwarded_proto", ConfigType.INT, 0, "Trust X-Forwarded-Proto (hop count)"
+        "proxy.x_forwarded_for",
+        ConfigType.INT,
+        0,
+        "Trust X-Forwarded-For (hop count)",
+        applies=Applies.APP,
     ),
-    ConfigEntry("proxy.x_forwarded_host", ConfigType.INT, 0, "Trust X-Forwarded-Host (hop count)"),
     ConfigEntry(
-        "proxy.x_forwarded_prefix", ConfigType.INT, 0, "Trust X-Forwarded-Prefix (hop count)"
+        "proxy.x_forwarded_proto",
+        ConfigType.INT,
+        0,
+        "Trust X-Forwarded-Proto (hop count)",
+        applies=Applies.APP,
+    ),
+    ConfigEntry(
+        "proxy.x_forwarded_host",
+        ConfigType.INT,
+        0,
+        "Trust X-Forwarded-Host (hop count)",
+        applies=Applies.APP,
+    ),
+    ConfigEntry(
+        "proxy.x_forwarded_prefix",
+        ConfigType.INT,
+        0,
+        "Trust X-Forwarded-Prefix (hop count)",
+        applies=Applies.APP,
     ),
     # -- bootstrap-only (read before the DB is open; shown read-only in /admin/config) --
     ConfigEntry(
@@ -235,20 +304,14 @@ KEY_MAP: dict[str, str] = {
     "gatekeeper.api_key": "GATEKEEPER_API_KEY",
     "mail.sender": "MAIL_SENDER",
     "outbox.db_path": "OUTBOX_DB_PATH",
-    "worker.poll_interval": "WORKER_POLL_INTERVAL",
     "worker.concurrency": "WORKER_CONCURRENCY",
-    "build.sandbox": "BUILD_SANDBOX",
-    "serve.max_wait_seconds": "SERVE_MAX_WAIT_SECONDS",
-    "schedule.timezones": "SCHEDULE_TIMEZONES",
-    "serve.memory_limit": "SERVE_MEMORY_LIMIT",
-    "build.memory_limit": "BUILD_MEMORY_LIMIT",
-    "build.threads": "BUILD_THREADS",
-    "build.timeout_seconds": "BUILD_TIMEOUT_SECONDS",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
     "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",
     "proxy.x_forwarded_prefix": "PROXY_X_FORWARDED_PREFIX",
     # storage.* are deliberately not mapped — they're env-only at runtime.
+    # Applies.LIVE settings are not mapped either: they are read at use through
+    # live_*(), so app.config never holds a copy that could go stale.
 }
 
 
@@ -300,3 +363,85 @@ def resolve_effective(
     if stored_raw is not None:
         return stored_raw, "db"
     return serialize_value(entry, entry.default), "default"
+
+
+# ---------------------------------------------------------------------------
+# Live settings: read from app_setting at use (Applies.LIVE only)
+# ---------------------------------------------------------------------------
+
+LIVE_CACHE_SECONDS = 5.0
+_now = time.monotonic  # tests replace it to step past the cache
+
+_live_lock = threading.Lock()
+_live_cache: dict[str, tuple[float, dict[str, str]]] = {}  # DB path -> (read at, rows)
+_live_generation = 0  # bumped by every write in this process
+
+
+def forget_cached_settings() -> None:
+    """Drop the cached settings; app_setting writes in this process call it, so the
+    process that saved a change sees it at once. Other processes (the worker, the
+    CLI's writes) see it within LIVE_CACHE_SECONDS."""
+    global _live_generation
+    with _live_lock:
+        _live_cache.clear()
+        _live_generation += 1
+
+
+def _stored_values() -> dict[str, str]:
+    from flask import current_app
+
+    from strata.db import get_db
+
+    db_path = current_app.config["DATABASE_PATH"]
+    now = _now()
+    with _live_lock:
+        cached = _live_cache.get(db_path)
+        generation = _live_generation
+    if cached is not None and now - cached[0] < LIVE_CACHE_SECONDS:
+        return cached[1]
+    rows = get_db().execute("SELECT key, value FROM app_setting").fetchall()
+    values = {str(k): str(v) for k, v in rows if str(k) in _REGISTRY_MAP}
+    with _live_lock:
+        # A write that landed while this read ran must not be shadowed by it.
+        if generation == _live_generation:
+            _live_cache[db_path] = (now, values)
+    return values
+
+
+def _live(key: str, expected: ConfigType) -> str | int | bool | list[str]:
+    entry = _REGISTRY_MAP[key]
+    if entry.applies is not Applies.LIVE:
+        raise ValueError(f"{key} is not a live setting; read it from app.config")
+    if entry.type is not expected:
+        raise TypeError(f"{key} is a {entry.type.value} setting, not {expected.value}")
+    raw = _stored_values().get(key)
+    if raw is None:
+        return entry.default
+    try:
+        return parse_value(entry, raw)
+    except ValueError as exc:
+        raise ValueError(f"the {key} setting {raw!r} is not a valid {entry.type.value}") from exc
+
+
+def live_str(key: str) -> str:
+    value = _live(key, ConfigType.STRING)
+    assert isinstance(value, str)
+    return value
+
+
+def live_int(key: str) -> int:
+    value = _live(key, ConfigType.INT)
+    assert isinstance(value, int) and not isinstance(value, bool)
+    return value
+
+
+def live_bool(key: str) -> bool:
+    value = _live(key, ConfigType.BOOL)
+    assert isinstance(value, bool)
+    return value
+
+
+def live_list(key: str) -> list[str]:
+    value = _live(key, ConfigType.STRING_LIST)
+    assert isinstance(value, list)
+    return list(value)

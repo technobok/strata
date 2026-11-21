@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 import click
 
 from strata.config import (
+    LIVE_CACHE_SECONDS,
     REGISTRY,
+    Applies,
     parse_value,
     resolve_entry,
     serialize_value,
@@ -146,7 +148,13 @@ def config_set(key: str, value: str) -> None:
         sys.exit(1)
 
     _db_set(key, value)
-    click.echo(f"{key} = {value}")
+    # A running app/worker re-reads a live setting once its cache expires.
+    applies = (
+        f"applies within {LIVE_CACHE_SECONDS:g} s"
+        if entry.applies is Applies.LIVE
+        else entry.applies.value
+    )
+    click.echo(f"{key} = {value} ({applies})")
     close_standalone_db()
 
 

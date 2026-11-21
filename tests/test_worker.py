@@ -1,6 +1,7 @@
 """Build jobs: coalescing, claiming, the worker loop, and orphan reaping."""
 
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -231,3 +232,36 @@ def test_admin_page_lists_live_workers(queued: Strata) -> None:
         WorkerProcess.register("box:42:abc", "box", 42, ["default", "long"], 3)
     page = queued.client.get("/admin/").get_data(as_text=True)
     assert "box:42:abc" in page and "default,long" in page
+
+
+def test_the_sweep_interval_applies_without_a_restart(
+    queued: Strata, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from strata import worker as worker_module
+
+    monkeypatch.setattr(worker_module, "HEARTBEAT_SECONDS", 0.02)
+    monkeypatch.setattr(worker_module, "JOB_POLL_SECONDS", 0.02)
+    queued.set_config({"worker.poll_interval": 3600})
+    worker = _worker(queued)
+    sweeps: list[float] = []
+    monkeypatch.setattr(worker, "sweep", lambda: sweeps.append(time.monotonic()))
+
+    def wait_for_sweeps(n: int) -> None:
+        deadline = time.monotonic() + 5
+        while len(sweeps) < n and time.monotonic() < deadline:
+            time.sleep(0.02)
+
+    thread = threading.Thread(target=worker.run)
+    thread.start()
+    try:
+        wait_for_sweeps(1)  # the first beat sweeps; the next is an hour away
+        time.sleep(0.2)
+        assert len(sweeps) == 1
+        # Shortened while running: it applies at the next beat, not in an hour.
+        queued.set_config({"worker.poll_interval": 0})
+        wait_for_sweeps(3)
+        assert len(sweeps) >= 3
+    finally:
+        worker.stop.set()
+        thread.join(timeout=10)
+    assert not thread.is_alive()

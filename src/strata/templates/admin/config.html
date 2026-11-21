@@ -5,9 +5,11 @@
 {% block content %}
 <hgroup>
     <h2>Configuration</h2>
-    <p>Application settings. Each row shows the value the running app is using
-    and where it came from. Env-overridden rows are read-only — change the env
-    var (e.g. in <code>docker-compose.yml</code>) to take effect.</p>
+    <p>Application settings. Each row shows the stored value, where it came from,
+    and when a change takes effect: settings marked <em>applies immediately</em>
+    reach the web app at once and the worker within 5 seconds; the others need the
+    restart shown. Env-overridden rows are read-only — change the env var (e.g. in
+    <code>docker-compose.yml</code>) to take effect.</p>
 </hgroup>
 
 <style>
@@ -18,6 +20,8 @@
 .cfg-source-env { background: #f6c453; color: #5a3e00; }
 .cfg-source-db  { background: #6db4ff; color: #002a5e; }
 .cfg-source-default { background: #d8d8d8; color: #444; }
+.cfg-applies { font-size: 0.8rem; white-space: nowrap; }
+.cfg-applies-live { color: #2e7d32; }
 .cfg-row td { vertical-align: top; padding: 0.5rem 0.4rem; }
 .cfg-key { font-family: monospace; font-size: 0.85rem; }
 .cfg-meta { font-size: 0.8rem; color: #888; margin-top: 0.2rem; }
@@ -31,6 +35,7 @@
                 <th style="width:24%">Key</th>
                 <th style="width:30%">Value</th>
                 <th>Source</th>
+                <th>Takes effect</th>
                 <th>Description</th>
                 <th></th>
             </tr>
@@ -70,6 +75,9 @@
                 </td>
                 <td>
                     <span class="cfg-source cfg-source-{{ r.source }}">{{ r.source }}</span>
+                </td>
+                <td>
+                    <span class="cfg-applies{% if r.applies is sameas live %} cfg-applies-live{% endif %}">{{ r.applies.value }}</span>
                 </td>
                 <td><small>{{ entry.description }}</small></td>
                 <td>

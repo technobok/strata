@@ -76,7 +76,8 @@ def test_the_request_waits_for_a_worker_to_finish(
     strata: Strata, stale_report: tuple[str, str]
 ) -> None:
     dm_uuid, rpt = stale_report
-    strata.app.config.update(WORKER_INLINE=False, SERVE_MAX_WAIT_SECONDS=20)
+    strata.app.config["WORKER_INLINE"] = False
+    strata.set_config({"serve.max_wait_seconds": 20})
     worker = _worker(strata)
 
     def run_soon() -> None:
@@ -96,7 +97,8 @@ def test_stale_data_is_served_when_the_rebuild_is_slow(
     strata: Strata, stale_report: tuple[str, str]
 ) -> None:
     dm_uuid, rpt = stale_report
-    strata.app.config.update(WORKER_INLINE=False, SERVE_MAX_WAIT_SECONDS=0)
+    strata.app.config["WORKER_INLINE"] = False
+    strata.set_config({"serve.max_wait_seconds": 0})
     resp = strata.client.get(f"/r/{rpt}.json")
     assert resp.status_code == 200
     assert resp.headers["X-Data-Stale"] == "1"
@@ -108,7 +110,8 @@ def test_stale_data_is_served_when_the_rebuild_is_slow(
 
 
 def test_never_built_is_503_for_data_and_a_waiting_page_for_html(strata: Strata) -> None:
-    strata.app.config.update(WORKER_INLINE=False, SERVE_MAX_WAIT_SECONDS=0)
+    strata.app.config["WORKER_INLINE"] = False
+    strata.set_config({"serve.max_wait_seconds": 0})
     dm_uuid = strata.new_datamodule()
     rpt = strata.new_report(dm_uuid)
     resp = strata.client.get(f"/r/{rpt}.csv")

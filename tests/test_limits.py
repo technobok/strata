@@ -18,7 +18,7 @@ def _first_row(strata: Strata, dm_uuid: str, body: str, macro: str) -> dict:
 
 
 def test_builds_run_with_the_configured_limits(strata: Strata) -> None:
-    strata.app.config.update(BUILD_MEMORY_LIMIT="3GB", BUILD_THREADS=1)
+    strata.set_config({"build.memory_limit": "3GB", "build.threads": 1})
     dm_uuid = strata.new_datamodule(script=SETTINGS_SCRIPT)
     strata.build(dm_uuid)
     row = _first_row(strata, dm_uuid, "SELECT * FROM s", "s")
@@ -32,7 +32,7 @@ def test_a_build_script_may_raise_its_own_limit(strata: Strata) -> None:
 
 
 def test_report_queries_run_with_the_serve_limit(strata: Strata) -> None:
-    strata.app.config["SERVE_MEMORY_LIMIT"] = "1GB"
+    strata.set_config({"serve.memory_limit": "1GB"})
     dm_uuid = strata.new_datamodule()
     strata.build(dm_uuid)
     row = _first_row(strata, dm_uuid, "SELECT current_setting('memory_limit') AS mem", "m")
@@ -40,7 +40,7 @@ def test_report_queries_run_with_the_serve_limit(strata: Strata) -> None:
 
 
 def test_a_bad_memory_setting_fails_the_build_clearly(strata: Strata) -> None:
-    strata.app.config["BUILD_MEMORY_LIMIT"] = "lots"
+    strata.set_config({"build.memory_limit": "lots"})
     dm_uuid = strata.new_datamodule()
     strata.build(dm_uuid)
     dm = strata.datamodule(dm_uuid)
@@ -49,7 +49,7 @@ def test_a_bad_memory_setting_fails_the_build_clearly(strata: Strata) -> None:
 
 
 def test_a_build_over_its_time_limit_is_interrupted(strata: Strata) -> None:
-    strata.app.config["BUILD_TIMEOUT_SECONDS"] = 1
+    strata.set_config({"build.timeout_seconds": 1})
     dm_uuid = strata.new_datamodule(
         script="CREATE TABLE t AS SELECT count(*) AS n FROM range(100000000000) r(x) WHERE x % 7 = 3"
     )

@@ -28,11 +28,11 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.rrule import rrulestr
-from flask import current_app
+
+from strata.config import live_list
 
 log = logging.getLogger(__name__)
 
-DEFAULT_TIMEZONES = ["Australia/Brisbane", "Australia/Sydney", "Pacific/Auckland"]
 
 DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 DAY_NAMES = {
@@ -99,9 +99,7 @@ class Definition:
 
 def configured_timezones() -> list[str]:
     """The timezones offered to schedule authors, first = default; unknown names dropped."""
-    raw = current_app.config.get("SCHEDULE_TIMEZONES") or DEFAULT_TIMEZONES
-    names = [n.strip() for n in (raw.split(",") if isinstance(raw, str) else raw) if n.strip()]
-    valid = [n for n in names if _zone_or_none(n) is not None]
+    valid = [n for n in live_list("schedule.timezones") if _zone_or_none(n) is not None]
     return valid or ["UTC"]
 
 

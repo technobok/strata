@@ -302,14 +302,16 @@ If you need Always Encrypted, MARS, or AD-password auth with UPN UIDs (`user@dom
 
 Every setting strata reads is in the registry at `src/strata/config.py`. The runtime resolves each one in priority order: **env var > DB-stored value (`app_setting` table) > registry default**.
 
-`/admin/config` shows the full registry, the *effective* value for each row, and which layer it came from (`env` / `db` / `default`). Env-overridden rows are read-only — to change them, edit the env var (typically in `docker-compose.yml`). All other rows are editable; saving writes to the DB layer. Each registry entry is also reachable from the CLI:
+`/admin/config` shows the full registry, the *effective* value for each row, which layer it came from (`env` / `db` / `default`), and when a change takes effect. Env-overridden rows are read-only — to change them, edit the env var (typically in `docker-compose.yml`). All other rows are editable; saving writes to the DB layer.
+
+The `build.*`, `serve.*`, `schedule.*` settings and `worker.poll_interval` **apply immediately**: they are read when used (cached for 5 seconds), so the web app uses a saved change at once and the worker within 5 seconds. The rest are read once at start, and each row says whether it needs the app, the worker, or both restarted. Each registry entry is also reachable from the CLI:
 
 ```bash
 make config-list
 make config-set KEY=auth.admin_group VAL=strata-admins
 ```
 
-DB-only settings worth knowing (no env var; restart the app after changing the `server.*` ones):
+DB-only settings worth knowing (no env var; the `server.*` ones need an app restart):
 
 | Registry key | Default | Purpose |
 |---|---|---|

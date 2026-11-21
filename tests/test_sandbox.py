@@ -163,7 +163,7 @@ def test_build_can_still_use_dependencies(strata: Strata) -> None:
 
 
 def test_build_sandbox_can_be_switched_off(strata: Strata) -> None:
-    strata.app.config["BUILD_SANDBOX"] = False
+    strata.set_config({"build.sandbox": False})
     dm_uuid = strata.new_datamodule()
     strata.set_script(dm_uuid, "CREATE TABLE h AS SELECT * FROM read_text('/etc/hostname')")
     strata.build(dm_uuid)

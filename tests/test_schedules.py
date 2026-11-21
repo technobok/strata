@@ -259,7 +259,7 @@ def test_an_unticked_enabled_box_saves_it_disabled(strata: Strata) -> None:
 
 
 def test_timezones_come_from_the_setting(strata: Strata) -> None:
-    strata.app.config["SCHEDULE_TIMEZONES"] = ["Europe/London", "Bogus/Zone", "Asia/Tokyo"]
+    strata.set_config({"schedule.timezones": "Europe/London, Bogus/Zone, Asia/Tokyo"})
     dm_uuid = strata.new_datamodule()
     page = strata.client.get(f"/datamodules/{dm_uuid}/schedules/new").get_data(as_text=True)
     assert "Europe/London" in page and "Asia/Tokyo" in page and "Bogus/Zone" not in page

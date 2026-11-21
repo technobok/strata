@@ -34,7 +34,7 @@ make db-init             # Apply DB migrations only (no rebuild, no restart)
 - Tests drive the real routes through the Flask test client (`tests/conftest.py`): a fresh SQLite DB + DATA_ROOT per test, an injected admin user (`X-User: viewer` = non-admin, `X-Anon: 1` = anonymous), and the `strata` fixture's authoring helpers.
 - App factory in `src/strata/__init__.py`
 - APSW db module with Flask-context and standalone transactions in `src/strata/db.py`
-- Typed config registry in `src/strata/config.py`
+- Typed config registry in `src/strata/config.py`. Each entry says when a change applies (`Applies`). `Applies.LIVE` settings (build.*, serve.*, schedule.*, worker.poll_interval) are read at use with `config.live_str/int/bool/list` (app_setting, 5 s cache, dropped on every write in-process) and are NOT in `KEY_MAP`/app.config; the rest are loaded into app.config at `create_app`. Tests change settings with `strata.set_config({...})` (posts /admin/config), never by poking app.config.
 - All models are dataclasses with static CRUD methods
 - Blueprints in `src/strata/blueprints/`
 - Services in `src/strata/services/`

@@ -25,6 +25,8 @@ from datetime import UTC, datetime, timedelta
 import click
 from flask import Flask
 
+from strata.config import live_int
+
 log = logging.getLogger("strata.worker")
 
 JOB_POLL_SECONDS = 1.0
@@ -67,15 +69,17 @@ class Worker:
             ]
             for t in threads:
                 t.start()
-            sweep_every = int(self.app.config.get("WORKER_POLL_INTERVAL", 30))
-            next_sweep = 0.0
+            last_sweep: float | None = None
             while not self.stop.is_set():
                 with self.app.app_context():
                     WorkerProcess.heartbeat(self.id)
+                    # Read each beat (a live setting): a shorter interval applies at
+                    # the next beat, not after the old interval runs out.
+                    sweep_every = live_int("worker.poll_interval")
                 self.tick_schedules()
-                if time.monotonic() >= next_sweep:
+                if last_sweep is None or time.monotonic() - last_sweep >= sweep_every:
                     self.sweep()
-                    next_sweep = time.monotonic() + sweep_every
+                    last_sweep = time.monotonic()
                 self.stop.wait(HEARTBEAT_SECONDS)
             log.info("worker %s stopping; waiting for running builds", self.id)
             for t in threads:

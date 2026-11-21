@@ -43,6 +43,8 @@ from pathlib import Path
 import duckdb
 from flask import current_app
 
+from strata.config import live_bool, live_int, live_str
+
 log = logging.getLogger(__name__)
 
 # Extensions loaded (best effort) before a build's lockdown, because a locked
@@ -101,14 +103,11 @@ def _apply_limits(
 
 def apply_build_limits(conn: duckdb.DuckDBPyConnection) -> None:
     """Defaults for a build; the script may raise them with SET (builds are not frozen)."""
-    cfg = current_app.config
-    _apply_limits(
-        conn, str(cfg.get("BUILD_MEMORY_LIMIT", "4GB")), int(cfg.get("BUILD_THREADS", 0)), "build"
-    )
+    _apply_limits(conn, live_str("build.memory_limit"), live_int("build.threads"), "build")
 
 
 def build_timeout_seconds() -> int:
-    return int(current_app.config.get("BUILD_TIMEOUT_SECONDS", 3600))
+    return live_int("build.timeout_seconds")
 
 
 class Deadline:
@@ -161,7 +160,7 @@ def serve_conn(version_file: Path) -> duckdb.DuckDBPyConnection:
         # Per-connection spill directory: DuckDB creates it on demand and
         # removes it on close, so concurrent connections never share files.
         conn.execute(f"SET temp_directory = '{_escape(scratch / uuid.uuid4().hex)}'")
-        _apply_limits(conn, str(current_app.config.get("SERVE_MEMORY_LIMIT", "2GB")), 0, "serve")
+        _apply_limits(conn, live_str("serve.memory_limit"), 0, "serve")
         lock_down(conn, [exports_dir(), scratch])
     except Exception:
         conn.close()
@@ -170,7 +169,7 @@ def serve_conn(version_file: Path) -> duckdb.DuckDBPyConnection:
 
 
 def build_sandbox_enabled() -> bool:
-    return bool(current_app.config.get("BUILD_SANDBOX", True))
+    return live_bool("build.sandbox")
 
 
 def preload_build_extensions(conn: duckdb.DuckDBPyConnection) -> None:
