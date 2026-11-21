@@ -1,0 +1,7 @@
+{# "Preview rendered script" result (datamodules.preview_script). #}
+{% if error %}
+<article class="flash flash-error">{{ error }}</article>
+{% else %}
+<p><small>Rendered with the dependencies' live versions; a build renders it again with the versions it attaches.</small></p>
+<pre class="script-preview"><code>{{ rendered }}</code></pre>
+{% endif %}

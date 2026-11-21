@@ -76,6 +76,45 @@ and the build can then read from it:
 
 Credentials are stored encrypted. The build script never sees them.
 
+## Loops over rows (Jinja)
+
+A build script that contains `{{` or `{%` is a **template**: Strata renders it with
+[Jinja](https://jinja.palletsprojects.com/) just before it runs, so one script can
+repeat a statement for every row of a dependency. The usual case is one branch per
+company, from a `ref/companies` datamodule (added as a dependency named
+`companies`):
+
+```sql
+CREATE TABLE stock AS
+{% for c in rows('companies', "SELECT shortname, companynamesql FROM companies ORDER BY shortname") %}
+{% if not loop.first %}UNION ALL{% endif %}
+SELECT {{ c.shortname | sqlstr }} AS company, *
+FROM odbc_query(getvariable('conn_navi'),
+                {{ ("SELECT ItemNo, Qty FROM " ~ c.companynamesql ~ ".dbo.Stock") | sqlstr }})
+{% endfor %}
+```
+
+What a template can use:
+
+- `rows('dependency', "SELECT …")`: the rows of one SELECT on that dependency (its
+  version for this build), each a mapping of column name to value, e.g.
+  `c.shortname`. At most 10,000 rows.
+- `{{ value | sqlstr }}`: the value as a quoted SQL string: `O'Brien` →
+  `'O''Brien'`; nothing → `NULL`.
+- `{{ value | ident }}`: the value as a quoted SQL name: `net sales` →
+  `"net sales"`.
+
+Jinja's own `{% for %}`, `{% if %}`, `loop.first` / `loop.last`, `~` (join text)
+and so on all work. A name that does not exist is an error, not an empty string.
+Always pass values through `sqlstr` or `ident`; never paste them into SQL as they
+are.
+
+**Preview rendered script** on the datamodule page shows the SQL the template
+produces, using the dependencies' live data. A build renders it again with the
+versions it attaches, and the version keeps the **rendered** script, so you can
+always see what really ran. A template error fails the build with its line, e.g.
+"build script, line 3: 'c' is undefined".
+
 ## Session options
 
 A script may `SET` DuckDB session options for its own build, for example:

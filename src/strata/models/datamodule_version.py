@@ -109,6 +109,15 @@ class DatamoduleVersion:
         assert created is not None
         return created
 
+    def set_script_snapshot(self, script: str) -> None:
+        """The script as it ran: a template build keeps its rendered text."""
+        with transaction() as cursor:
+            cursor.execute(
+                "UPDATE datamodule_version SET build_script_snapshot = ? WHERE id = ?",
+                (script, self.id),
+            )
+        self.build_script_snapshot = script
+
     def mark_failed(self, error_message: str, duration_ms: int | None) -> None:
         now = datetime.now(UTC).isoformat()
         with transaction() as cursor:

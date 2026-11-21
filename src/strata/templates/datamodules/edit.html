@@ -66,6 +66,15 @@
         <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"
                   placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
     </label>
+    {% if datamodule %}
+    <p>
+        <button type="button" class="outline small"
+                hx-post="{{ url_for('datamodules.preview_script', uuid=datamodule.uuid) }}"
+                hx-include="[name='build_script']" hx-target="#script-preview">Preview rendered script</button>
+        <small>for a script with <code>{% raw %}{% … %}{% endraw %}</code> loops{{ help_link('build-scripts', 'loops-over-rows-jinja') }}</small>
+    </p>
+    <div id="script-preview"></div>
+    {% endif %}
     <button type="submit">{% if datamodule %}Save{% else %}Create{% endif %}</button>
 </form>
 

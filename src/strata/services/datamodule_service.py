@@ -37,7 +37,7 @@ from strata.models.datamodule_connection import DatamoduleConnection
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.dependency import Dependency
 from strata.models.source_file import SourceFile
-from strata.services import duck
+from strata.services import duck, script_template
 from strata.services.connection_service import attach_into
 
 log = logging.getLogger(__name__)
@@ -457,7 +457,14 @@ def _build_leased(
             sf.filename: str(source_disk_path(dm.uuid, sf.stored_name))
             for sf in SourceFile.get_for_datamodule(dm.id)
         }
-        rendered = _render_sources(dm.build_script, source_map)
+        # A Jinja build script renders now, against the dependency versions this
+        # build attaches; the version keeps the rendered text (what really ran).
+        script = script_template.render(
+            dm.build_script, {name: Path(path) for name, path in dep_attachments}
+        )
+        if script != dm.build_script:
+            version.set_script_snapshot(script)
+        rendered = _render_sources(script, source_map)
 
         tmp_file.unlink(missing_ok=True)
         conn = duckdb.connect(str(tmp_file))

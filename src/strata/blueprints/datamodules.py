@@ -7,6 +7,7 @@ The public serve path for running a report lives in blueprints/reports.py.
 import json
 import re
 from datetime import date
+from pathlib import Path
 
 from flask import (
     Blueprint,
@@ -395,6 +396,37 @@ def _status_context(dm: Datamodule) -> dict[str, object]:
         "active_jobs": BuildJob.active_for_datamodule(dm.id),
         "worker_missing": not build_queue.inline_mode() and not WorkerProcess.alive(),
     }
+
+
+@bp.route("/<uuid>/preview-script", methods=["POST"])
+@admin_required
+def preview_script(uuid: str) -> str:
+    """HTMX: the posted build script rendered as a template, against the live
+    versions of the datamodule's dependencies (nothing is built)."""
+    from strata.services import script_template
+
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    script = request.form.get("build_script", "")
+    rendered, error = None, None
+    if not script_template.is_template(script):
+        error = "This script has no {{ … }} or {% … %}: it runs as written."
+    else:
+        dependencies: dict[str, Path | None] = {}
+        for dep in Dependency.get_for_datamodule(dm.id):
+            dep_dm = Datamodule.get_by_id(dep.depends_on_id)
+            live = datamodule_service.live_version(dep_dm) if dep_dm else None
+            dependencies[dep.local_name] = (
+                datamodule_service.version_path(dep_dm.uuid, live.uuid)
+                if dep_dm is not None and live is not None
+                else None
+            )
+        try:
+            rendered = script_template.render(script, dependencies)
+        except script_template.ScriptTemplateError as exc:
+            error = str(exc)
+    return render_template("datamodules/_script_preview.html", rendered=rendered, error=error)
 
 
 @bp.route("/<uuid>/status")
