@@ -1,8 +1,13 @@
 # Schedules
 
-A **schedule** rebuilds a datamodule at set times, so its data is ready before
-anyone reads it. A datamodule can have any number of schedules, for example
-"every 15 minutes in business hours" plus "06:00 on the first working day".
+A **schedule** runs something at set times:
+
+- on a **datamodule**, it rebuilds it, so its data is ready before anyone reads it;
+- on a **report or check**, it runs it, saves the run and mails it (see
+  [Checks and runs](checks.md#scheduled-runs-and-mail)).
+
+Each can have any number of schedules, for example "every 15 minutes in business
+hours" plus "06:00 on the first working day". Both kinds use the rules below.
 
 A due schedule queues a build, and the worker runs it. The worker checks for due
 schedules about every 10 seconds. Runs missed while no worker was running collapse

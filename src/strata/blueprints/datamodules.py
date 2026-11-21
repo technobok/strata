@@ -320,6 +320,7 @@ def edit(uuid: str) -> str | Response:
                 for r in targets
             ]
 
+    jobs = BuildJob.recent_for_datamodule(dm.id)
     return render_template(
         "datamodules/edit.html",
         datamodule=dm,
@@ -337,31 +338,26 @@ def edit(uuid: str) -> str | Response:
         conn_names=conn_names,
         all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
         all_connections=Connection.get_all(),
-        jobs=BuildJob.recent_for_datamodule(dm.id),
+        jobs=jobs,
+        run_uuids=ReportRun.uuids_for([j.run_id for j in jobs if j.run_id is not None]),
         schedules=_schedule_rows(dm),
         **_status_context(dm),
     )
 
 
 def _schedule_rows(dm: Datamodule) -> list[dict[str, object]]:
-    """Schedules for the datamodule page, described and in their own timezone."""
-    from strata.blueprints.schedules import local_time
+    """The datamodule's rebuild schedules, described and in their own timezone."""
+    from strata.blueprints.schedules import schedule_rows
     from strata.models.schedule import Schedule
-    from strata.services import schedule_service
 
-    rows: list[dict[str, object]] = []
-    for schedule in Schedule.for_datamodule(dm.id):
-        definition = schedule_service.Definition.from_json(schedule.schedule_definition)
-        rows.append(
-            {
-                "schedule": schedule,
-                "description": schedule_service.describe(definition),
-                "timezone": definition.timezone,
-                "next_run": local_time(schedule.next_run_at, definition.timezone),
-                "last_run": local_time(schedule.last_run_at, definition.timezone),
-            }
-        )
-    return rows
+    return schedule_rows(Schedule.for_datamodule(dm.id))
+
+
+def _report_schedule_rows(report: Report) -> list[dict[str, object]]:
+    from strata.blueprints.schedules import schedule_rows
+    from strata.models.schedule import Schedule
+
+    return schedule_rows(Schedule.for_report(report.id))
 
 
 def _status_context(dm: Datamodule) -> dict[str, object]:
@@ -448,6 +444,7 @@ def report_new(uuid: str) -> str | Response:
         check=None,
         severities=SEVERITIES,
         runs=[],
+        schedules=[],
     )
 
 
@@ -479,6 +476,7 @@ def report_edit(report_uuid: str) -> str | Response:
         check=ReportCheck.get(report.id) if report else None,
         severities=SEVERITIES,
         runs=ReportRun.recent_for_report(report.id) if report else [],
+        schedules=_report_schedule_rows(report) if report else [],
     )
 
 

@@ -26,11 +26,12 @@ class ReportRun:
     finished_at: str
     notified_at: str | None
     snapshot_path: str | None
+    notify_note: str | None = None  # who the mail went to, who could not be resolved, or why not
 
     _COLUMNS = (
         "id, uuid, report_id, schedule_id, version_id, args_json, status, row_count, "
         "data_as_of, data_note, error, triggered_by, started_at, finished_at, notified_at, "
-        "snapshot_path"
+        "snapshot_path, notify_note"
     )
 
     @staticmethod
@@ -52,6 +53,7 @@ class ReportRun:
             finished_at=str(row[13]),
             notified_at=row[14],
             snapshot_path=row[15],
+            notify_note=row[16],
         )
 
     @staticmethod
@@ -102,6 +104,14 @@ class ReportRun:
         assert run is not None
         return run
 
+    def set_notified(self, notified_at: str | None, note: str) -> None:
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE report_run SET notified_at = ?, notify_note = ? WHERE id = ?",
+                (notified_at, note, self.id),
+            )
+        self.notified_at, self.notify_note = notified_at, note
+
     @staticmethod
     def get_by_uuid(run_uuid: str) -> ReportRun | None:
         row = (
@@ -110,6 +120,14 @@ class ReportRun:
             .fetchone()
         )
         return ReportRun._from_row(row) if row else None
+
+    @staticmethod
+    def uuids_for(ids: list[int]) -> dict[int, str]:
+        if not ids:
+            return {}
+        marks = ", ".join("?" for _ in ids)
+        rows = get_db().execute(f"SELECT id, uuid FROM report_run WHERE id IN ({marks})", ids)
+        return {int(i): str(u) for i, u in rows}
 
     @staticmethod
     def recent_for_report(report_id: int, limit: int = 20) -> list[ReportRun]:

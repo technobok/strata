@@ -1,0 +1,26 @@
+{# A list of schedules (datamodule rebuilds, or a report's runs); rows from schedules.schedule_rows. #}
+<table>
+    <thead><tr><th>Name</th><th>When</th><th>Timezone</th>{% if report %}<th>Recipients</th>{% endif %}<th>Next run</th><th>Last run</th><th></th></tr></thead>
+    <tbody>
+        {% for row in schedules %}
+        {% set s = row.schedule %}
+        <tr>
+            <td><a href="{{ url_for('schedules.edit', schedule_uuid=s.uuid) }}">{{ s.name }}</a></td>
+            <td>{{ row.description }}</td>
+            <td>{{ row.timezone }}</td>
+            {% if report %}<td>{% for r in s.recipients %}<code>{{ r }}</code> {% else %}<small>none</small>{% endfor %}</td>{% endif %}
+            <td>{% if s.enabled %}{{ row.next_run or 'no more runs' }}{% else %}<small>disabled</small>{% endif %}</td>
+            <td>{{ row.last_run }}</td>
+            <td style="display:flex; gap:0.25rem;">
+                <form method="post" action="{{ url_for('schedules.toggle', schedule_uuid=s.uuid) }}">
+                    <button type="submit" class="outline small">{% if s.enabled %}Disable{% else %}Enable{% endif %}</button>
+                </form>
+                <form method="post" action="{{ url_for('schedules.delete', schedule_uuid=s.uuid) }}"
+                      onsubmit="return confirm('Delete schedule {{ s.name }}?');">
+                    <button type="submit" class="outline secondary small">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

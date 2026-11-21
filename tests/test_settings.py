@@ -56,7 +56,17 @@ def test_live_settings_have_no_app_config_copy() -> None:
     assert "build.memory_limit" in live and "worker.poll_interval" in live
     # A copy in app.config would be read once at create_app and go stale.
     assert [k for k in live if k in KEY_MAP] == []
-    assert [k for k in live if k in ENV_OVERRIDES] == []
+
+
+def test_an_env_override_wins_over_a_live_setting(
+    strata: Strata, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert ENV_OVERRIDES["outbox.db_path"] == "OUTBOX_DB"
+    strata.set_config({"outbox.db_path": "/from/the/form.sqlite3"})
+    with strata.app.app_context():
+        assert config.live_str("outbox.db_path") == "/from/the/form.sqlite3"
+        monkeypatch.setenv("OUTBOX_DB", "/from/the/env.sqlite3")
+        assert config.live_str("outbox.db_path") == "/from/the/env.sqlite3"
 
 
 def test_only_live_settings_are_read_live(strata: Strata) -> None:

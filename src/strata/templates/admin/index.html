@@ -5,6 +5,14 @@
 {% block content %}
 <h2>Admin</h2>
 
+{% if public_url_missing %}
+<article class="freshness-banner freshness-failed">
+    <strong>server.public_url</strong> is not set, so mail from scheduled runs has no link to the
+    saved run. Set it under <a href="{{ url_for('admin.config') }}">Configuration</a>, e.g.
+    <code>https://reports.example.com/strata</code>.
+</article>
+{% endif %}
+
 <div class="grid">
     <article>
         <header>System Stats</header>

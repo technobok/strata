@@ -17,7 +17,7 @@ from, and when a change takes effect.
 
 | Label | Meaning |
 |---|---|
-| applies immediately | The web app uses it at once; the worker within 5 seconds. |
+| applies immediately | The web app uses it at once; the worker within 5 seconds. An environment variable still wins over the saved value. |
 | restart the app | Restart `strata-web` (the `app` container). |
 | restart the worker | Restart `strata-worker` (the `worker` container). |
 | restart app + worker | Restart both. |
@@ -52,10 +52,15 @@ default (80% of RAM) instead, set an empty value from the shell:
 | `serve.max_wait_seconds` | `60` | How long a read of stale data waits for the rebuild before serving the previous version (see [Freshness and builds](freshness.md#stale-data)). Keep it under Excel's 100 seconds. |
 | `serve.memory_limit` | `2GB` | DuckDB memory per report query; it spills to disk beyond this. |
 
-## Runs — apply immediately
+## Runs and mail — apply immediately
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `server.public_url` | — | The address readers use to reach Strata, e.g. `https://reports.example.com/strata`. Links in mail are built from it; the admin page warns while it is unset. |
+| `mail.sender` | `strata@localhost` | The From address on mail Strata sends (env `MAIL_SENDER`). |
+| `outbox.db_path` | — | Outbox's SQLite file, which queues outgoing mail (env `OUTBOX_DB`). |
+| `outbox.url` | — | Outbox's HTTP API, used when `outbox.db_path` is not set. |
+| `outbox.api_key` | — | The key for `outbox.url`. |
 | `runs.retention_days` | `30` | Days a report or check run, with its saved rows, is kept (see [Checks and runs](checks.md#how-long-runs-are-kept)). The worker's sweep and `strata-admin reconcile` delete older ones. |
 
 ## Schedules and the worker
@@ -92,7 +97,5 @@ default (80% of RAM) instead, set an empty value from the shell:
 | `gatekeeper.db_path` | — | Gatekeeper's SQLite file, for single sign-on (env `GATEKEEPER_DB`). |
 | `gatekeeper.url` | — | Gatekeeper's HTTP API, instead of the file. |
 | `gatekeeper.api_key` | — | The key for `gatekeeper.url`. |
-| `outbox.db_path` | — | Outbox's SQLite file, which queues outgoing mail (env `OUTBOX_DB`). |
-| `mail.sender` | `strata@localhost` | The From address on mail Strata sends (env `MAIL_SENDER`). |
 | `storage.strata_db` | — | The Strata metadata database. Set only by the env variable `STRATA_DB`, because it is needed before the database opens. |
 | `storage.strata_root` | — | The project root, used to find migrations and these help pages. Set only by the env variable `STRATA_ROOT`. |

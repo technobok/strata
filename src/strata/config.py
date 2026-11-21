@@ -10,6 +10,7 @@ in /admin/config reaches the web app and the worker without a restart. Every
 other setting is loaded into ``app.config`` once, at ``create_app``.
 """
 
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -87,6 +88,14 @@ REGISTRY: list[ConfigEntry] = [
         applies=Applies.APP,
     ),
     ConfigEntry(
+        "server.public_url",
+        ConfigType.STRING,
+        "",
+        "The address readers use to reach Strata, e.g. https://reports.example.com/strata. "
+        "Links in mail are built from it (the worker has no request to take it from)",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
         "server.timeout",
         ConfigType.INT,
         120,
@@ -118,13 +127,30 @@ REGISTRY: list[ConfigEntry] = [
         "mail.sender",
         ConfigType.STRING,
         "strata@localhost",
-        "From-address on outgoing schedule emails",
+        "From-address on mail Strata sends (scheduled runs)",
+        applies=Applies.LIVE,
     ),
     ConfigEntry(
         "outbox.db_path",
         ConfigType.STRING,
         "",
-        "Path to outbox SQLite (queues outgoing email)",
+        "Path to outbox SQLite (queues outgoing email); or set outbox.url + outbox.api_key",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
+        "outbox.url",
+        ConfigType.STRING,
+        "",
+        "Outbox HTTP API base URL, when outbox.db_path is not set",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
+        "outbox.api_key",
+        ConfigType.STRING,
+        "",
+        "Outbox API key, for outbox.url",
+        secret=True,
+        applies=Applies.LIVE,
     ),
     # -- worker --
     ConfigEntry(
@@ -311,8 +337,6 @@ KEY_MAP: dict[str, str] = {
     "gatekeeper.db_path": "GATEKEEPER_DB_PATH",
     "gatekeeper.url": "GATEKEEPER_URL",
     "gatekeeper.api_key": "GATEKEEPER_API_KEY",
-    "mail.sender": "MAIL_SENDER",
-    "outbox.db_path": "OUTBOX_DB_PATH",
     "worker.concurrency": "WORKER_CONCURRENCY",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
@@ -320,7 +344,8 @@ KEY_MAP: dict[str, str] = {
     "proxy.x_forwarded_prefix": "PROXY_X_FORWARDED_PREFIX",
     # storage.* are deliberately not mapped — they're env-only at runtime.
     # Applies.LIVE settings are not mapped either: they are read at use through
-    # live_*(), so app.config never holds a copy that could go stale.
+    # live_*() (env override first, then app_setting, then the default), so
+    # app.config never holds a copy that could go stale.
 }
 
 
@@ -423,7 +448,11 @@ def _live(key: str, expected: ConfigType) -> str | int | bool | list[str]:
         raise ValueError(f"{key} is not a live setting; read it from app.config")
     if entry.type is not expected:
         raise TypeError(f"{key} is a {entry.type.value} setting, not {expected.value}")
-    raw = _stored_values().get(key)
+    # Same precedence as /admin/config shows (resolve_effective): env > DB > default.
+    env_name = ENV_OVERRIDES.get(key)
+    raw = os.environ.get(env_name) if env_name else None
+    if not raw:
+        raw = _stored_values().get(key)
     if raw is None:
         return entry.default
     try:

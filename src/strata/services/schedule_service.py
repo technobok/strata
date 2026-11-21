@@ -331,13 +331,17 @@ def describe(definition: Definition) -> str:
 
 
 def run_due(now: datetime | None = None) -> list[str]:
-    """Queue a forced build for every enabled schedule that is due; returns their names.
+    """Queue every enabled schedule that is due; returns their names.
+
+    A rebuild schedule queues a forced build; a report schedule queues a run job
+    (the worker runs the report and mails it).
 
     Each schedule's next run is computed from ``now``, so runs missed while no
     worker was up collapse into one. ``claim_run`` is a compare-and-set, so two
     workers ticking together queue it once (and the job queue coalesces anyway).
     """
     from strata.models.datamodule import Datamodule
+    from strata.models.report import Report
     from strata.models.schedule import Schedule
     from strata.services import build_queue
 
@@ -357,6 +361,13 @@ def run_due(now: datetime | None = None) -> list[str]:
             continue
         if not schedule.claim_run(now.isoformat(), nxt.isoformat() if nxt else None):
             continue
-        build_queue.request_build(dm, f"schedule:{schedule.name}", force=True)
-        fired.append(f"{dm.path}: {schedule.name}")
+        if schedule.action == "email":
+            report = Report.get_by_id(schedule.report_id) if schedule.report_id else None
+            if report is None:
+                continue  # the report went (its schedules cascade); nothing to run
+            build_queue.request_run(dm, report, schedule)
+            fired.append(f"{dm.path}: {report.name}: {schedule.name}")
+        else:
+            build_queue.request_build(dm, f"schedule:{schedule.name}", force=True)
+            fired.append(f"{dm.path}: {schedule.name}")
     return fired

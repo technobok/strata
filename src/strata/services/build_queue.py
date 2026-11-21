@@ -18,6 +18,8 @@ from strata.config import live_int
 from strata.models.build_job import BuildJob
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
+from strata.models.report import Report
+from strata.models.schedule import Schedule
 from strata.services import datamodule_service
 
 JOB_POLL_SECONDS = 0.25
@@ -50,8 +52,30 @@ def request_build(dm: Datamodule, reason: str, force: bool, cascade: bool = Fals
     return job
 
 
+def request_run(dm: Datamodule, report: Report, schedule: Schedule) -> BuildJob:
+    """Queue a scheduled run of ``report`` (each due time is its own job)."""
+    job = BuildJob.enqueue_run(
+        dm.id, dm.build_queue, f"schedule:{schedule.name}", report.id, schedule.id
+    )
+    if inline_mode() and job.claim(inline_worker_id()):
+        run_claimed(job)
+        refreshed = BuildJob.get_by_id(job.id)
+        assert refreshed is not None
+        job = refreshed
+    return job
+
+
 def run_claimed(job: BuildJob) -> None:
     """Run a job this process has claimed and record the outcome on its row."""
+    if job.kind == "run":
+        from strata.services import run_service  # it imports this module
+
+        try:
+            run_service.run_job(job)
+        except Exception as exc:
+            log.exception("run job %s failed", job.id)
+            job.finish("failed", error=str(exc))
+        return
     dm = Datamodule.get_by_id(job.datamodule_id)
     if dm is None:
         job.finish("failed", error="datamodule was deleted")

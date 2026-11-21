@@ -271,30 +271,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
 <h2 id="schedules">Schedules{{ help_link('schedules') }}</h2>
 <p><small>Each schedule queues a forced build of this datamodule (stale dependencies are refreshed first). Times are in each schedule's own timezone; runs missed while no worker was up collapse into one.</small></p>
 {% if schedules %}
-<table>
-    <thead><tr><th>Name</th><th>When</th><th>Timezone</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
-    <tbody>
-        {% for row in schedules %}
-        {% set s = row.schedule %}
-        <tr>
-            <td><a href="{{ url_for('schedules.edit', schedule_uuid=s.uuid) }}">{{ s.name }}</a></td>
-            <td>{{ row.description }}</td>
-            <td>{{ row.timezone }}</td>
-            <td>{% if s.enabled %}{{ row.next_run or 'no more runs' }}{% else %}<small>disabled</small>{% endif %}</td>
-            <td>{{ row.last_run }}</td>
-            <td style="display:flex; gap:0.25rem;">
-                <form method="post" action="{{ url_for('schedules.toggle', schedule_uuid=s.uuid) }}">
-                    <button type="submit" class="outline small">{% if s.enabled %}Disable{% else %}Enable{% endif %}</button>
-                </form>
-                <form method="post" action="{{ url_for('schedules.delete', schedule_uuid=s.uuid) }}"
-                      onsubmit="return confirm('Delete schedule {{ s.name }}?');">
-                    <button type="submit" class="outline secondary small">Delete</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% include "schedules/_table.html" %}
 {% else %}
 <p>No schedules: this datamodule is rebuilt only on demand (Build, or a stale read).</p>
 {% endif %}
@@ -310,11 +287,11 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
         {% for job in jobs %}
         <tr>
             <td>{{ job.requested_at|localdatetime }}</td>
-            <td>{{ job.reason }}{% if job.cascade %} <small>(with all dependencies)</small>{% elif job.force %} <small>(forced)</small>{% endif %}</td>
+            <td>{% if job.kind == 'run' %}run of {{ report_by_id[job.report_id].name if job.report_id in report_by_id else 'a report' }}: {% endif %}{{ job.reason }}{% if job.cascade %} <small>(with all dependencies)</small>{% elif job.force %} <small>(forced)</small>{% endif %}</td>
             <td>{{ job.status }}</td>
             <td>{{ job.started_at|localdatetime }}</td>
             <td>{{ job.finished_at|localdatetime }}</td>
-            <td>{% if job.error %}<span class="error-cell" title="{{ job.error }}">{{ job.error[:80] }}{% if job.error|length > 80 %}…{% endif %}</span>{% endif %}</td>
+            <td>{% if job.run_id in run_uuids %}<a href="{{ url_for('runs.view', run_uuid=run_uuids[job.run_id]) }}">run</a> {% endif %}{% if job.error %}<span class="error-cell" title="{{ job.error }}">{{ job.error[:80] }}{% if job.error|length > 80 %}…{% endif %}</span>{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

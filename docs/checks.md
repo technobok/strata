@@ -76,3 +76,52 @@ run page, with the reason.
 
 Runs are kept for `runs.retention_days` days (default 30); then the run and its
 saved rows are deleted. Deleting a report deletes its runs.
+
+## Scheduled runs and mail
+
+A report or check can have any number of **schedules** of its own (the
+**Schedules** section of the report's page). Each says **when** to run (the same
+rules as datamodule schedules, see [Schedules](schedules.md)), **with which
+arguments**, and **who gets the mail**. One check can have "BRS every Monday 07:00
+to `@brs-finance`" and "OTA on the last day of the month to `jsmith`", each with its
+own `company` value.
+
+**Recipients**, one per line:
+
+| Line | Who |
+|---|---|
+| `jsmith` | the Gatekeeper user `jsmith` |
+| `@brs-finance` | every member of the Gatekeeper group `brs-finance` |
+| `ops@example.com` | that address |
+
+A user who is unknown, disabled, or has no email address is skipped; the run page
+says who was skipped and why.
+
+**Who gets mail:**
+
+| The run | Mail |
+|---|---|
+| A **check** that finds rows | to the schedule's recipients, every time |
+| A **check** that finds no rows | none |
+| A plain **report** | to the schedule's recipients, every time, even with no rows |
+| A run whose **query failed** | to the Strata admins only, with the error |
+
+A check mails on **every** run that finds rows, not only when something changed:
+the same exception mails again until it is fixed.
+
+**The mail** has:
+
+- a subject such as `[WARNING] Negative stock — 7 rows` (a plain report has no
+  severity);
+- a first line with how old the data is, and why if it may be out of date, e.g.
+  "Data as of Fri 21 Nov 2026 06:45 NZDT; refresh failed: …";
+- the first 20 rows as a table;
+- a link to the saved run, with every row, sorting and downloads. The link needs
+  the `server.public_url` setting.
+
+There is no attachment: the run page has the downloads.
+
+When a schedule is due, the worker runs the report: if its datamodule is past its
+TTL, it rebuilds it first. If that rebuild fails, the run goes ahead on the last
+good data and the mail's first line says so. The run page shows what happened to
+the mail.

@@ -121,6 +121,16 @@
     </form>
 </div>
 
+<header style="display:flex; justify-content:space-between; align-items:center;">
+    <h2 id="schedules">Schedules{{ help_link('checks', 'scheduled-runs-and-mail') }}</h2>
+    <a href="{{ url_for('schedules.report_new', report_uuid=report.uuid) }}" role="button" class="outline small">New schedule</a>
+</header>
+{% if schedules %}
+{% include "schedules/_table.html" %}
+{% else %}
+<p>No schedules: this report runs only when someone runs it.</p>
+{% endif %}
+
 <h2 id="runs">Runs{{ help_link('checks', 'runs') }}</h2>
 {% if runs %}
 <table>

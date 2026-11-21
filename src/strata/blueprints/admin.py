@@ -23,6 +23,7 @@ from strata.config import (
     Applies,
     ConfigEntry,
     ConfigType,
+    live_str,
     parse_value,
     resolve_effective,
     resolve_entry,
@@ -67,6 +68,7 @@ def index() -> str:
         registry=REGISTRY,
         workers=WorkerProcess.alive(),
         job_counts=BuildJob.counts_by_status(),
+        public_url_missing=not live_str("server.public_url"),
     )
 
 

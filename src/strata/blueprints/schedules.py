@@ -1,10 +1,12 @@
-"""Schedules blueprint — when a datamodule is rebuilt (admin only).
+"""Schedules blueprint — when a datamodule is rebuilt, or a report is run and
+mailed (admin only).
 
 The form is a builder for common shapes (services/schedule_service.KINDS)
 that produces an RRULE; the 'rrule' kind takes RRULE text directly. The
 worker's scheduler tick (schedule_service.run_due) queues the builds.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -15,8 +17,10 @@ from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
 from strata.models.datamodule import Datamodule
+from strata.models.report import Report
+from strata.models.report_arg import ReportArg
 from strata.models.schedule import Schedule
-from strata.services import schedule_service
+from strata.services import report_service, schedule_service
 from strata.services.schedule_service import Definition, ScheduleError
 
 bp = Blueprint("schedules", __name__, url_prefix="/datamodules")
@@ -57,16 +61,54 @@ def _form() -> tuple[str, str, str, dict[str, Any], bool]:
     return request.form.get("name", "").strip(), kind, timezone, fields, enabled
 
 
+# A recipient line: an @group, an email address, or a Gatekeeper username.
+RECIPIENT_RE = re.compile(r"^(@[\w.\- ]+|[^@\s]+@[^@\s]+\.[^@\s]+|[\w.\-]+)$")
+
+
+def _recipients_form() -> list[str]:
+    return [
+        line.strip() for line in request.form.get("recipients", "").splitlines() if line.strip()
+    ]
+
+
+def _params_form(args: list[ReportArg]) -> dict[str, list[str]]:
+    params: dict[str, list[str]] = {}
+    for arg in args:
+        raw = request.form.get(f"param_{arg.name}", "").strip()
+        if raw:
+            parts = raw.split(",") if arg.widget == "multiselect" else [raw]
+            params[arg.name] = [p.strip() for p in parts if p.strip()]
+    return params
+
+
+def _check_report_fields(
+    recipients: list[str], args: list[ReportArg], params: dict[str, list[str]]
+) -> None:
+    for entry in recipients:
+        if not RECIPIENT_RE.match(entry):
+            raise ScheduleError(f"'{entry}' is not a username, an @group or an email address.")
+    try:
+        report_service.check_args(args, params)
+    except report_service.ArgError as exc:
+        raise ScheduleError(
+            f"{exc}: set it on this schedule, or give the argument a default."
+        ) from exc
+
+
 def _next_run_iso(definition: Definition) -> str | None:
     nxt = schedule_service.next_run(definition, datetime.now(UTC))
     return nxt.isoformat() if nxt else None
 
 
-def _render(dm: Datamodule, schedule: Schedule | None, values: dict[str, Any]) -> str:
+def _render(
+    dm: Datamodule, schedule: Schedule | None, values: dict[str, Any], report: Report | None
+) -> str:
     return render_template(
         "schedules/edit.html",
         datamodule=dm,
         schedule=schedule,
+        report=report,
+        report_args=ReportArg.get_for_report(report.id) if report else [],
         values=values,
         kinds=schedule_service.KINDS,
         days=schedule_service.DAYS,
@@ -83,6 +125,8 @@ def _values_from(schedule: Schedule | None) -> dict[str, Any]:
             "timezone": schedule_service.configured_timezones()[0],
             "enabled": True,
             "fields": {"every_n": "15", "every_unit": "minutes", "days": [], "every_weeks": "1"},
+            "recipients": [],
+            "params": {},
         }
     definition = Definition.from_json(schedule.schedule_definition)
     return {
@@ -91,7 +135,26 @@ def _values_from(schedule: Schedule | None) -> dict[str, Any]:
         "timezone": definition.timezone,
         "enabled": schedule.enabled,
         "fields": definition.fields,
+        "recipients": schedule.recipients,
+        "params": schedule.parameters,
     }
+
+
+def schedule_rows(schedules: list[Schedule]) -> list[dict[str, object]]:
+    """Schedules for a list on a page, described and in their own timezone."""
+    rows: list[dict[str, object]] = []
+    for schedule in schedules:
+        definition = Definition.from_json(schedule.schedule_definition)
+        rows.append(
+            {
+                "schedule": schedule,
+                "description": schedule_service.describe(definition),
+                "timezone": definition.timezone,
+                "next_run": local_time(schedule.next_run_at, definition.timezone),
+                "last_run": local_time(schedule.last_run_at, definition.timezone),
+            }
+        )
+    return rows
 
 
 def _datamodule_or_404(uuid: str) -> Datamodule:
@@ -101,18 +164,64 @@ def _datamodule_or_404(uuid: str) -> Datamodule:
     return dm
 
 
-def _schedule_or_404(schedule_uuid: str) -> tuple[Schedule, Datamodule]:
+def _schedule_or_404(schedule_uuid: str) -> tuple[Schedule, Datamodule, Report | None]:
     schedule = Schedule.get_by_uuid(schedule_uuid)
     if schedule is None:
         raise NotFound()
     dm = Datamodule.get_by_id(schedule.datamodule_id)
     if dm is None:
         raise NotFound()
-    return schedule, dm
+    report = Report.get_by_id(schedule.report_id) if schedule.report_id is not None else None
+    return schedule, dm, report
 
 
-def _back(dm: Datamodule) -> Response:
+def _back(dm: Datamodule, report: Report | None) -> Response:
+    if report is not None:
+        return redirect(url_for("datamodules.report_edit", report_uuid=report.uuid) + "#schedules")
     return redirect(url_for("datamodules.edit", uuid=dm.uuid) + "#schedules")
+
+
+def _submit(dm: Datamodule, schedule: Schedule | None, report: Report | None) -> str | Response:
+    """Create or update a rebuild schedule, or (``report``) a report schedule."""
+    name, kind, timezone, fields, enabled = _form()
+    recipients = _recipients_form() if report else []
+    args = ReportArg.get_for_report(report.id) if report else []
+    params = _params_form(args) if report else {}
+    try:
+        if not name:
+            raise ScheduleError("Name is required.")
+        definition = schedule_service.build(kind, fields, timezone)
+        if report is not None:
+            _check_report_fields(recipients, args, params)
+        next_run = _next_run_iso(definition) if enabled else None
+        if schedule is None:
+            Schedule.create(
+                dm.id,
+                name,
+                definition.to_json(),
+                next_run,
+                g.user.username,
+                enabled=enabled,
+                report_id=report.id if report else None,
+                recipients=recipients,
+                parameters=params,
+            )
+        else:
+            schedule.update(
+                name,
+                definition.to_json(),
+                next_run,
+                enabled,
+                recipients=recipients if report else None,
+                parameters=params if report else None,
+            )
+    except ScheduleError as exc:
+        flash(str(exc), "error")
+        values = {"name": name, "kind": kind, "timezone": timezone, "enabled": enabled}
+        values.update(fields=fields, recipients=recipients, params=params)
+        return _render(dm, schedule, values, report)
+    flash(f"Schedule '{name}' {'saved' if schedule else 'created'}.", "success")
+    return _back(dm, report)
 
 
 @bp.route("/<uuid>/schedules/new", methods=["GET", "POST"])
@@ -120,70 +229,51 @@ def _back(dm: Datamodule) -> Response:
 def new(uuid: str) -> str | Response:
     dm = _datamodule_or_404(uuid)
     if request.method == "POST":
-        name, kind, timezone, fields, enabled = _form()
-        try:
-            if not name:
-                raise ScheduleError("Name is required.")
-            definition = schedule_service.build(kind, fields, timezone)
-            Schedule.create(
-                dm.id,
-                name,
-                definition.to_json(),
-                _next_run_iso(definition) if enabled else None,
-                g.user.username,
-                enabled=enabled,
-            )
-        except ScheduleError as exc:
-            flash(str(exc), "error")
-            values = {"name": name, "kind": kind, "timezone": timezone, "enabled": enabled}
-            return _render(dm, None, {**values, "fields": fields})
-        flash(f"Schedule '{name}' created.", "success")
-        return _back(dm)
-    return _render(dm, None, _values_from(None))
+        return _submit(dm, None, None)
+    return _render(dm, None, _values_from(None), None)
+
+
+@bp.route("/reports/<report_uuid>/schedules/new", methods=["GET", "POST"])
+@admin_required
+def report_new(report_uuid: str) -> str | Response:
+    report = Report.get_by_uuid(report_uuid)
+    dm = Datamodule.get_by_id(report.datamodule_id) if report else None
+    if report is None or dm is None:
+        raise NotFound()
+    if request.method == "POST":
+        return _submit(dm, None, report)
+    return _render(dm, None, _values_from(None), report)
 
 
 @bp.route("/schedules/<schedule_uuid>/edit", methods=["GET", "POST"])
 @admin_required
 def edit(schedule_uuid: str) -> str | Response:
-    schedule, dm = _schedule_or_404(schedule_uuid)
+    schedule, dm, report = _schedule_or_404(schedule_uuid)
     if request.method == "POST":
-        name, kind, timezone, fields, enabled = _form()
-        try:
-            if not name:
-                raise ScheduleError("Name is required.")
-            definition = schedule_service.build(kind, fields, timezone)
-            schedule.update(
-                name, definition.to_json(), _next_run_iso(definition) if enabled else None, enabled
-            )
-        except ScheduleError as exc:
-            flash(str(exc), "error")
-            values = {"name": name, "kind": kind, "timezone": timezone, "enabled": enabled}
-            return _render(dm, schedule, {**values, "fields": fields})
-        flash(f"Schedule '{name}' saved.", "success")
-        return _back(dm)
-    return _render(dm, schedule, _values_from(schedule))
+        return _submit(dm, schedule, report)
+    return _render(dm, schedule, _values_from(schedule), report)
 
 
 @bp.route("/schedules/<schedule_uuid>/toggle", methods=["POST"])
 @admin_required
 def toggle(schedule_uuid: str) -> Response:
-    schedule, dm = _schedule_or_404(schedule_uuid)
+    schedule, dm, report = _schedule_or_404(schedule_uuid)
     enabling = not schedule.enabled
     next_run = None
     if enabling:
         next_run = _next_run_iso(Definition.from_json(schedule.schedule_definition))
     schedule.set_enabled(enabling, next_run)
     flash(f"Schedule '{schedule.name}' {'enabled' if enabling else 'disabled'}.", "success")
-    return _back(dm)
+    return _back(dm, report)
 
 
 @bp.route("/schedules/<schedule_uuid>/delete", methods=["POST"])
 @admin_required
 def delete(schedule_uuid: str) -> Response:
-    schedule, dm = _schedule_or_404(schedule_uuid)
+    schedule, dm, report = _schedule_or_404(schedule_uuid)
     schedule.delete()
     flash(f"Schedule '{schedule.name}' deleted.", "success")
-    return _back(dm)
+    return _back(dm, report)
 
 
 @bp.route("/schedules/preview", methods=["POST"])

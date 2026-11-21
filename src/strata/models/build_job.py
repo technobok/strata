@@ -9,6 +9,10 @@ edit made during a build is still built.
 
 Workers claim the oldest due job in their queues whose datamodule has no job
 running, in one atomic UPDATE ... RETURNING.
+
+A ``run`` job (kind = 'run') is a scheduled run of a report or check: it never
+coalesces, but shares the one-running-job-per-datamodule rule with builds, so a
+run that refreshes its datamodule in-thread never races a build of it.
 """
 
 from dataclasses import dataclass
@@ -40,10 +44,15 @@ class BuildJob:
     version_id: int | None
     error: str | None
     cascade: bool = False
+    kind: str = "build"  # build | run (a scheduled run of report_id)
+    report_id: int | None = None
+    schedule_id: int | None = None
+    run_id: int | None = None  # the report_run a run job produced
 
     _COLUMNS = (
         "id, datamodule_id, queue, reason, force, status, requested_at, run_after, "
-        "started_at, finished_at, worker_id, version_id, error, cascade"
+        "started_at, finished_at, worker_id, version_id, error, cascade, kind, report_id, "
+        "schedule_id, run_id"
     )
 
     @staticmethod
@@ -63,6 +72,10 @@ class BuildJob:
             version_id=int(row[11]) if row[11] is not None else None,
             error=str(row[12]) if row[12] is not None else None,
             cascade=bool(row[13]),
+            kind=str(row[14]),
+            report_id=int(row[15]) if row[15] is not None else None,
+            schedule_id=int(row[16]) if row[16] is not None else None,
+            run_id=int(row[17]) if row[17] is not None else None,
         )
 
     @property
@@ -117,7 +130,8 @@ class BuildJob:
         force = force or cascade
         with transaction() as cur:
             row = cur.execute(
-                "SELECT id FROM build_job WHERE datamodule_id = ? AND status = 'queued'",
+                "SELECT id FROM build_job WHERE datamodule_id = ? AND status = 'queued' "
+                "AND kind = 'build'",
                 (datamodule_id,),
             ).fetchone()
             if row:
@@ -130,7 +144,8 @@ class BuildJob:
                 running = None
                 if not force:
                     running = cur.execute(
-                        "SELECT id FROM build_job WHERE datamodule_id = ? AND status = 'running'",
+                        "SELECT id FROM build_job WHERE datamodule_id = ? AND status = 'running' "
+                        "AND kind = 'build'",
                         (datamodule_id,),
                     ).fetchone()
                 if running:
@@ -143,6 +158,24 @@ class BuildJob:
                         (datamodule_id, queue, reason, int(force), int(cascade), now, now),
                     )
                     job_id = int(cur.execute("SELECT last_insert_rowid()").fetchone()[0])  # type: ignore[index]
+        job = BuildJob.get_by_id(job_id)
+        assert job is not None
+        return job
+
+    @staticmethod
+    def enqueue_run(
+        datamodule_id: int, queue: str, reason: str, report_id: int, schedule_id: int | None
+    ) -> BuildJob:
+        """Queue a run of ``report_id`` (never coalesced: each due time is its own run)."""
+        now = _now()
+        with transaction() as cur:
+            cur.execute(
+                "INSERT INTO build_job (datamodule_id, queue, reason, force, status, requested_at, "
+                "run_after, kind, report_id, schedule_id) "
+                "VALUES (?, ?, ?, 0, 'queued', ?, ?, 'run', ?, ?)",
+                (datamodule_id, queue, reason, now, now, report_id, schedule_id),
+            )
+            job_id = int(cur.execute("SELECT last_insert_rowid()").fetchone()[0])  # type: ignore[index]
         job = BuildJob.get_by_id(job_id)
         assert job is not None
         return job
@@ -174,12 +207,18 @@ class BuildJob:
             )
             return int(cur.execute("SELECT changes()").fetchone()[0]) > 0  # type: ignore[index]
 
-    def finish(self, status: str, version_id: int | None = None, error: str | None = None) -> None:
+    def finish(
+        self,
+        status: str,
+        version_id: int | None = None,
+        error: str | None = None,
+        run_id: int | None = None,
+    ) -> None:
         with transaction() as cur:
             cur.execute(
-                "UPDATE build_job SET status = ?, finished_at = ?, version_id = ?, error = ? "
-                "WHERE id = ?",
-                (status, _now(), version_id, error, self.id),
+                "UPDATE build_job SET status = ?, finished_at = ?, version_id = ?, error = ?, "
+                "run_id = ? WHERE id = ?",
+                (status, _now(), version_id, error, run_id, self.id),
             )
 
     @staticmethod

@@ -26,7 +26,7 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - Python 3.14, Flask, APSW (SQLite for metadata), DuckDB (build + query engine)
 - HTMX + PicoCSS + CodeMirror (all vendored, no frontend build step)
 - [Gatekeeper](../gatekeeper/) client for SSO authentication
-- [Outbox](../outbox/) client for email delivery (used by the future schedules phase)
+- [Outbox](../outbox/) client for email delivery (scheduled report and check runs)
 - [webreports-caddy](../webreports-caddy/) (optional) reverse proxy when serving on a subpath
 - openpyxl for XLSX export, pytz (DuckDB TIMESTAMPTZ results), cryptography (Fernet) for connection params at rest
 - uv for dependency management, ruff + ty for code quality
@@ -252,8 +252,8 @@ Every setting, its default and when a change applies: [Settings (admin)](docs/se
 | `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` |
 | `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins. | Compose `app` |
 | `OUTBOX_INSTANCE` | (host-only) | `../outbox/instance` | Host path mounted at `/outbox-data`. | Compose (host substitution) |
-| `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite (email delivery — used by the future schedules phase). | Compose `app` |
-| `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on outgoing emails (future schedules phase). | Compose (commented) |
+| `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite: mail from scheduled runs is queued there (the worker sends it). | Compose `app` + `worker` |
+| `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on mail Strata sends; also settable in `/admin/config`. | Compose (commented) |
 | `PROXY_X_FORWARDED_FOR` | `proxy.x_forwarded_for` | `1` | Trust hop count for `X-Forwarded-For`. | Compose `app` |
 | `PROXY_X_FORWARDED_PROTO` | `proxy.x_forwarded_proto` | `1` | Trust hop count for `X-Forwarded-Proto`. | Compose `app` |
 | `PROXY_X_FORWARDED_HOST` | `proxy.x_forwarded_host` | `1` | Trust hop count for `X-Forwarded-Host`. | Compose `app` |

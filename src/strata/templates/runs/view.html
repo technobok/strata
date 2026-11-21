@@ -16,6 +16,7 @@
         <tr><th>Ran</th><td>{{ run.finished_at | localdatetime }} by {{ run.triggered_by }}{% if schedule_name %} (schedule <em>{{ schedule_name }}</em>){% endif %}</td></tr>
         <tr><th>Data as of</th><td>{{ run.data_as_of | localdatetime if run.data_as_of else '—' }}</td></tr>
         <tr><th>Arguments</th><td>{% for name, vals in run.args.items() %}<code>{{ name }}={{ vals | join(',') }}</code> {% else %}defaults{% endfor %}</td></tr>
+        {% if run.notify_note or run.schedule_id %}<tr><th>Mail</th><td>{% if run.notified_at %}{{ run.notified_at | localdatetime }}: {% endif %}{{ run.notify_note or 'not sent' }}</td></tr>{% endif %}
         <tr><th>Result</th><td>{% if run.status == 'error' %}<span class="severity severity-error">error</span> {{ run.error }}{% else %}{{ run.row_count }} row{{ 's' if run.row_count != 1 else '' }}{% endif %}</td></tr>
     </tbody>
 </table>

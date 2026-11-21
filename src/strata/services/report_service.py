@@ -148,6 +148,11 @@ def _bind_args(args: list[ReportArg], arg_values: dict[str, list[str]]) -> list[
     return binds
 
 
+def check_args(args: list[ReportArg], arg_values: dict[str, list[str]]) -> None:
+    """Raise ArgError if ``arg_values`` (with the defaults) cannot run the report."""
+    _bind_args(args, arg_values)
+
+
 def _prepare(
     report: Report,
     dm: Datamodule,

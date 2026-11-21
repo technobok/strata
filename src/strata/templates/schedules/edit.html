@@ -5,12 +5,17 @@
 {% block content %}
 <hgroup>
     <h1>{% if schedule %}Schedule: {{ schedule.name }}{% else %}New schedule{% endif %}{{ help_link('schedules') }}</h1>
+    {% if report %}
+    <p>Runs <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}#schedules">{{ report.name }}</a>
+    (refreshing {{ datamodule.path }} first if it is stale), saves the run, and mails it.</p>
+    {% else %}
     <p>Rebuilds <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}#schedules">{{ datamodule.path }}</a> (a forced build; stale dependencies are refreshed first).</p>
+    {% endif %}
 </hgroup>
 
 {% set f = values.fields %}
 <form method="post" id="schedule-form"
-      action="{% if schedule %}{{ url_for('schedules.edit', schedule_uuid=schedule.uuid) }}{% else %}{{ url_for('schedules.new', uuid=datamodule.uuid) }}{% endif %}">
+      action="{% if schedule %}{{ url_for('schedules.edit', schedule_uuid=schedule.uuid) }}{% elif report %}{{ url_for('schedules.report_new', report_uuid=report.uuid) }}{% else %}{{ url_for('schedules.new', uuid=datamodule.uuid) }}{% endif %}">
     <div class="grid">
         <label>Name
             <input type="text" name="name" value="{{ values.name }}" required placeholder="business hours">
@@ -120,6 +125,26 @@
             <input type="date" name="start_date" value="{{ f.get('start_date', '') }}">
         </label>
     </fieldset>
+
+    {% if report %}
+    <fieldset>
+        <legend>Mail{{ help_link('checks', 'scheduled-runs-and-mail') }}</legend>
+        <label>Recipients: one per line, a username, an <code>@group</code> or an email address
+            <textarea name="recipients" rows="4" placeholder="@brs-finance&#10;jsmith&#10;ops@example.com">{{ values.recipients | join('\n') }}</textarea>
+        </label>
+        {% if report_args %}
+        <p><small>Argument values for this schedule (blank = the argument's default):</small></p>
+        <div class="grid">
+            {% for a in report_args %}
+            <label>{{ a.name }}{% if a.widget == 'multiselect' %} <small>(comma-separated)</small>{% endif %}
+                <input type="text" name="param_{{ a.name }}" value="{{ values.params.get(a.name, []) | join(',') }}"
+                       placeholder="{{ a.default_value or ('required' if a.required else 'blank = none') }}">
+            </label>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </fieldset>
+    {% endif %}
 
     <input type="hidden" name="enabled_present" value="1">
     <label>

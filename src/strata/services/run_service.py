@@ -27,6 +27,7 @@ from pathlib import Path
 import duckdb
 
 from strata.config import live_int
+from strata.models.build_job import BuildJob
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
@@ -132,6 +133,38 @@ def run(
         finished_at=datetime.now(UTC).isoformat(),
         snapshot_path=snapshot_path,
     )
+
+
+def run_job(job: BuildJob) -> ReportRun | None:
+    """A claimed 'run' job (a due report schedule): refresh in this thread, run with
+    the schedule's arguments, mail it, and record the outcome on the job."""
+    from strata.models.schedule import Schedule
+    from strata.services import notify_service
+
+    report = Report.get_by_id(job.report_id) if job.report_id is not None else None
+    dm = Datamodule.get_by_id(job.datamodule_id)
+    if report is None or dm is None:
+        job.finish("failed", error="the report or its datamodule was deleted")
+        return None
+    schedule = Schedule.get_by_id(job.schedule_id) if job.schedule_id is not None else None
+    version, note = version_inline(report, dm)
+    result = run(
+        report,
+        dm,
+        schedule.parameters if schedule else {},
+        version=version,
+        data_note=note,
+        triggered_by=job.reason,
+        schedule_id=job.schedule_id,
+    )
+    notify_service.notify_run(result, report, dm, schedule)
+    job.finish(
+        "failed" if result.status == "error" else "done",
+        version_id=result.version_id,
+        error=result.error,
+        run_id=result.id,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
