@@ -19,8 +19,9 @@ def _int_env(name: str) -> int | None:
 def main(host: str | None, port: int | None, workers: int, dev: bool) -> None:
     """Start the Strata web server."""
     if dev:
-        from strata import create_app
+        from strata import create_app, logs
 
+        logs.configure()
         app = create_app()
         # No separate worker in dev: requested builds run in the request.
         app.config["WORKER_INLINE"] = True
@@ -56,8 +57,10 @@ def main(host: str | None, port: int | None, workers: int, dev: bool) -> None:
                 self.cfg.set("preload_app", False)  # type: ignore[union-attr]
 
             def load(self) -> Flask:
-                from strata import create_app
+                # Runs in each worker after the fork (no preload).
+                from strata import create_app, logs
 
+                logs.configure()
                 return create_app()
 
         StrataApp().run()

@@ -248,6 +248,15 @@ REGISTRY: list[ConfigEntry] = [
         "sweep and strata-admin reconcile delete older ones",
         applies=Applies.LIVE,
     ),
+    # -- diagnostics --
+    ConfigEntry(
+        "diag.auth_probe",
+        ConfigType.BOOL,
+        False,
+        "Answer /diag/auth-probe.json (no login) with what a request carried, to test "
+        "Excel's sign-in. Turn off afterwards",
+        applies=Applies.LIVE,
+    ),
     # -- proxy --
     ConfigEntry(
         "proxy.x_forwarded_for",

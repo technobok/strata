@@ -151,6 +151,7 @@ def _build_app(app: Flask) -> Flask:
         checks,
         connections,
         datamodules,
+        diag,
         help,
         reports,
         runs,
@@ -168,6 +169,7 @@ def _build_app(app: Flask) -> Flask:
     app.register_blueprint(help.bp)
     app.register_blueprint(runs.bp)
     app.register_blueprint(checks.bp)
+    app.register_blueprint(diag.bp)
     app.jinja_env.globals["help_link"] = help.help_link
 
     @app.route("/")

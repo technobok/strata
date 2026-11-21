@@ -58,3 +58,50 @@ page.
 
 A wrong, disabled, expired or out-of-scope token gets HTTP 403. A data request with
 no login and no key gets 401.
+
+## Testing Excel's sign-in (the auth probe)
+
+The address in front of Strata signs people in with Entra (Microsoft's work
+accounts) before any request reaches Strata. The auth probe shows what an Excel
+request still carries when it arrives, so a test can tell whether Excel's
+**Organizational account** sign-in can work, or whether workbooks need a key.
+
+Turn on `diag.auth_probe` (see [Settings](settings.md#diagnostics--apply-immediately)).
+While it is on, `/diag/auth-probe.json` answers anyone who reaches it, with no
+login, and writes the same answer to the app log (`docker logs strata-app`). It is
+`404` while the setting is off.
+
+It shows the browser or program (User-Agent), the names of the headers and cookies
+that arrived, who Strata's own sign-in sees (`gatekeeper_user`), and the shape of
+any `Authorization` header: the scheme, and for a sign-in token (a JWT) who it is
+for (`aud`), from which tenant (`iss`, `tid`), for whom (`upn`) and through which
+program (`appid`). It never shows a token, a password or a cookie's value.
+
+Excel's Organizational account first asks the address what sign-in it needs; it
+signs in only if the answer is a `401` naming the Entra tenant. Add
+`?challenge=<tenant>` to get that answer when no token came:
+
+```
+…/strata/diag/auth-probe.json?challenge=<tenant>
+```
+
+`<tenant>` is the organisation's Entra tenant: the middle of Gatekeeper's issuer
+(**Gatekeeper → Admin → SSO**, `https://login.microsoftonline.com/<tenant>/v2.0`),
+or the company's email domain. It is a public name, not a permission. Letters,
+digits, `.` and `-` only; anything else gets `400`.
+
+The test:
+
+1. In **Admin → Configuration**, tick `diag.auth_probe` and save.
+2. In a browser, open `https://<server>/strata/diag/auth-probe.json`. The answer
+   should show your name in `gatekeeper_user`.
+3. In Excel: **Data → Get Data → From Other Sources → From Web**, paste the same URL,
+   choose **Organizational account**, **Sign in**, **Connect**.
+4. Clear the saved sign-in (**Data → Get Data → Data Source Settings**, select the
+   server, **Clear Permissions**), then repeat step 3 with `?challenge=<tenant>`.
+5. Repeat step 3 with **Anonymous**.
+6. Note what each attempt gave: data, a message (with any `AADSTS…` code) or a login
+   page; the answer Excel showed; and the Excel version (**File → Account → About
+   Excel**). The app log has every request that reached Strata:
+   `docker logs strata-app 2>&1 | grep "auth probe"`.
+7. Untick `diag.auth_probe`.

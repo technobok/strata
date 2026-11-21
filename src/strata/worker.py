@@ -169,10 +169,9 @@ class Worker:
 @click.option("--once", is_flag=True, help="Run every due job, then exit.")
 def main(queues: tuple[str, ...], concurrency: int | None, once: bool) -> None:
     """Run queued datamodule builds."""
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
-    from strata import create_app
+    from strata import create_app, logs
+
+    logs.configure()
 
     app = create_app()
     worker = Worker(

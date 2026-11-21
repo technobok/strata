@@ -61,6 +61,12 @@ strata-admin config set build.memory_limit 6GB    # prints when it applies
 | `outbox.api_key` | — | The key for `outbox.url`. |
 | `runs.retention_days` | `30` | Days a report or check run, with its saved rows, is kept (see [Checks and runs](checks.md#how-long-runs-are-kept)). The worker's sweep and `strata-admin reconcile` delete older ones. |
 
+## Diagnostics — apply immediately
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `diag.auth_probe` | off | Turns on `/diag/auth-probe.json`, which answers anyone (no login) with what their request carried: for testing how Excel gets through the sign-in in front of Strata (see [Testing Excel's sign-in](api-keys.md#testing-excels-sign-in-the-auth-probe)). Turn it off after the test. |
+
 ## Schedules and the worker
 
 | Setting | Default | Takes effect | Meaning |
