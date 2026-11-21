@@ -181,8 +181,15 @@ REGISTRY: list[ConfigEntry] = [
         "serve.memory_limit",
         ConfigType.STRING,
         "2GB",
-        "DuckDB memory limit for each report query (spills to disk beyond it); blank = DuckDB's "
-        "default (80% of RAM)",
+        "DuckDB memory limit for each report query (spills to disk beyond it)",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
+        "serve.memory_duckdb_default",
+        ConfigType.BOOL,
+        False,
+        "Use DuckDB's own default memory limit (80% of RAM) for report queries, "
+        "instead of serve.memory_limit",
         applies=Applies.LIVE,
     ),
     # -- schedules --
@@ -199,7 +206,15 @@ REGISTRY: list[ConfigEntry] = [
         ConfigType.STRING,
         "4GB",
         "DuckDB memory limit per build (spills to disk beyond it). Sized for 2 concurrent "
-        "builds on 16 GB; a script may SET its own. Blank = DuckDB's default (80% of RAM)",
+        "builds on 16 GB; a script may SET its own",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
+        "build.memory_duckdb_default",
+        ConfigType.BOOL,
+        False,
+        "Use DuckDB's own default memory limit (80% of RAM) for builds, instead of "
+        "build.memory_limit",
         applies=Applies.LIVE,
     ),
     ConfigEntry(
@@ -453,7 +468,7 @@ def _live(key: str, expected: ConfigType) -> str | int | bool | list[str]:
     raw = os.environ.get(env_name) if env_name else None
     if not raw:
         raw = _stored_values().get(key)
-    if raw is None:
+    if not raw:  # unset, or a blank stored before blank meant "default" everywhere
         return entry.default
     try:
         return parse_value(entry, raw)

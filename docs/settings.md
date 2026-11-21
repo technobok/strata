@@ -23,7 +23,7 @@ from, and when a change takes effect.
 | restart app + worker | Restart both. |
 
 After **Save Configuration**, the message lists what changed, grouped by when it
-applies.
+applies. A blank field always means "back to the default", here and from the shell.
 
 From a shell, the same settings are available as:
 
@@ -37,13 +37,10 @@ strata-admin config set build.memory_limit 6GB    # prints when it applies
 | Setting | Default | Meaning |
 |---|---|---|
 | `build.memory_limit` | `4GB` | DuckDB memory per build; it spills to disk beyond this. Two builds at once plus the web app fit a 16 GB host. A script may `SET memory_limit` itself. |
+| `build.memory_duckdb_default` | off | Tick to use DuckDB's own default memory limit (80% of RAM) for builds; `build.memory_limit` is then ignored. |
 | `build.threads` | `0` | DuckDB threads per build; `0` = one per core. |
 | `build.timeout_seconds` | `3600` | A build still running after this long is stopped and fails; the previous version stays live. `0` = no limit. |
 | `build.sandbox` | on | Locks build scripts to their own files (see [Build scripts](build-scripts.md#the-sandbox)). Turn off only if a connection driver fails under the sandbox. |
-
-A blank memory limit in the form goes back to the default. To use DuckDB's own
-default (80% of RAM) instead, set an empty value from the shell:
-`strata-admin config set build.memory_limit ''`.
 
 ## Serving — apply immediately
 
@@ -51,6 +48,7 @@ default (80% of RAM) instead, set an empty value from the shell:
 |---|---|---|
 | `serve.max_wait_seconds` | `60` | How long a read of stale data waits for the rebuild before serving the previous version (see [Freshness and builds](freshness.md#stale-data)). Keep it under Excel's 100 seconds. |
 | `serve.memory_limit` | `2GB` | DuckDB memory per report query; it spills to disk beyond this. |
+| `serve.memory_duckdb_default` | off | Tick to use DuckDB's own default memory limit (80% of RAM) for report queries; `serve.memory_limit` is then ignored. |
 
 ## Runs and mail — apply immediately
 

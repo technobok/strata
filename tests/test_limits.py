@@ -57,3 +57,52 @@ def test_a_build_over_its_time_limit_is_interrupted(strata: Strata) -> None:
     dm = strata.datamodule(dm_uuid)
     assert dm.build_status == "failed"
     assert "time limit of 1s" in (dm.last_build_error or "")
+
+
+def _duckdb_default_memory() -> str:
+    import duckdb
+
+    conn = duckdb.connect()
+    try:
+        return str(conn.execute("SELECT current_setting('memory_limit')").fetchone()[0])  # type: ignore[index]
+    finally:
+        conn.close()
+
+
+def test_the_duckdb_default_box_overrides_the_build_limit(strata: Strata) -> None:
+    strata.set_config({"build.memory_limit": "3GB", "build.memory_duckdb_default": True})
+    dm_uuid = strata.new_datamodule(script=SETTINGS_SCRIPT)
+    strata.build(dm_uuid)
+    assert _first_row(strata, dm_uuid, "SELECT * FROM s", "s")["mem"] == _duckdb_default_memory()
+
+
+def test_the_duckdb_default_box_overrides_the_serve_limit(strata: Strata) -> None:
+    strata.set_config({"serve.memory_limit": "1GB", "serve.memory_duckdb_default": True})
+    dm_uuid = strata.new_datamodule()
+    strata.build(dm_uuid)
+    row = _first_row(strata, dm_uuid, "SELECT current_setting('memory_limit') AS mem", "m")
+    assert row == {"mem": _duckdb_default_memory()}
+
+
+def test_a_blank_limit_means_the_default_from_the_shell_too(strata: Strata) -> None:
+    from click.testing import CliRunner
+
+    from strata import config
+    from strata.cli import main
+    from strata.db import transaction
+
+    runner = CliRunner()
+    assert runner.invoke(main, ["config", "set", "build.memory_limit", "3GB"]).exit_code == 0
+    result = runner.invoke(main, ["config", "set", "build.memory_limit", ""])
+    assert result.exit_code == 0, result.output
+    assert "build.memory_limit cleared: the default (4GB) applies" in result.output
+    with strata.app.app_context():
+        config.forget_cached_settings()
+        assert config.live_str("build.memory_limit") == "4GB"
+        # A blank stored before blank meant "default" everywhere reads as unset too.
+        with transaction() as cur:
+            cur.execute(
+                "INSERT INTO app_setting (key, value, description) VALUES ('build.memory_limit', '', '')"
+            )
+        config.forget_cached_settings()
+        assert config.live_str("build.memory_limit") == "4GB"

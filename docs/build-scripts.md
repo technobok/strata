@@ -147,7 +147,8 @@ off `build.sandbox`. Report queries are always sandboxed.
 
 ## Limits
 
-- **Memory.** A build runs with the `build.memory_limit` setting (default 4GB) and
+- **Memory.** A build runs with the `build.memory_limit` setting (default 4GB, or
+  DuckDB's own default when `build.memory_duckdb_default` is ticked) and
   spills to disk beyond it.
 - **Time.** A build still running after `build.timeout_seconds` (default one hour)
   is interrupted and fails; the previous version stays live.

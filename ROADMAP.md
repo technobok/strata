@@ -67,6 +67,5 @@ These replace the old Phases 7–10.
 - **API keys admin view** — global list across datamodules + per-key access-log browser.
 - **Serving niceties** — `page_size` parameter, multi-column sort from the UI (grammar already supports it).
 - **tom-select** — vendored but unwired; wire it (e.g. multiselect args, tag pickers) or drop it.
-- **"Blank = DuckDB's default" memory limits** — `build.memory_limit` / `serve.memory_limit` say a blank means DuckDB's default, but a blank in `/admin/config` clears the row back to 4GB/2GB; only `strata-admin config set <key> ''` reaches DuckDB's default (documented as such in `docs/settings.md`). Decide on a way to say "DuckDB default" in the form.
 - **Phone-width nav** — the top nav overflows at ~390 px (Datamodules, Checks, Tags, Admin, Help, user, Logout, theme); adopt the shared hamburger pattern the sibling apps use.
 - **Run snapshots of gate failures** — a gate that fails a build reports its first 3 rows in the error; saving all its rows as a run would make them browsable.

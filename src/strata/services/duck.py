@@ -87,8 +87,16 @@ def lock_down(
 # ---------------------------------------------------------------------------
 
 
+def _memory_limit(what: str) -> str | None:
+    """The memory limit to SET for ``what`` (build|serve), or None to leave DuckDB's
+    own default (``<what>.memory_duckdb_default`` overrides ``<what>.memory_limit``)."""
+    if live_bool(f"{what}.memory_duckdb_default"):
+        return None
+    return live_str(f"{what}.memory_limit")
+
+
 def _apply_limits(
-    conn: duckdb.DuckDBPyConnection, memory_limit: str, threads: int, what: str
+    conn: duckdb.DuckDBPyConnection, memory_limit: str | None, threads: int, what: str
 ) -> None:
     if memory_limit:
         try:
@@ -103,7 +111,7 @@ def _apply_limits(
 
 def apply_build_limits(conn: duckdb.DuckDBPyConnection) -> None:
     """Defaults for a build; the script may raise them with SET (builds are not frozen)."""
-    _apply_limits(conn, live_str("build.memory_limit"), live_int("build.threads"), "build")
+    _apply_limits(conn, _memory_limit("build"), live_int("build.threads"), "build")
 
 
 def build_timeout_seconds() -> int:
@@ -160,7 +168,7 @@ def serve_conn(version_file: Path) -> duckdb.DuckDBPyConnection:
         # Per-connection spill directory: DuckDB creates it on demand and
         # removes it on close, so concurrent connections never share files.
         conn.execute(f"SET temp_directory = '{_escape(scratch / uuid.uuid4().hex)}'")
-        _apply_limits(conn, live_str("serve.memory_limit"), 0, "serve")
+        _apply_limits(conn, _memory_limit("serve"), 0, "serve")
         lock_down(conn, [exports_dir(), scratch])
     except Exception:
         conn.close()
@@ -176,7 +184,7 @@ def snapshot_conn(parquet_file: Path) -> duckdb.DuckDBPyConnection:
     try:
         scratch = _scratch_root()
         conn.execute(f"SET temp_directory = '{_escape(scratch / uuid.uuid4().hex)}'")
-        _apply_limits(conn, live_str("serve.memory_limit"), 0, "serve")
+        _apply_limits(conn, _memory_limit("serve"), 0, "serve")
         conn.execute(
             f"CREATE TEMP VIEW snapshot AS SELECT * FROM read_parquet('{_escape(parquet_file)}')"
         )

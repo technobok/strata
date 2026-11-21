@@ -40,6 +40,12 @@ def _db_get_all() -> dict[str, str]:
     return {str(r[0]): str(r[1]) for r in rows}
 
 
+def _db_clear(key: str) -> None:
+    """Delete a setting row so the registry default applies."""
+    with standalone_transaction() as cursor:
+        cursor.execute("DELETE FROM app_setting WHERE key = ?", (key,))
+
+
 def _db_set(key: str, value: str) -> None:
     """Upsert a value into app_setting."""
     with standalone_transaction() as cursor:
@@ -134,12 +140,26 @@ def config_get(key: str) -> None:
 @click.argument("key")
 @click.argument("value")
 def config_set(key: str, value: str) -> None:
-    """Set a configuration value in the database."""
+    """Set a configuration value in the database (a blank value clears it, as the
+    /admin/config form does: the default applies again)."""
     entry = resolve_entry(key)
     if not entry:
         click.echo(f"Unknown setting: {key}", err=True)
         sys.exit(1)
     assert entry is not None
+
+    # A running app/worker re-reads a live setting once its cache expires.
+    applies = (
+        f"applies within {LIVE_CACHE_SECONDS:g} s"
+        if entry.applies is Applies.LIVE
+        else entry.applies.value
+    )
+    if not value.strip():
+        _db_clear(key)
+        default = serialize_value(entry, entry.default)
+        click.echo(f"{key} cleared: the default ({default or 'blank'}) applies ({applies})")
+        close_standalone_db()
+        return
 
     try:
         parse_value(entry, value)
@@ -148,12 +168,6 @@ def config_set(key: str, value: str) -> None:
         sys.exit(1)
 
     _db_set(key, value)
-    # A running app/worker re-reads a live setting once its cache expires.
-    applies = (
-        f"applies within {LIVE_CACHE_SECONDS:g} s"
-        if entry.applies is Applies.LIVE
-        else entry.applies.value
-    )
     click.echo(f"{key} = {value} ({applies})")
     close_standalone_db()
 
