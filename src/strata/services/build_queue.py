@@ -32,7 +32,7 @@ def inline_mode() -> bool:
 
 
 def inline_worker_id() -> str:
-    # Computed per call: gunicorn forks after preload, so the pid changes.
+    # Computed per call: the id must be this process's (each gunicorn worker is one).
     return f"inline:{socket.gethostname()}:{os.getpid()}"
 
 

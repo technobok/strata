@@ -21,8 +21,28 @@ def get_user_timezone() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def server_settings() -> Any:
+    """The config strata-web's gunicorn master needs (bind, threads, timeout), read
+    WITHOUT building the app.
+
+    Building the app imports duckdb, and importing duckdb starts its thread pool.
+    Threads do not survive fork(), so a gunicorn worker forked from a process that
+    imported duckdb crashes (or hangs) when it exits, and Python warns the fork
+    may deadlock. The master therefore stays duckdb-free and each worker builds
+    its own app after the fork (web.py: no preload_app).
+    """
+    return _configured_app(None).config
+
+
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     """Application factory for Strata."""
+    app = _configured_app(test_config)
+    return _build_app(app)
+
+
+def _configured_app(test_config: dict[str, Any] | None) -> Flask:
+    """A Flask app with its config loaded and the schema checked: no blueprints, so
+    nothing has imported duckdb yet."""
     # Resolve database path
     db_path = os.environ.get("STRATA_DB")
     if not db_path:
@@ -66,7 +86,11 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     Path(data_root).mkdir(parents=True, exist_ok=True)
     app.config["DATA_ROOT"] = data_root
     app.config["MAX_CONTENT_LENGTH"] = int(app.config.get("MAX_UPLOAD_MB", 512)) * 1024 * 1024
+    return app
 
+
+def _build_app(app: Flask) -> Flask:
+    """Add the database teardown, Gatekeeper, filters and blueprints."""
     from strata.db import close_db
 
     app.teardown_appcontext(close_db)
