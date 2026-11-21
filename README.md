@@ -298,6 +298,10 @@ DB-only settings worth knowing (no env var; restart the app after changing the `
 | `server.timeout` | `120` | Seconds a worker may go silent before gunicorn restarts it (a liveness check, not a per-request limit). |
 | `build.sandbox` | `true` | Lock build scripts to their own `sources/` and `tmp/` (see *The DuckDB sandbox*). |
 | `serve.max_wait_seconds` | `60` | How long a report request waits for a stale datamodule's rebuild before serving the previous version, marked stale. |
+| `serve.memory_limit` | `2GB` | DuckDB memory limit per report query (it spills to disk beyond it). |
+| `build.memory_limit` | `4GB` | DuckDB memory limit per build. Two concurrent builds (`worker.concurrency`) plus the web app fit a 16 GB host; a build script may `SET memory_limit` higher itself. |
+| `build.threads` | `0` | DuckDB threads per build; `0` = one per core. |
+| `build.timeout_seconds` | `3600` | A build still running after this long is interrupted and fails (its previous version stays live); `0` = no limit. |
 
 ### Environment variables and registry mapping
 

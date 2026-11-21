@@ -429,7 +429,9 @@ def _build_leased(
 
         tmp_file.unlink(missing_ok=True)
         conn = duckdb.connect(str(tmp_file))
+        deadline = duck.Deadline(conn, duck.build_timeout_seconds())
         try:
+            duck.apply_build_limits(conn)
             for local_name, dep_path in dep_attachments:
                 conn.execute(f"ATTACH '{dep_path}' AS {local_name} (READ_ONLY)")
             for local_name, crow in conn_attachments:
@@ -441,7 +443,15 @@ def _build_leased(
                 conn.execute(rendered)
             conn.execute("CHECKPOINT")
             storage_version = _storage_version(conn)
+        except duckdb.Error as exc:
+            if deadline.expired:
+                raise RuntimeError(
+                    f"build exceeded its time limit of {deadline.seconds}s "
+                    "(the build.timeout_seconds setting)"
+                ) from exc
+            raise
         finally:
+            deadline.cancel()
             conn.close()
         os.rename(tmp_file, final_file)
     except Exception as exc:

@@ -108,7 +108,33 @@ REGISTRY: list[ConfigEntry] = [
         "How long a report request waits for the rebuild of stale data before serving the "
         "previous version, marked stale (PowerQuery gives up after 100s)",
     ),
+    ConfigEntry(
+        "serve.memory_limit",
+        ConfigType.STRING,
+        "2GB",
+        "DuckDB memory limit for each report query (spills to disk beyond it); blank = DuckDB's "
+        "default (80% of RAM)",
+    ),
     # -- builds --
+    ConfigEntry(
+        "build.memory_limit",
+        ConfigType.STRING,
+        "4GB",
+        "DuckDB memory limit per build (spills to disk beyond it). Sized for 2 concurrent "
+        "builds on 16 GB; a script may SET its own. Blank = DuckDB's default (80% of RAM)",
+    ),
+    ConfigEntry(
+        "build.threads",
+        ConfigType.INT,
+        0,
+        "DuckDB threads per build; 0 = DuckDB's default (one per core)",
+    ),
+    ConfigEntry(
+        "build.timeout_seconds",
+        ConfigType.INT,
+        3600,
+        "A build still running after this many seconds is interrupted and fails; 0 = no limit",
+    ),
     ConfigEntry(
         "build.sandbox",
         ConfigType.BOOL,
@@ -206,6 +232,10 @@ KEY_MAP: dict[str, str] = {
     "worker.concurrency": "WORKER_CONCURRENCY",
     "build.sandbox": "BUILD_SANDBOX",
     "serve.max_wait_seconds": "SERVE_MAX_WAIT_SECONDS",
+    "serve.memory_limit": "SERVE_MEMORY_LIMIT",
+    "build.memory_limit": "BUILD_MEMORY_LIMIT",
+    "build.threads": "BUILD_THREADS",
+    "build.timeout_seconds": "BUILD_TIMEOUT_SECONDS",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
     "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",

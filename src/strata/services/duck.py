@@ -35,6 +35,7 @@ escape hatch in case a connection driver turns out to need external access).
 """
 
 import logging
+import threading
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -78,6 +79,60 @@ def lock_down(
         conn.execute("SET lock_configuration = true")
 
 
+# ---------------------------------------------------------------------------
+# Resource limits (sized by default for a 2-core / 16 GB host running two
+# concurrent builds plus the web app; all are settings)
+# ---------------------------------------------------------------------------
+
+
+def _apply_limits(
+    conn: duckdb.DuckDBPyConnection, memory_limit: str, threads: int, what: str
+) -> None:
+    if memory_limit:
+        try:
+            conn.execute(f"SET memory_limit = '{_escape(memory_limit)}'")
+        except duckdb.Error as exc:
+            raise RuntimeError(
+                f"the {what}.memory_limit setting '{memory_limit}' is not a valid size: {exc}"
+            ) from exc
+    if threads > 0:
+        conn.execute(f"SET threads = {int(threads)}")
+
+
+def apply_build_limits(conn: duckdb.DuckDBPyConnection) -> None:
+    """Defaults for a build; the script may raise them with SET (builds are not frozen)."""
+    cfg = current_app.config
+    _apply_limits(
+        conn, str(cfg.get("BUILD_MEMORY_LIMIT", "4GB")), int(cfg.get("BUILD_THREADS", 0)), "build"
+    )
+
+
+def build_timeout_seconds() -> int:
+    return int(current_app.config.get("BUILD_TIMEOUT_SECONDS", 3600))
+
+
+class Deadline:
+    """Interrupt ``conn`` after ``seconds`` (0 = never). DuckDB honours
+    ``interrupt()`` from another thread mid-query."""
+
+    def __init__(self, conn: duckdb.DuckDBPyConnection, seconds: int) -> None:
+        self.seconds = seconds
+        self.expired = False
+        self._timer: threading.Timer | None = None
+        if seconds > 0:
+            self._timer = threading.Timer(seconds, self._fire, args=(conn,))
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _fire(self, conn: duckdb.DuckDBPyConnection) -> None:
+        self.expired = True
+        conn.interrupt()
+
+    def cancel(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+
+
 def data_root() -> Path:
     return Path(current_app.config["DATA_ROOT"])
 
@@ -106,6 +161,7 @@ def serve_conn(version_file: Path) -> duckdb.DuckDBPyConnection:
         # Per-connection spill directory: DuckDB creates it on demand and
         # removes it on close, so concurrent connections never share files.
         conn.execute(f"SET temp_directory = '{_escape(scratch / uuid.uuid4().hex)}'")
+        _apply_limits(conn, str(current_app.config.get("SERVE_MEMORY_LIMIT", "2GB")), 0, "serve")
         lock_down(conn, [exports_dir(), scratch])
     except Exception:
         conn.close()
