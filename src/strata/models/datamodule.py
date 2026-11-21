@@ -39,12 +39,15 @@ class Datamodule:
     created_at: str
     modified_at: str
     build_queue: str = "default"
+    consecutive_failures: int = 0
+    retry_after: str | None = None
 
     _COLUMNS = (
         "id, uuid, path, description, build_script, ttl_seconds, valid_until, "
         "retention_kind, retention_count, retention_age_seconds, storage_version, "
         "live_version_id, build_status, build_token, build_lease_until, last_build_error, "
-        "created_by, modified_by, created_at, modified_at, build_queue"
+        "created_by, modified_by, created_at, modified_at, build_queue, "
+        "consecutive_failures, retry_after"
     )
 
     @staticmethod
@@ -71,6 +74,8 @@ class Datamodule:
             created_at=str(row[18]),
             modified_at=str(row[19]),
             build_queue=str(row[20]),
+            consecutive_failures=int(row[21]),
+            retry_after=str(row[22]) if row[22] is not None else None,
         )
 
     @staticmethod

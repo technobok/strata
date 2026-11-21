@@ -45,7 +45,9 @@ DATA_ROOT/<uuid[:2]>/<uuid>/
 
 "Live" is only a pointer in the SQLite metadata DB (`datamodule.live_version_id`) — renaming or moving a datamodule is pure metadata, and old versions stay browsable until retention prunes them.
 
-**Freshness**: each serve checks the TTL (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. Stale requests rebuild under the datamodule's build lease, then serve the new version. *(Phase B2 moves this into the worker too.)*
+**Freshness**: the TTL is the oldest data a report may serve (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. **The serve path never builds**: a stale request queues a rebuild (requests coalesce into one job) and waits up to `serve.max_wait_seconds` (default 60 s — PowerQuery gives up at 100 s) for the worker. If the rebuild finishes, the fresh data is served; if not, or if it fails, the previous version is served, marked stale. The HTML view always shows "Data as of …" (and a banner when stale); data formats send `X-Data-As-Of` and, when stale, `X-Data-Stale: 1`. A datamodule never built yet returns 503 with `Retry-After` (HTML: a page that refreshes itself).
+
+**Failure backoff**: after a failed build, automatic rebuilds (stale reads, and stale dependencies pulled by an automatic build) are not retried for 1 min, doubling per consecutive failure up to 1 h; meanwhile the last good version is served, marked stale, with the error. Manual and scheduled builds always run. A dependency that is stale and backed off fails its dependent's automatic build, which keeps its own last good version.
 
 ### Builds, the worker, and the build lease
 
@@ -295,6 +297,7 @@ DB-only settings worth knowing (no env var; restart the app after changing the `
 | `server.threads` | `8` | Request threads per gunicorn worker. Strata runs gunicorn's `gthread` worker, so a long export or build is not killed by the worker timeout. |
 | `server.timeout` | `120` | Seconds a worker may go silent before gunicorn restarts it (a liveness check, not a per-request limit). |
 | `build.sandbox` | `true` | Lock build scripts to their own `sources/` and `tmp/` (see *The DuckDB sandbox*). |
+| `serve.max_wait_seconds` | `60` | How long a report request waits for a stale datamodule's rebuild before serving the previous version, marked stale. |
 
 ### Environment variables and registry mapping
 

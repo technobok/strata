@@ -100,8 +100,11 @@ class Strata:
 
     def set_script(self, dm_uuid: str, script: str) -> None:
         dm = self.datamodule(dm_uuid)
+        # A browser posts every field; keep the TTL (blank would clear it).
+        ttl = "" if dm.ttl_seconds is None else str(dm.ttl_seconds)
         resp = self.client.post(
-            f"/datamodules/{dm_uuid}/edit", data={"path": dm.path, "build_script": script}
+            f"/datamodules/{dm_uuid}/edit",
+            data={"path": dm.path, "build_script": script, "ttl_seconds": ttl},
         )
         assert resp.status_code == 302
 

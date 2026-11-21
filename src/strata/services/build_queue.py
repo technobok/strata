@@ -9,12 +9,17 @@ the same code path.
 import logging
 import os
 import socket
+import time
+from dataclasses import dataclass
 
 from flask import current_app
 
 from strata.models.build_job import BuildJob
 from strata.models.datamodule import Datamodule
+from strata.models.datamodule_version import DatamoduleVersion
 from strata.services import datamodule_service
+
+JOB_POLL_SECONDS = 0.25
 
 log = logging.getLogger(__name__)
 
@@ -55,8 +60,73 @@ def run_claimed(job: BuildJob) -> None:
             job.finish("done", version_id=version.id)
         else:
             before = dm.live_version_id
-            version = datamodule_service.ensure_fresh(dm, job.reason, dm.ttl_seconds)
+            version = datamodule_service.ensure_fresh(
+                dm, job.reason, dm.ttl_seconds, run=datamodule_service.BuildRun(auto=True)
+            )
             job.finish("done" if version.id != before else "skipped", version_id=version.id)
+    except datamodule_service.BackoffError as exc:
+        job.finish("skipped", error=str(exc))
     except Exception as exc:
         log.warning("build job %s for %s failed: %s", job.id, dm.path, exc)
         job.finish("failed", error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# The serve path: which version to serve (it never builds itself)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Served:
+    """The version a report request should serve, and how fresh it is."""
+
+    version: DatamoduleVersion | None  # None: nothing has been built yet
+    stale: bool = False  # older than the TTL: a rebuild is pending or failing
+    rebuilding: bool = False  # a rebuild is queued or running
+    failure: str | None = None  # why the data could not be refreshed, if it failed
+
+
+def max_wait_seconds() -> float:
+    return float(current_app.config.get("SERVE_MAX_WAIT_SECONDS", 60))
+
+
+def wait_for(job: BuildJob, seconds: float) -> BuildJob:
+    """Poll ``job`` until it is no longer queued/running, or ``seconds`` pass."""
+    deadline = time.monotonic() + seconds
+    while job.active and time.monotonic() < deadline:
+        time.sleep(JOB_POLL_SECONDS)
+        refreshed = BuildJob.get_by_id(job.id)
+        if refreshed is None:
+            break
+        job = refreshed
+    return job
+
+
+def servable_version(dm: Datamodule, effective_ttl: int | None) -> Served:
+    """Serve fresh data when it can be had within the wait; else the last good data.
+
+    A stale datamodule gets a (coalesced, unforced) rebuild request, and the
+    request waits up to ``serve.max_wait_seconds`` for it. If the rebuild has
+    not finished by then, or fails, or the datamodule is in failure backoff,
+    the previous live version is served, marked stale.
+    """
+    live = datamodule_service.live_version(dm)
+    if live is not None and not datamodule_service.is_stale(dm, live, effective_ttl):
+        return Served(live)
+    if datamodule_service.in_backoff(dm):
+        return Served(live, stale=True, failure=dm.last_build_error)
+
+    job = wait_for(request_build(dm, "stale-read", force=False), max_wait_seconds())
+    if job.status in ("done", "skipped") and job.version_id is not None:
+        built = DatamoduleVersion.get_by_id(job.version_id)
+        if built is not None and built.status in ("ready", "superseded"):
+            current = Datamodule.get_by_id(dm.id)
+            latest = datamodule_service.live_version(current) if current else None
+            return Served(latest or built)
+    current = Datamodule.get_by_id(dm.id) or dm
+    return Served(
+        datamodule_service.live_version(current),
+        stale=True,
+        rebuilding=job.active,
+        failure=job.error if job.status in ("failed", "skipped") else None,
+    )

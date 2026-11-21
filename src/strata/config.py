@@ -100,6 +100,14 @@ REGISTRY: list[ConfigEntry] = [
         2,
         "Builds one strata-worker process runs at once (override with --concurrency)",
     ),
+    # -- serving --
+    ConfigEntry(
+        "serve.max_wait_seconds",
+        ConfigType.INT,
+        60,
+        "How long a report request waits for the rebuild of stale data before serving the "
+        "previous version, marked stale (PowerQuery gives up after 100s)",
+    ),
     # -- builds --
     ConfigEntry(
         "build.sandbox",
@@ -197,6 +205,7 @@ KEY_MAP: dict[str, str] = {
     "worker.poll_interval": "WORKER_POLL_INTERVAL",
     "worker.concurrency": "WORKER_CONCURRENCY",
     "build.sandbox": "BUILD_SANDBOX",
+    "serve.max_wait_seconds": "SERVE_MAX_WAIT_SECONDS",
     "proxy.x_forwarded_for": "PROXY_X_FORWARDED_FOR",
     "proxy.x_forwarded_proto": "PROXY_X_FORWARDED_PROTO",
     "proxy.x_forwarded_host": "PROXY_X_FORWARDED_HOST",

@@ -327,6 +327,24 @@ footer small {
     font-size: 0.9rem;
 }
 
+/* Report freshness: stale / failed-refresh notice (not .flash: those auto-dismiss) */
+.freshness-banner {
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--pico-secondary);
+    border-radius: var(--pico-border-radius);
+    font-size: 0.9rem;
+}
+
+.freshness-banner.freshness-failed {
+    border-color: var(--pico-del-color);
+}
+
+.data-as-of {
+    margin-bottom: 0.5rem;
+    color: var(--pico-muted-color);
+}
+
 /* Truncated failed-build error in the versions table */
 .error-cell {
     color: var(--pico-del-color);

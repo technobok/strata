@@ -1,8 +1,9 @@
 """Serve a report macro over a datamodule's live version.
 
 The report body (``report.body_sql``) is the source of truth in SQLite. At serve
-time we ensure the datamodule is fresh (TTL pull), open its live version file
-read-only, register the report as a ``TEMP`` macro (so editing a body reflects
+time the blueprint picks the version to serve (build_queue.servable_version:
+the serve path never builds; it waits a bounded time for the worker), we open
+that version file read-only, register the report as a ``TEMP`` macro (so editing a body reflects
 immediately with no rebuild), bind the request args, ``DESCRIBE`` to learn the
 real output columns, validate any sort/filter/search params against those
 columns (services/query_filter), and either render one HTML page of rows or
@@ -67,6 +68,11 @@ class TableResult:
     error: str | None = None
     applied_filters: list[query_filter.AppliedFilter] = field(default_factory=list)
     applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
+
+
+def effective_ttl(report: Report, dm: Datamodule) -> int | None:
+    """The report's own TTL override, falling back to the datamodule's."""
+    return report.ttl_seconds if report.ttl_seconds is not None else dm.ttl_seconds
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -143,12 +149,12 @@ def _prepare(
     report: Report,
     dm: Datamodule,
     arg_values: dict[str, list[str]],
-    pinned: DatamoduleVersion | None = None,
+    version: DatamoduleVersion,
 ) -> tuple[duckdb.DuckDBPyConnection, str, list[Any], list[tuple[str, str]]]:
-    """Ensure fresh, attach the version read-only, register the macro, describe.
+    """Attach ``version`` read-only, register the macro, describe.
 
-    ``pinned`` serves that historical version as-is: no TTL check, no rebuild,
-    no build_status consultation. Returns (conn, final_sql, binds, columns)
+    ``version`` is served as-is (the live one the blueprint resolved, or a
+    pinned historical one); nothing here builds. Returns (conn, final_sql, binds, columns)
     where columns is the DESCRIBEd (name, type) per output column. Caller owns
     closing ``conn`` (stream_service closes it after writing; run_table closes
     it after fetch).
@@ -160,11 +166,6 @@ def _prepare(
         if not template_service.ALIAS_RE.match(arg.name):
             raise ArgError(f"Invalid argument name '{arg.name}'")
 
-    if pinned is not None:
-        version = pinned
-    else:
-        effective_ttl = report.ttl_seconds if report.ttl_seconds is not None else dm.ttl_seconds
-        version = datamodule_service.ensure_fresh(dm, "ttl-pull", effective_ttl)
     vpath = datamodule_service.version_path(dm.uuid, version.uuid)
 
     binds = _bind_args(args, arg_values)
@@ -203,7 +204,7 @@ def run_table(
     dm: Datamodule,
     arg_values: dict[str, list[str]],
     spec: query_filter.QuerySpec,
-    pinned: DatamoduleVersion | None = None,
+    version: DatamoduleVersion,
 ) -> TableResult:
     """Run the report and return one page of rows for the HTML table.
 
@@ -213,7 +214,7 @@ def run_table(
     failing filter chip stays visible and removable.
     """
     try:
-        conn, final_sql, binds, columns = _prepare(report, dm, arg_values, pinned=pinned)
+        conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     except duckdb.Error as exc:
         return TableResult(error=f"Query error: {exc}")
     try:
@@ -265,14 +266,14 @@ def stream(
     arg_values: dict[str, list[str]],
     spec: query_filter.QuerySpec,
     fmt: str,
-    pinned: DatamoduleVersion | None = None,
+    version: DatamoduleVersion,
 ) -> Response:
     """Stream the filtered/sorted result as parquet/csv/json/xlsx.
 
     Exports cover the full result; an explicit ``page=N`` from the caller
     yields just that slice (UI export links never carry ``page``).
     """
-    conn, final_sql, binds, columns = _prepare(report, dm, arg_values, pinned=pinned)
+    conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     try:
         clauses = query_filter.build_clauses(spec, columns)
         limit = offset = None

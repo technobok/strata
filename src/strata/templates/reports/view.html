@@ -17,6 +17,21 @@
 </div>
 {% endif %}
 
+{% if served and served.stale %}
+<article class="freshness-banner{% if served.failure %} freshness-failed{% endif %}">
+    {% if served.failure %}
+    The data could not be refreshed ({{ served.failure }}).
+    {% elif served.rebuilding %}
+    A rebuild is in progress.
+    {% else %}
+    This data is older than its refresh interval.
+    {% endif %}
+    Showing data as of {{ served_version.build_ended_at|localdatetime }}.
+</article>
+{% elif served_version and not pinned_version %}
+<p class="data-as-of"><small>Data as of {{ served_version.build_ended_at|localdatetime }}</small></p>
+{% endif %}
+
 {% if pinned_version %}
 <article class="version-banner">
     Viewing historical version <code>{{ pinned_version.uuid[:8] }}</code>

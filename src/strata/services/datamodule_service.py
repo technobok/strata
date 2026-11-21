@@ -281,12 +281,59 @@ def _render_sources(build_script: str, source_map: dict[str, str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Failure backoff
+# ---------------------------------------------------------------------------
+
+BACKOFF_BASE_SECONDS = 60
+BACKOFF_MAX_SECONDS = 3600
+
+
+class BackoffError(RuntimeError):
+    """An automatic rebuild was not attempted: the datamodule's last build failed recently."""
+
+
+@dataclass
+class BuildRun:
+    """How one requested build treats the datamodules it touches.
+
+    ``auto``: an automatic trigger (a stale read). Stale datamodules whose last
+    build failed are then not retried before their ``retry_after``; manual and
+    scheduled builds retry regardless.
+    """
+
+    auto: bool = False
+
+
+def backoff_seconds(failures: int) -> int:
+    return min(BACKOFF_BASE_SECONDS * 2 ** max(failures - 1, 0), BACKOFF_MAX_SECONDS)
+
+
+def in_backoff(dm: Datamodule) -> bool:
+    if not dm.retry_after:
+        return False
+    try:
+        until = datetime.fromisoformat(dm.retry_after)
+    except ValueError:
+        return False
+    return datetime.now(UTC) < until
+
+
+def _backoff_error(dm: Datamodule) -> BackoffError:
+    return BackoffError(
+        f"'{dm.path}' is stale and its last build failed; no automatic retry before "
+        f"{dm.retry_after} (last error: {dm.last_build_error})"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
 
-def _resolve_dependencies(dm: Datamodule, chain: frozenset[int]) -> list[tuple[str, str]]:
-    """Ensure each dependency is fresh (TTL pull) and return (local_name, path)."""
+def _resolve_dependencies(
+    dm: Datamodule, chain: frozenset[int], run: BuildRun
+) -> list[tuple[str, str]]:
+    """Refresh each dependency that is stale (TTL pull); return (local_name, path)."""
     attachments: list[tuple[str, str]] = []
     for dep in Dependency.get_for_datamodule(dm.id):
         dep_dm = Datamodule.get_by_id(dep.depends_on_id)
@@ -295,7 +342,7 @@ def _resolve_dependencies(dm: Datamodule, chain: frozenset[int]) -> list[tuple[s
         if dep_dm.id in chain:
             raise RuntimeError(f"dependency cycle detected via '{dep_dm.path}'")
         dep_version = ensure_fresh(
-            dep_dm, f"dependency:{dm.path}", dep_dm.ttl_seconds, _stack=chain
+            dep_dm, f"dependency:{dm.path}", dep_dm.ttl_seconds, _stack=chain, run=run
         )
         attachments.append((dep.local_name, str(version_path(dep_dm.uuid, dep_version.uuid))))
     return attachments
@@ -312,25 +359,29 @@ def _resolve_connections(dm: Datamodule) -> list[tuple[str, Connection]]:
 
 
 def build_datamodule(
-    dm: Datamodule, triggered_by: str, _stack: frozenset[int] = frozenset()
+    dm: Datamodule,
+    triggered_by: str,
+    _stack: frozenset[int] = frozenset(),
+    run: BuildRun | None = None,
 ) -> DatamoduleVersion:
     """Build unconditionally under the datamodule's lease (waiting for it if held).
 
     A forced build: if someone else is building, wait for them, then build the
-    current script anyway.
+    current script anyway. Stale dependencies are refreshed first.
     """
+    run = run or BuildRun()
     lease = BuildLease.acquire_waiting(dm.id)
     try:
         fresh = Datamodule.get_by_id(dm.id)
         if fresh is None:
             raise RuntimeError("datamodule was deleted")
-        return _build_leased(fresh, triggered_by, _stack)
+        return _build_leased(fresh, triggered_by, _stack, run)
     finally:
         lease.release()
 
 
 def _build_leased(
-    dm: Datamodule, triggered_by: str, _stack: frozenset[int] = frozenset()
+    dm: Datamodule, triggered_by: str, _stack: frozenset[int], run: BuildRun
 ) -> DatamoduleVersion:
     """Build the datamodule into a new version and swap it live (lease held).
 
@@ -355,7 +406,7 @@ def _build_leased(
 
     try:
         # Resolve build inputs (may rebuild dependencies) before opening the file.
-        dep_attachments = _resolve_dependencies(dm, chain)
+        dep_attachments = _resolve_dependencies(dm, chain, run)
         conn_attachments = _resolve_connections(dm)
         source_map = {
             sf.filename: str(source_disk_path(dm.uuid, sf.stored_name))
@@ -385,8 +436,18 @@ def _build_leased(
         version.mark_failed(str(exc), duration_ms)
         with transaction() as cur:
             cur.execute(
-                "UPDATE datamodule SET build_status = 'failed', last_build_error = ? WHERE id = ?",
+                "UPDATE datamodule SET build_status = 'failed', last_build_error = ?, "
+                "consecutive_failures = consecutive_failures + 1 WHERE id = ?",
                 (str(exc), dm.id),
+            )
+            row = cur.execute(
+                "SELECT consecutive_failures FROM datamodule WHERE id = ?", (dm.id,)
+            ).fetchone()
+            failures = int(row[0]) if row else 1
+            retry_at = datetime.now(UTC) + timedelta(seconds=backoff_seconds(failures))
+            cur.execute(
+                "UPDATE datamodule SET retry_after = ? WHERE id = ?",
+                (retry_at.isoformat(), dm.id),
             )
         tmp_file.unlink(missing_ok=True)
         log.warning("datamodule build failed (uuid=%s): %s", dm.uuid, exc)
@@ -410,7 +471,8 @@ def _build_leased(
         )
         cur.execute(
             "UPDATE datamodule SET live_version_id = ?, build_status = 'ready', "
-            "storage_version = ?, last_build_error = NULL, modified_at = ? WHERE id = ?",
+            "storage_version = ?, last_build_error = NULL, consecutive_failures = 0, "
+            "retry_after = NULL, modified_at = ? WHERE id = ?",
             (version.id, storage_version, ended_at, dm.id),
         )
 
@@ -464,21 +526,30 @@ def _is_stale(dm: Datamodule, version: DatamoduleVersion, effective_ttl: int | N
     return (now - built_at).total_seconds() > effective_ttl
 
 
+def is_stale(dm: Datamodule, version: DatamoduleVersion, effective_ttl: int | None) -> bool:
+    return _is_stale(dm, version, effective_ttl)
+
+
 def ensure_fresh(
     dm: Datamodule,
     triggered_by: str,
     effective_ttl: int | None,
     _stack: frozenset[int] = frozenset(),
+    run: BuildRun | None = None,
 ) -> DatamoduleVersion:
     """Return a ready live version, rebuilding under single-flight if stale.
 
-    ``effective_ttl`` is the resolved TTL for this serve (report override falling
-    back to the datamodule TTL); None = never auto-expire, <=0 = always rebuild.
+    ``effective_ttl``: None = never auto-expire, <=0 = always rebuild.
     ``_stack`` carries the current build chain for dependency cycle detection.
+    For an automatic ``run``, a stale datamodule in failure backoff raises
+    BackoffError instead of being rebuilt.
     """
+    run = run or BuildRun()
     version = live_version(dm)
     if version is not None and not _is_stale(dm, version, effective_ttl):
         return version
+    if run.auto and in_backoff(dm):
+        raise _backoff_error(dm)
 
     lease = BuildLease.acquire_waiting(dm.id)
     try:
@@ -489,7 +560,9 @@ def ensure_fresh(
         version = live_version(fresh)
         if version is not None and not _is_stale(fresh, version, effective_ttl):
             return version
-        return _build_leased(fresh, triggered_by, _stack)
+        if run.auto and in_backoff(fresh):
+            raise _backoff_error(fresh)
+        return _build_leased(fresh, triggered_by, _stack, run)
     finally:
         lease.release()
 

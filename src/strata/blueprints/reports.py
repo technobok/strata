@@ -27,7 +27,13 @@ from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
-from strata.services import datamodule_service, query_filter, report_service, stream_service
+from strata.services import (
+    build_queue,
+    datamodule_service,
+    query_filter,
+    report_service,
+    stream_service,
+)
 from strata.services.query_filter import FilterError, QuerySpec
 from strata.services.report_service import ArgError, TableResult
 
@@ -68,13 +74,22 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
 
     pinned, version_error = _resolve_pinned(dm)
 
+    # The serve path never builds: a stale datamodule gets a rebuild request and
+    # a bounded wait, then the last good version is served, marked stale.
+    served: build_queue.Served | None = None
+    if pinned is None and version_error is None:
+        served = build_queue.servable_version(dm, report_service.effective_ttl(report, dm))
+        if served.version is None:
+            return _not_built_yet(report, dm, served, ext, api_key)
+    version = pinned if pinned is not None else (served.version if served else None)
+
     args = ReportArg.get_for_report(report.id)
     arg_names = {a.name for a in args}
     pairs = list(request.args.items(multi=True))
 
     if ext != "html":
-        if version_error is not None:
-            return FlaskResponse(version_error, status=400)
+        if version_error is not None or version is None:
+            return FlaskResponse(version_error or "no servable version", status=400)
         started = time.perf_counter()
         resp: FlaskResponse | None = None
         error_text = ""
@@ -82,7 +97,8 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
             if api_key is not None:
                 arg_values = _apply_key_args(api_key, arg_values)
-            resp = report_service.stream(report, dm, arg_values, spec, ext, pinned=pinned)
+            resp = report_service.stream(report, dm, arg_values, spec, ext, version)
+            _freshness_headers(resp, version, served)
         except (ArgError, FilterError, duckdb.Error) as exc:
             error_text = str(exc)
         if api_key is not None:
@@ -99,11 +115,11 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     arg_error = version_error
     spec: QuerySpec | None = None
     arg_values: dict[str, list[str]] = {}
-    if version_error is None:
+    if version_error is None and version is not None:
         try:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
             if request.args or not any(a.required for a in args):
-                result = report_service.run_table(report, dm, arg_values, spec, pinned=pinned)
+                result = report_service.run_table(report, dm, arg_values, spec, version)
         except (ArgError, FilterError) as exc:
             arg_error = str(exc)
 
@@ -116,12 +132,46 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         result=result,
         arg_error=arg_error,
         pinned_version=pinned,
+        served=served,
+        served_version=version,
         ui=_build_ui(report, pairs, spec, result),
     )
     # HTMX swaps just the table fragment; history restores need the full page.
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
         return render_template("reports/_table.html", **context)
     return render_template("reports/view.html", **context)
+
+
+def _freshness_headers(
+    resp: FlaskResponse, version: DatamoduleVersion, served: build_queue.Served | None
+) -> None:
+    """Tell data consumers how old the data is (PowerQuery can read headers)."""
+    if version.build_ended_at:
+        resp.headers["X-Data-As-Of"] = version.build_ended_at
+    if served is not None and served.stale:
+        resp.headers["X-Data-Stale"] = "1"
+
+
+def _not_built_yet(
+    report: Report,
+    dm: Datamodule,
+    served: build_queue.Served,
+    ext: str,
+    api_key: ApiKey | None,
+) -> FlaskResponse | str:
+    """Nothing has ever been built: a self-refreshing page, or 503 for data."""
+    if ext == "html":
+        html = render_template("reports/building.html", report=report, datamodule=dm, served=served)
+        return FlaskResponse(html, status=503, headers={"Retry-After": "30"})
+    message = (
+        f"The data for this report could not be built: {served.failure}"
+        if served.failure
+        else "The data for this report is still being built; retry shortly."
+    )
+    resp = FlaskResponse(message, status=503, headers={"Retry-After": "30"})
+    if api_key is not None:
+        _log_key_access(api_key, report, ext, 503, None, None)
+    return resp
 
 
 def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskResponse | None]:
