@@ -251,10 +251,10 @@ Every setting, its default and when a change applies: [Settings (admin)](docs/se
 | `STRATA_DB` | `storage.strata_db` | `/app/instance/strata.sqlite3` | Path to the SQLite metadata DB. **Bootstrap-only** — read before the DB is open, so it must come from the env. | Compose (commented) |
 | `STRATA_ROOT` | `storage.strata_root` | (auto) | Project root used at init-db time to resolve `database/migrations/`. **Bootstrap-only.** | Compose (commented) |
 | `STRATA_DATA_DIR` | (host-only) | `./instance/data` | Host directory mounted at `/data-root`. Pin to a dedicated disk — built versions can grow large. | Compose (host substitution) |
-| `DATA_ROOT` | `data.root` | `/data-root` | Root for datamodule storage (versions + sources) inside the container. | Compose `app` |
+| `DATA_ROOT` | `data.root` | `/data-root` | Root for datamodule storage (versions + sources) inside the container. | Compose `app` + `worker` |
 | `GATEKEEPER_INSTANCE` | (host-only) | `../gatekeeper/instance` | Host path mounted at `/gatekeeper-data`. | Compose (host substitution) |
-| `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO.** Path to gatekeeper's SQLite. | Compose `app` |
-| `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins. | Compose `app` |
+| `GATEKEEPER_DB` | `gatekeeper.db_path` | `/gatekeeper-data/gatekeeper.sqlite3` | **Required for SSO**, and for the worker to turn usernames and `@groups` into mail addresses. Path to gatekeeper's SQLite. | Compose `app` + `worker` |
+| `STRATA_ADMIN_GROUP` | `auth.admin_group` | `strata-admins` | **Required to access `/admin/*`.** Gatekeeper group for strata admins; also the default alert list, which the worker mails. | Compose `app` + `worker` |
 | `OUTBOX_INSTANCE` | (host-only) | `../outbox/instance` | Host path mounted at `/outbox-data`. | Compose (host substitution) |
 | `OUTBOX_DB` | `outbox.db_path` | `/outbox-data/outbox.sqlite3` | Path to outbox's SQLite: mail from scheduled runs is queued there (the worker sends it). | Compose `app` + `worker` |
 | `MAIL_SENDER` | `mail.sender` | `strata@localhost` | From-address on mail Strata sends; also settable in `/admin/config`. | Compose (commented) |

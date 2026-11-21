@@ -85,6 +85,9 @@ services:
       - TZ=${TZ:-UTC}
       - DATA_ROOT=/data-root
       - GATEKEEPER_DB=/gatekeeper-data/gatekeeper.sqlite3
+      # The worker resolves recipients and the default alert list (@<this group>)
+      # when it mails scheduled runs and alerts, so it needs the same group as app.
+      - STRATA_ADMIN_GROUP=${STRATA_ADMIN_GROUP:-strata-admins}
       - OUTBOX_DB=/outbox-data/outbox.sqlite3
     networks:
       - platform-net
