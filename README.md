@@ -12,6 +12,10 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - **Sort / filter / search grammar** — `field__op=value` filters, full-text `q=` search, `sort=-a,b`, pagination — every field validated against the query's real output columns, every value parameter-bound
 - **Multi-format serving** — `/r/<uuid>.html|parquet|csv|json|xlsx`, all streamed with constant memory and exact `Content-Length`
 - **Version pinning** — `?version=<version_uuid>` serves any retained historical snapshot (never triggers a rebuild)
+- **Checks** — any report can be a check (severity info/warning/error); a **gate** check runs inside every build and keeps bad data from going live; `/checks` lists them, flagged first
+- **Scheduled runs + mail** — reports and checks have schedules of their own, each with its own recipients (Gatekeeper users, `@groups`, emails) and arguments; every run is saved (Parquet, 30 days) and mailed through Outbox with the first 20 rows and a link; a check with no rows sends nothing
+- **Alerts** — per-datamodule alert lists hear "build failing", "recovered" and "data is stale"
+- **Jinja build scripts** — loop over a dependency's rows (e.g. one `UNION ALL` branch per company) with `rows()`, `sqlstr`, `ident`
 - **Retention + reconcile** — per-datamodule keep-newest-N or age-window pruning after each build, plus `strata-admin reconcile` to sweep orphaned files
 - **API keys for Excel/PowerQuery** — named, revocable, sha256-hashed bearer tokens (`?key=…`) with per-key fixed/whitelisted arguments and an access log; the full PowerQuery URL is generated for copy/paste when a key is created
 - **HTMX results table** — sortable headers, search box, removable filter chips, pager, and export links without page reloads
