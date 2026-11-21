@@ -8,16 +8,14 @@ says so in the mail's first line.
 """
 
 import json
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import apsw
-import pytest
 
 from strata.models.build_job import BuildJob
 from strata.models.report_run import ReportRun
-from tests.conftest import ADMIN_GROUP, Strata
+from tests.conftest import PUBLIC_URL, Strata
 
 NEGATIVE = "SELECT region, product, revenue FROM sales WHERE revenue < 0 ORDER BY product"
 BAD_ROW_SCRIPT = """
@@ -27,42 +25,6 @@ SELECT * FROM (VALUES
     ('South', 'B', -5.0, DATE '2026-02-10')
 ) AS t(region, product, revenue, sold_on);
 """
-PUBLIC_URL = "https://reports.example.com/strata"
-
-
-@dataclass
-class GkUser:
-    username: str
-    email: str
-    enabled: bool = True
-
-
-class FakeGatekeeper:
-    def __init__(self) -> None:
-        self.users = {
-            "jsmith": GkUser("jsmith", "jsmith@example.com"),
-            "alice": GkUser("alice", "alice@example.com"),
-            "bob": GkUser("bob", "bob@example.com", enabled=False),
-            "carol": GkUser("carol", ""),
-            "root": GkUser("root", "root@example.com"),
-        }
-        self.groups = {"brs-finance": ["alice", "bob", "carol", "jsmith"], ADMIN_GROUP: ["root"]}
-
-    def get_user(self, username: str) -> GkUser | None:
-        return self.users.get(username)
-
-    def get_group_members(self, name: str) -> list[str]:
-        return self.groups.get(name, [])
-
-
-@pytest.fixture
-def mail(strata: Strata) -> list[Any]:
-    """Mail the app sends, instead of Outbox; and a Gatekeeper to resolve names."""
-    sent: list[Any] = []
-    strata.app.config["NOTIFY_SINK"] = sent.append
-    strata.app.config["GATEKEEPER_CLIENT"] = FakeGatekeeper()
-    strata.set_config({"server.public_url": PUBLIC_URL})
-    return sent
 
 
 def _schedule(strata: Strata, rpt: str, recipients: str, **params: str) -> Any:
@@ -211,7 +173,11 @@ def test_a_failed_refresh_still_mails_on_the_last_good_data(
     _schedule(strata, rpt, "jsmith")
     _fire(strata)
     [run] = _runs(strata, rpt)
-    [sent] = mail
+    alert, sent = mail  # the refresh's failure alerts the admins; then the run's mail
+    assert (
+        alert.to == ["root@example.com"] and alert.subject == "[STRATA] test/sales: build failing"
+    )
+    assert sent.to == ["jsmith@example.com"]
     assert run.row_count == 3 and (run.data_note or "").startswith("refresh failed:")
     first_line = sent.html.split("</p>")[0]
     assert (

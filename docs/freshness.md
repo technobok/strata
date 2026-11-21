@@ -66,6 +66,30 @@ in by an automatic build) back off. They wait 1 minute, then 2, 4, … up to 1 h
 between attempts. Meanwhile reads get the previous version, marked stale.
 **Manual and scheduled builds always run.** A successful build ends the back-off.
 
+## Alerts
+
+Each datamodule has an **alert list**: the people who hear when its data stops
+refreshing. Set it in the **Alerts** section of the datamodule's page, one per line
+(a username, an `@group` or an email address). Blank means the Strata admins.
+
+| Event | Mail |
+|---|---|
+| A build fails | "build failing", with the error. **Once**, until the next success. |
+| The next build succeeds | "recovered". |
+| No successful build for longer than the **stale alert** (hours) | "data is stale". **Once**, until the next success. |
+| A scheduled report or check run fails | the error (its recipients are not mailed). See [Checks and runs](checks.md#scheduled-runs-and-mail). |
+
+A failing **gate check** fails the build, so it alerts like any other failure.
+
+A build started with the **Build** button does not alert: whoever pressed it sees
+the error on the page. A scheduled build, a rebuild for a stale read, a dependency
+refreshed for another build, or the refresh before a scheduled run all alert.
+
+The stale alert is off until you give it a number of hours. Set it a little above
+the longest gap you expect between successful builds: for a datamodule rebuilt
+every 15 minutes in business hours, 18 hours catches a dead night without mailing
+every evening.
+
 ## Versions and retention
 
 Every successful build is a new, immutable **version**. The datamodule page lists

@@ -46,6 +46,21 @@
                    pattern="[a-z0-9_-]{1,32}" title="lowercase letters, digits, - and _">
         </label>
     </div>
+    <fieldset>
+        <legend>Alerts{{ help_link('freshness', 'alerts') }}</legend>
+        <input type="hidden" name="alerts_present" value="1">
+        <div class="grid">
+            <label>Alert list: one per line, a username, an <code>@group</code> or an email address (blank = the Strata admins)
+                <textarea name="alert_recipients" rows="2" placeholder="@{{ config.get('AUTH_ADMIN_GROUP') or 'strata-admins' }}">{{ (datamodule.alert_recipients or []) | join('\n') }}</textarea>
+            </label>
+            <label>Stale alert after (hours without a successful build; blank = off)
+                <input type="number" name="stale_alert_hours" min="0.25" step="0.25"
+                       value="{% if datamodule.stale_alert_seconds %}{{ '%g' | format(datamodule.stale_alert_seconds / 3600) }}{% endif %}">
+            </label>
+        </div>
+        {% if datamodule.failure_alerted_at %}<p><small>"Build failing" was mailed {{ datamodule.failure_alerted_at | localdatetime }}; the next successful build mails "recovered".</small></p>{% endif %}
+        {% if datamodule.stale_alerted_at %}<p><small>The stale alert was mailed {{ datamodule.stale_alerted_at | localdatetime }}; the next successful build re-arms it.</small></p>{% endif %}
+    </fieldset>
     {% endif %}
     <label>Build script (DuckDB SQL){{ help_link('build-scripts') }}
         <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"

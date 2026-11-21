@@ -12,7 +12,7 @@ _standalone_db: apsw.Connection | None = None
 # run `strata-admin init-db` before starting, so a lower value on disk means the
 # migration step did not run; the runtime then aborts with a clear message. Bump
 # this when adding a new migration file.
-EXPECTED_SCHEMA_VERSION = 6
+EXPECTED_SCHEMA_VERSION = 7
 
 
 def get_db_path() -> str:

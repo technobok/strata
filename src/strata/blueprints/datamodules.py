@@ -258,6 +258,7 @@ def edit(uuid: str) -> str | Response:
         ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
         retention_kind, retention_count, retention_age, retention_error = _parse_retention()
         build_queue_name = request.form.get("build_queue", "").strip() or None
+        alerts, alerts_error = _parse_alerts()
 
         existing = Datamodule.get_by_path(path)
         if not path:
@@ -270,6 +271,8 @@ def edit(uuid: str) -> str | Response:
             flash(ttl_error, "error")
         elif build_queue_name is not None and not _QUEUE_RE.fullmatch(build_queue_name):
             flash("Worker queue: lowercase letters, digits, '-' and '_' only.", "error")
+        elif alerts_error:
+            flash(alerts_error, "error")
         else:
             dm.update(
                 modified_by=g.user.username,
@@ -282,6 +285,11 @@ def edit(uuid: str) -> str | Response:
                 retention_age_seconds=retention_age,
                 build_queue=build_queue_name,
             )
+            if alerts is not None and alerts != (
+                dm.alert_recipients or None,
+                dm.stale_alert_seconds,
+            ):
+                dm.set_alerts(*alerts)
             flash("Datamodule saved.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
@@ -358,6 +366,27 @@ def _report_schedule_rows(report: Report) -> list[dict[str, object]]:
     from strata.models.schedule import Schedule
 
     return schedule_rows(Schedule.for_report(report.id))
+
+
+def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | None]:
+    """((alert list or None = admins, stale seconds or None), error); (None, None) when
+    the form has no Alerts section, so a partial post leaves them alone."""
+    from strata.services import notify_service
+
+    if request.form.get("alerts_present") != "1":
+        return None, None
+    recipients = notify_service.recipient_lines(request.form.get("alert_recipients", ""))
+    problem = notify_service.check_recipients(recipients)
+    if problem:
+        return None, f"Alert list: {problem}"
+    raw = request.form.get("stale_alert_hours", "").strip()
+    try:
+        hours = float(raw) if raw else None
+    except ValueError:
+        return None, "Stale alert: a number of hours, or blank for none."
+    if hours is not None and hours <= 0:
+        return None, "Stale alert: a number of hours above zero, or blank for none."
+    return (recipients or None, round(hours * 3600) if hours else None), None
 
 
 def _status_context(dm: Datamodule) -> dict[str, object]:

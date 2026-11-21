@@ -18,6 +18,7 @@ goes through Outbox; tests replace the sender with ``app.config["NOTIFY_SINK"]``
 """
 
 import logging
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -84,9 +85,31 @@ def _sender() -> Callable[[Mail], None]:
     return current_app.config.get("NOTIFY_SINK") or _outbox_send
 
 
+def send(mail: Mail) -> str:
+    """Send ``mail`` (Outbox, or the test sink); returns when. Raises on failure."""
+    _sender()(mail)
+    return datetime.now(UTC).isoformat()
+
+
 # ---------------------------------------------------------------------------
 # Recipients
 # ---------------------------------------------------------------------------
+
+# A recipient line: an @group, an email address, or a Gatekeeper username.
+RECIPIENT_RE = re.compile(r"^(@[\w.\- ]+|[^@\s]+@[^@\s]+\.[^@\s]+|[\w.\-]+)$")
+
+
+def recipient_lines(text: str) -> list[str]:
+    """The non-blank lines of a recipients textarea."""
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def check_recipients(entries: list[str]) -> str | None:
+    """Why the first malformed entry is refused, or None."""
+    for entry in entries:
+        if not RECIPIENT_RE.match(entry):
+            return f"'{entry}' is not a username, an @group or an email address."
+    return None
 
 
 def resolve_recipients(entries: Iterable[str]) -> tuple[list[str], list[str]]:
@@ -145,11 +168,6 @@ def resolve_recipients(entries: Iterable[str]) -> tuple[list[str], list[str]]:
             if email:
                 add(email)
     return emails, problems
-
-
-def alert_recipients(dm: Datamodule) -> list[str]:
-    """Who hears about failures: the Strata admins (a per-datamodule list in C3)."""
-    return [f"@{current_app.config.get('AUTH_ADMIN_GROUP') or 'strata-admins'}"]
 
 
 # ---------------------------------------------------------------------------
@@ -305,21 +323,18 @@ def notify_run(run: ReportRun, report: Report, dm: Datamodule, schedule: Schedul
         log.exception("could not record the mail outcome of run %s", run.uuid)
 
 
-def _send(mail: Mail) -> str:
-    _sender()(mail)
-    return datetime.now(UTC).isoformat()
-
-
 def _notify(
     run: ReportRun, report: Report, dm: Datamodule, schedule: Schedule | None
 ) -> tuple[str | None, str]:
     if run.status == "error":
-        to, problems = resolve_recipients(alert_recipients(dm))
+        from strata.services.alert_service import alert_list
+
+        to, problems = resolve_recipients(alert_list(dm))
         if not to:
             return None, "query failed; the alert list could not be resolved: " + "; ".join(
                 problems
             )
-        sent = _send(build_failure_mail(run, report, dm, schedule, to))
+        sent = send(build_failure_mail(run, report, dm, schedule, to))
         return sent, f"query failed: mailed the alert list only ({', '.join(to)})"
 
     if ReportCheck.get(report.id) is not None and not run.row_count:
@@ -334,5 +349,5 @@ def _notify(
         log.warning("run %s of %s: unresolved recipients: %s", run.uuid, report.name, problems)
     if not to:
         return None, f"no mail: no recipient could be resolved{skipped}"
-    sent = _send(build_run_mail(run, report, dm, schedule, to))
+    sent = send(build_run_mail(run, report, dm, schedule, to))
     return sent, f"mailed {', '.join(to)}{skipped}"

@@ -8,6 +8,7 @@ the build-state fields (``build_status``, ``live_version_id``, lease columns)
 are managed by ``datamodule_service`` under its build transactions.
 """
 
+import json
 import uuid as uuid_lib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -41,13 +42,19 @@ class Datamodule:
     build_queue: str = "default"
     consecutive_failures: int = 0
     retry_after: str | None = None
+    # Alerts (Phase C3): None = the Strata admins; stale alert off when None.
+    alert_recipients: list[str] | None = None
+    stale_alert_seconds: int | None = None
+    failure_alerted_at: str | None = None
+    stale_alerted_at: str | None = None
 
     _COLUMNS = (
         "id, uuid, path, description, build_script, ttl_seconds, valid_until, "
         "retention_kind, retention_count, retention_age_seconds, storage_version, "
         "live_version_id, build_status, build_token, build_lease_until, last_build_error, "
         "created_by, modified_by, created_at, modified_at, build_queue, "
-        "consecutive_failures, retry_after"
+        "consecutive_failures, retry_after, alert_recipients, stale_alert_seconds, "
+        "failure_alerted_at, stale_alerted_at"
     )
 
     @staticmethod
@@ -76,6 +83,10 @@ class Datamodule:
             build_queue=str(row[20]),
             consecutive_failures=int(row[21]),
             retry_after=str(row[22]) if row[22] is not None else None,
+            alert_recipients=json.loads(row[23]) if row[23] is not None else None,
+            stale_alert_seconds=int(row[24]) if row[24] is not None else None,
+            failure_alerted_at=str(row[25]) if row[25] is not None else None,
+            stale_alerted_at=str(row[26]) if row[26] is not None else None,
         )
 
     @staticmethod
@@ -199,6 +210,21 @@ class Datamodule:
         with transaction() as cursor:
             cursor.execute(f"UPDATE datamodule SET {', '.join(updates)} WHERE id = ?", params)
         return True
+
+    def set_alerts(self, recipients: list[str] | None, stale_alert_seconds: int | None) -> None:
+        """Who hears about failures (None = the admins), and the stale-alert window."""
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET alert_recipients = ?, stale_alert_seconds = ?, "
+                "stale_alerted_at = NULL WHERE id = ?",
+                (json.dumps(recipients) if recipients else None, stale_alert_seconds, self.id),
+            )
+
+    def mark_alerted(self, column: str, when: str | None) -> None:
+        """Record (or clear, ``when=None``) an alert: failure_alerted_at / stale_alerted_at."""
+        assert column in ("failure_alerted_at", "stale_alerted_at")
+        with transaction() as cur:
+            cur.execute(f"UPDATE datamodule SET {column} = ? WHERE id = ?", (when, self.id))
 
     def delete(self) -> bool:
         with transaction() as cursor:

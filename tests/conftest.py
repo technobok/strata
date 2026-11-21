@@ -206,3 +206,45 @@ class Strata:
 @pytest.fixture
 def strata(app: Flask, client: FlaskClient) -> Strata:
     return Strata(app, client)
+
+
+# ---------------------------------------------------------------------------
+# Mail: a sink instead of Outbox, and a Gatekeeper to resolve names
+# ---------------------------------------------------------------------------
+
+PUBLIC_URL = "https://reports.example.com/strata"
+
+
+@dataclass
+class GkUser:
+    username: str
+    email: str
+    enabled: bool = True
+
+
+class FakeGatekeeper:
+    def __init__(self) -> None:
+        self.users = {
+            "jsmith": GkUser("jsmith", "jsmith@example.com"),
+            "alice": GkUser("alice", "alice@example.com"),
+            "bob": GkUser("bob", "bob@example.com", enabled=False),
+            "carol": GkUser("carol", ""),
+            "root": GkUser("root", "root@example.com"),
+        }
+        self.groups = {"brs-finance": ["alice", "bob", "carol", "jsmith"], ADMIN_GROUP: ["root"]}
+
+    def get_user(self, username: str) -> GkUser | None:
+        return self.users.get(username)
+
+    def get_group_members(self, name: str) -> list[str]:
+        return self.groups.get(name, [])
+
+
+@pytest.fixture
+def mail(strata: Strata) -> list[Any]:
+    """Mail the app sends, instead of Outbox; and a Gatekeeper to resolve names."""
+    sent: list[Any] = []
+    strata.app.config["NOTIFY_SINK"] = sent.append
+    strata.app.config["GATEKEEPER_CLIENT"] = FakeGatekeeper()
+    strata.set_config({"server.public_url": PUBLIC_URL})
+    return sent

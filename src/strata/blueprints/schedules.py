@@ -6,7 +6,6 @@ that produces an RRULE; the 'rrule' kind takes RRULE text directly. The
 worker's scheduler tick (schedule_service.run_due) queues the builds.
 """
 
-import re
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,7 +19,7 @@ from strata.models.datamodule import Datamodule
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.models.schedule import Schedule
-from strata.services import report_service, schedule_service
+from strata.services import notify_service, report_service, schedule_service
 from strata.services.schedule_service import Definition, ScheduleError
 
 bp = Blueprint("schedules", __name__, url_prefix="/datamodules")
@@ -61,14 +60,8 @@ def _form() -> tuple[str, str, str, dict[str, Any], bool]:
     return request.form.get("name", "").strip(), kind, timezone, fields, enabled
 
 
-# A recipient line: an @group, an email address, or a Gatekeeper username.
-RECIPIENT_RE = re.compile(r"^(@[\w.\- ]+|[^@\s]+@[^@\s]+\.[^@\s]+|[\w.\-]+)$")
-
-
 def _recipients_form() -> list[str]:
-    return [
-        line.strip() for line in request.form.get("recipients", "").splitlines() if line.strip()
-    ]
+    return notify_service.recipient_lines(request.form.get("recipients", ""))
 
 
 def _params_form(args: list[ReportArg]) -> dict[str, list[str]]:
@@ -84,9 +77,9 @@ def _params_form(args: list[ReportArg]) -> dict[str, list[str]]:
 def _check_report_fields(
     recipients: list[str], args: list[ReportArg], params: dict[str, list[str]]
 ) -> None:
-    for entry in recipients:
-        if not RECIPIENT_RE.match(entry):
-            raise ScheduleError(f"'{entry}' is not a username, an @group or an email address.")
+    problem = notify_service.check_recipients(recipients)
+    if problem:
+        raise ScheduleError(problem)
     try:
         report_service.check_args(args, params)
     except report_service.ArgError as exc:

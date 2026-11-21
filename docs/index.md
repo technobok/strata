@@ -63,8 +63,8 @@ example every weekday at 06:00. See [Schedules](schedules.md).
 A datamodule's **TTL** is how old its data may get. When a report is read and the
 data is older than the TTL, Strata asks the worker for a rebuild. The report waits a
 short while for it, and otherwise serves the previous version marked as stale. A
-build that fails leaves the previous version live. See
-[Freshness and builds](freshness.md).
+build that fails leaves the previous version live, and the datamodule's alert list
+hears about it. See [Freshness and builds](freshness.md#alerts).
 
 ## Who does what
 

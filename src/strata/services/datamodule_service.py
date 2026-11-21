@@ -507,6 +507,9 @@ def _build_leased(
             )
         tmp_file.unlink(missing_ok=True)
         log.warning("datamodule build failed (uuid=%s): %s", dm.uuid, exc)
+        from strata.services import alert_service
+
+        alert_service.build_failed(dm.id, triggered_by, str(exc))
         raise
 
     duration_ms = int((time.monotonic() - start) * 1000)
@@ -531,6 +534,11 @@ def _build_leased(
             "retry_after = NULL, modified_at = ? WHERE id = ?",
             (version.id, storage_version, ended_at, dm.id),
         )
+
+    from strata.services import alert_service
+
+    # "Recovered" after a "build failing" mail; re-arms the stale alert.
+    alert_service.build_succeeded(dm.id, dm.consecutive_failures)
 
     # Retention runs best-effort after every successful flip; never fails a build.
     try:
