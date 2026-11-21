@@ -41,17 +41,19 @@ Strata is read-only on its sources.
 
 ## Next phases
 
-These replace the old Phases 7–10.
+These replace the old Phases 7–10. **Order decided 2026-11-21: XL → G → D → E → F**
+(plan: `~/dev/claude/plans/strata-excel-payroll.md`).
 
 | # | Phase | Goal |
 |---|---|---|
 | A | **Harden** — done 2026-11-20 (`d510d43`..`18e0a8b`) | pytest suite (`make check` = lint + test); DuckDB sandbox (`services/duck.py`); report bodies and constraint queries must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; manual builds take the build lock; reconcile reaps dead builds; bug fixes; duckdb pinned `>=1.5.2,<2`. |
 | B | **Build execution** — done 2026-11-21 (`9f4eb53`..`049a4c3`) | `strata-worker` + `build_job` queue (coalescing, atomic claims, queues, concurrency) and a cross-process build lease; the serve path never builds (60 s bounded wait, then the last good version marked stale; 503 if never built); failure backoff (1 min doubling to 1 h); "Build with all dependencies" (a plain build refreshes only stale dependencies — dependents are never pushed); RRULE schedules in configurable timezones; per-build/per-query memory limits and a build timeout. |
 | C | **Help + checks + scheduled reports** — done 2026-11-21 (`a688c9d`..`205e8cc`) | Containers migrate on start (race-safe runner); live settings (build/serve/schedule/runs/mail apply without a restart; `/admin/config` says when each change applies); in-app help at `/help` from `docs/*.md` with contextual "?" links and drift tests; checks = reports with a severity and an optional gate (rows fail the build before the swap); saved runs (Parquet snapshots, 30 days) with a run page; 0..n schedules per report/check, each with its own recipients (users, `@groups`, emails) and arguments; notification mail through Outbox (count, data age + refresh problems, 20 rows, link; a check with no rows sends nothing); a refresh that fails still runs on the last good data and says so; per-datamodule alert lists (build failing / recovered / stale); Jinja loops in build scripts (`rows()`, `sqlstr`, `ident`); the `/checks` exceptions overview. Plan: `~/dev/claude/plans/strata-phase-c-checks.md`. Stage-gate smoke: `~/dev/claude/work/strata/smoke-c6/smoke.sh`. |
-| D | **Pilot migration** — next | Build `ref/companies` from coredb `xsyscompany`; port 5–10 representative webreports checks (at least one per-company, as a Jinja loop), schedule them with their webreports recipients, run them alongside webreports and compare; then plan the batches. Column-name formats (`FH_`/`F4_`/`UItemURL_`) wait for Phase F. |
+| XL | **Excel access** — next | Entra (IT's application proxy) pre-authenticates all of reportsau.demant.com and no app registration will be requested, so first an auth probe (`/diag/auth-probe.json`) and an Excel test decide what can work: Entra "Organizational account" sign-in if a token reaches Strata, otherwise personal API keys (any user's own key, stored encrypted so links can embed it). Every report page gets a "Use in Excel" link for the current view. Excel feeds replace direct MSSQL access, now denied to new users. Also: remove the unused report "Default format". |
+| D | **Pilot migration** — after XL and G | Build `ref/companies` from coredb `xsyscompany`; port 5–10 representative webreports checks (at least one per-company, as a Jinja loop), schedule them with their webreports recipients, run them alongside webreports and compare; then plan the batches. Column-name formats (`FH_`/`F4_`/`UItemURL_`) wait for Phase F. |
 | E | **Data layer** | Incremental datamodules (previous version ATTACHed as `prev` + a watermark); lineage (row counts, dependency versions, content-addressed sources); catalog page + FTS (`datamodule_fts`); decide whether `syncdb` keeps feeding coredb. |
 | F | **Presentation** | Formatting metadata (format, align, class whitelist, links to reports with an argument mapping; also drives xlsx number formats); KPI tiles + simple charts. |
-| G | **Sensitive instance** | A second isolated deployment (own `DATA_ROOT` + DB + groups) for payroll-type data, when needed. |
+| G | **Sensitive instance** — second, for payroll | A second isolated deployment (own `DATA_ROOT` + DB + admin group) for payroll: only payroll, selected finance people and the owner; other IT/Strata admins must not see it. Instance-wide viewer group (`auth.viewer_group`), personal keys only for members, link-only mail, a read audit log, and a compose file that can run two instances side by side. |
 
 ## Backlog (unscheduled, carried forward)
 
@@ -67,4 +69,6 @@ These replace the old Phases 7–10.
 - **API keys admin view** — global list across datamodules + per-key access-log browser.
 - **Serving niceties** — `page_size` parameter, multi-column sort from the UI (grammar already supports it).
 - **tom-select** — vendored but unwired; wire it (e.g. multiselect args, tag pickers) or drop it.
+- **Per-datamodule access groups** — the general solution for restricted reports inside one instance (decided 2026-11-21: wanted eventually; payroll uses a separate instance for now).
+- **DuckDB encryption at rest** — encrypt version files (key outside `DATA_ROOT`), e.g. for the payroll instance.
 - **Run snapshots of gate failures** — a gate that fails a build reports its first 3 rows in the error; saving all its rows as a run would make them browsable.
