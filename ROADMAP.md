@@ -27,9 +27,11 @@ Strata is read-only on its sources.
   defence in depth, and there is no author/runner group split.
 - **Checks** are one primitive with two uses: a *gate* (rows fail the build before the
   swap, so the old version stays live) or *notify* (a scheduled exception report).
-- **Exception reports mail on change.** A check declares key columns; each run is diffed
-  against the last (new / still open / resolved) and mail goes out only when something
-  changed, listing all open rows with an xlsx attachment and a live link.
+- **Exception reports notify whenever they find rows** (revised 2026-11-21: diffing
+  against the last run was judged too fragile). Reports and checks have 0..n schedules of
+  their own; each scheduled run saves a snapshot and mails its recipients the row count,
+  the first 20 rows and a link to the snapshot — no xlsx attachments. A check with no rows
+  sends nothing; a failed query alerts only the datamodule's alert list (admins).
 - **Freshness is pushed**: the scheduler and upstream completion enqueue builds; the serve
   path never builds and shows when the data was built.
 - **BI** stays in Excel/PowerQuery. Strata adds only KPI tiles and simple charts; the
@@ -45,7 +47,7 @@ These replace the old Phases 7–10.
 |---|---|---|
 | A | **Harden** — done 2026-11-20 (`d510d43`..`18e0a8b`) | pytest suite (`make check` = lint + test); DuckDB sandbox (`services/duck.py`); report bodies and constraint queries must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; manual builds take the build lock; reconcile reaps dead builds; bug fixes; duckdb pinned `>=1.5.2,<2`. |
 | B | **Build execution** — done 2026-11-21 (`9f4eb53`..`049a4c3`) | `strata-worker` + `build_job` queue (coalescing, atomic claims, queues, concurrency) and a cross-process build lease; the serve path never builds (60 s bounded wait, then the last good version marked stale; 503 if never built); failure backoff (1 min doubling to 1 h); "Build with all dependencies" (a plain build refreshes only stale dependencies — dependents are never pushed); RRULE schedules in configurable timezones; per-build/per-query memory limits and a build timeout. |
-| C | **Checks + exception reports** | Check object (gate / notify); per-company templating (parity with webreports' `{codb}`/`{cocode}`); new/open/resolved diffing; mail-on-change via Outbox; run history; exceptions overview page; heartbeat alert when a check stops running; importer for `testtest` SQL rows. |
+| C | **Help + checks + scheduled reports** | Auto-migrate on start; live settings; in-app help at `/help` (docs/*.md, contextual links); checks = reports with severity + optional gate (rows fail the build before the swap); 0..n schedules per report/check with recipients (users, `@groups`, emails); run snapshots (Parquet, 30 days) with a run page; notification mail (count, 20 rows, link); failure/recovery + staleness alerts; Jinja per-company loops in build scripts; exceptions overview page. Plan: `~/dev/claude/plans/strata-phase-c-checks.md`. |
 | D | **Pilot migration** | Port 5–10 representative webreports checks (one per-company), run them alongside webreports and compare; then plan the batches. |
 | E | **Data layer** | Incremental datamodules (previous version ATTACHed as `prev` + a watermark); lineage (row counts, dependency versions, content-addressed sources); catalog page + FTS (`datamodule_fts`); decide whether `syncdb` keeps feeding coredb. |
 | F | **Presentation** | Formatting metadata (format, align, class whitelist, links to reports with an argument mapping; also drives xlsx number formats); KPI tiles + simple charts. |
