@@ -33,13 +33,14 @@ def inline_worker_id() -> str:
     return f"inline:{socket.gethostname()}:{os.getpid()}"
 
 
-def request_build(dm: Datamodule, reason: str, force: bool) -> BuildJob:
+def request_build(dm: Datamodule, reason: str, force: bool, cascade: bool = False) -> BuildJob:
     """Queue a build of ``dm`` (coalescing with an active job) and return the job.
 
-    ``force`` builds even if the live version is fresh (manual, schedule,
-    upstream); otherwise the job only rebuilds when the datamodule is stale.
+    ``force`` builds even if the live version is fresh (manual, schedule);
+    otherwise the job only rebuilds when the datamodule is stale. Stale
+    dependencies are refreshed either way; ``cascade`` force-rebuilds them all.
     """
-    job = BuildJob.enqueue(dm.id, dm.build_queue, reason, force)
+    job = BuildJob.enqueue(dm.id, dm.build_queue, reason, force, cascade)
     if inline_mode() and job.status == "queued" and job.claim(inline_worker_id()):
         run_claimed(job)
         refreshed = BuildJob.get_by_id(job.id)
@@ -56,7 +57,8 @@ def run_claimed(job: BuildJob) -> None:
         return
     try:
         if job.force:
-            version = datamodule_service.build_datamodule(dm, job.reason)
+            run = datamodule_service.BuildRun(cascade=job.cascade)
+            version = datamodule_service.build_datamodule(dm, job.reason, run=run)
             job.finish("done", version_id=version.id)
         else:
             before = dm.live_version_id

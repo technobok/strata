@@ -299,9 +299,15 @@ class BuildRun:
     ``auto``: an automatic trigger (a stale read). Stale datamodules whose last
     build failed are then not retried before their ``retry_after``; manual and
     scheduled builds retry regardless.
+
+    ``cascade``: "build with all dependencies". Every dependency is
+    force-rebuilt, whatever its TTL, each datamodule once per run (``built``
+    memoises them, so a dependency shared along two paths builds once).
     """
 
     auto: bool = False
+    cascade: bool = False
+    built: dict[int, DatamoduleVersion] = field(default_factory=dict)
 
 
 def backoff_seconds(failures: int) -> int:
@@ -341,9 +347,14 @@ def _resolve_dependencies(
             raise RuntimeError(f"dependency '{dep.local_name}': datamodule was deleted")
         if dep_dm.id in chain:
             raise RuntimeError(f"dependency cycle detected via '{dep_dm.path}'")
-        dep_version = ensure_fresh(
-            dep_dm, f"dependency:{dm.path}", dep_dm.ttl_seconds, _stack=chain, run=run
-        )
+        if run.cascade:
+            dep_version = run.built.get(dep_dm.id) or build_datamodule(
+                dep_dm, f"dependency:{dm.path} (all)", _stack=chain, run=run
+            )
+        else:
+            dep_version = ensure_fresh(
+                dep_dm, f"dependency:{dm.path}", dep_dm.ttl_seconds, _stack=chain, run=run
+            )
         attachments.append((dep.local_name, str(version_path(dep_dm.uuid, dep_version.uuid))))
     return attachments
 
@@ -375,7 +386,9 @@ def build_datamodule(
         fresh = Datamodule.get_by_id(dm.id)
         if fresh is None:
             raise RuntimeError("datamodule was deleted")
-        return _build_leased(fresh, triggered_by, _stack, run)
+        version = _build_leased(fresh, triggered_by, _stack, run)
+        run.built[dm.id] = version
+        return version
     finally:
         lease.release()
 

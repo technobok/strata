@@ -11,7 +11,7 @@ _standalone_db: apsw.Connection | None = None
 # Highest migration version this code expects; checked at app boot. If the DB on
 # disk reports a lower value, the runtime aborts with a clear message instructing
 # the operator to run `make db-init`. Bump this when adding a new migration file.
-EXPECTED_SCHEMA_VERSION = 3
+EXPECTED_SCHEMA_VERSION = 4
 
 
 def get_db_path() -> str:

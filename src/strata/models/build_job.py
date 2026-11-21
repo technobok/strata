@@ -2,7 +2,8 @@
 
 Requests coalesce: at most one *queued* job exists per datamodule (a partial
 unique index enforces it). A request while one is queued joins that job (a
-forced request upgrades it to forced). A non-forced request while a job is
+forced or cascading request upgrades it). ``cascade`` = "build with all
+dependencies": force-rebuild every dependency too. A non-forced request while a job is
 running joins the running job; a forced one queues a single follow-up, so an
 edit made during a build is still built.
 
@@ -38,10 +39,11 @@ class BuildJob:
     worker_id: str | None
     version_id: int | None
     error: str | None
+    cascade: bool = False
 
     _COLUMNS = (
         "id, datamodule_id, queue, reason, force, status, requested_at, run_after, "
-        "started_at, finished_at, worker_id, version_id, error"
+        "started_at, finished_at, worker_id, version_id, error, cascade"
     )
 
     @staticmethod
@@ -60,6 +62,7 @@ class BuildJob:
             worker_id=str(row[10]) if row[10] is not None else None,
             version_id=int(row[11]) if row[11] is not None else None,
             error=str(row[12]) if row[12] is not None else None,
+            cascade=bool(row[13]),
         )
 
     @property
@@ -107,8 +110,11 @@ class BuildJob:
         return {str(status): int(cast(int, count)) for status, count in rows}
 
     @staticmethod
-    def enqueue(datamodule_id: int, queue: str, reason: str, force: bool) -> BuildJob:
+    def enqueue(
+        datamodule_id: int, queue: str, reason: str, force: bool, cascade: bool = False
+    ) -> BuildJob:
         """Request a build, coalescing with an active job (see the module docstring)."""
+        force = force or cascade
         with transaction() as cur:
             row = cur.execute(
                 "SELECT id FROM build_job WHERE datamodule_id = ? AND status = 'queued'",
@@ -117,6 +123,8 @@ class BuildJob:
             if row:
                 if force:
                     cur.execute("UPDATE build_job SET force = 1 WHERE id = ?", (row[0],))
+                if cascade:
+                    cur.execute("UPDATE build_job SET cascade = 1 WHERE id = ?", (row[0],))
                 job_id = int(row[0])
             else:
                 running = None
@@ -130,9 +138,9 @@ class BuildJob:
                 else:
                     now = _now()
                     cur.execute(
-                        "INSERT INTO build_job (datamodule_id, queue, reason, force, status, "
-                        "requested_at, run_after) VALUES (?, ?, ?, ?, 'queued', ?, ?)",
-                        (datamodule_id, queue, reason, int(force), now, now),
+                        "INSERT INTO build_job (datamodule_id, queue, reason, force, cascade, "
+                        "status, requested_at, run_after) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
+                        (datamodule_id, queue, reason, int(force), int(cascade), now, now),
                     )
                     job_id = int(cur.execute("SELECT last_insert_rowid()").fetchone()[0])  # type: ignore[index]
         job = BuildJob.get_by_id(job_id)

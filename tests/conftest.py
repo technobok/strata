@@ -108,6 +108,13 @@ class Strata:
         )
         assert resp.status_code == 302
 
+    def add_dependency(self, dm_uuid: str, depends_on_uuid: str, local_name: str) -> None:
+        resp = self.client.post(
+            f"/datamodules/{dm_uuid}/dependencies",
+            data={"local_name": local_name, "depends_on_uuid": depends_on_uuid},
+        )
+        assert resp.status_code == 302
+
     def upload_source(self, dm_uuid: str, filename: str, content: bytes) -> None:
         import io
 

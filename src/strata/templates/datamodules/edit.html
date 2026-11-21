@@ -57,8 +57,14 @@
 {% if datamodule %}
 <div style="display:flex; gap:0.5rem; margin:1rem 0;">
     <form method="post" action="{{ url_for('datamodules.build', uuid=datamodule.uuid) }}">
-        <button type="submit">Build now</button>
+        <button type="submit" title="Rebuild this datamodule; dependencies are rebuilt only if stale">Build now</button>
     </form>
+    {% if dependencies %}
+    <form method="post" action="{{ url_for('datamodules.build', uuid=datamodule.uuid) }}">
+        <input type="hidden" name="cascade" value="1">
+        <button type="submit" class="secondary" title="Rebuild every dependency (all the way down, each once), then this datamodule">Build with all dependencies</button>
+    </form>
+    {% endif %}
     <form method="post" action="{{ url_for('datamodules.delete', uuid=datamodule.uuid) }}"
           onsubmit="return confirm('Delete this datamodule and all its versions?');">
         <button type="submit" class="outline secondary">Delete</button>
@@ -271,7 +277,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
         {% for job in jobs %}
         <tr>
             <td>{{ job.requested_at|localdatetime }}</td>
-            <td>{{ job.reason }}{% if job.force %} <small>(forced)</small>{% endif %}</td>
+            <td>{{ job.reason }}{% if job.cascade %} <small>(with all dependencies)</small>{% elif job.force %} <small>(forced)</small>{% endif %}</td>
             <td>{{ job.status }}</td>
             <td>{{ job.started_at|localdatetime }}</td>
             <td>{{ job.finished_at|localdatetime }}</td>

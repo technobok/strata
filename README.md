@@ -61,7 +61,7 @@ Builds run in a separate **`strata-worker`** process. The Build button (and, fro
 ### Build inputs
 
 - **Source files** — upload on the datamodule page, reference in the script as `source('sales.xlsx')`; it expands to the on-disk path as a SQL string literal (e.g. inside `read_xlsx(...)`).
-- **Dependencies** — other datamodules ATTACHed read-only by a local name before the script runs. Each dependency is TTL-refreshed first, so pipelines are just dependencies with different TTLs. Cycles are rejected at add time.
+- **Dependencies** — other datamodules ATTACHed read-only by a local name before the script runs. A dependency is rebuilt first only if it is stale (outside its TTL), so pipelines are just dependencies with different TTLs. **Build with all dependencies** (shown when a datamodule has dependencies) force-rebuilds every dependency all the way down, each one once, then the datamodule itself. Cycles are rejected at add time.
 - **Connections** — encrypted connection records ATTACHed into the build: SQLite and PostgreSQL become schemas named after the local name (`warehouse.dbo.orders`); ODBC connections become a session handle used as `odbc_query(getvariable('conn_<name>'), 'SELECT …')`.
 
 ### Reports

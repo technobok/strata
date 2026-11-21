@@ -369,7 +369,10 @@ def build(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
         raise NotFound()
-    job = build_queue.request_build(dm, f"manual:{g.user.username}", force=True)
+    # "Build with all dependencies" also force-rebuilds every dependency;
+    # a plain build refreshes only the stale ones.
+    cascade = request.form.get("cascade") == "1"
+    job = build_queue.request_build(dm, f"manual:{g.user.username}", force=True, cascade=cascade)
     if job.status == "done":
         flash("Build finished.", "success")
     elif job.status == "failed":
