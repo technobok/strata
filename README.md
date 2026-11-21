@@ -58,6 +58,24 @@ Builds run in a separate **`strata-worker`** process. The Build button (and, fro
 - **Health**: workers check in every 10 s. The admin page lists live workers and job counts; a datamodule page warns when no worker has checked in for 2 minutes.
 - **Development**: `make rundev` builds inline in the request (no worker needed); production runs `make worker` or the compose `worker` service.
 
+### Schedules
+
+A datamodule can have any number of **schedules**; each queues a forced build when due (stale dependencies are refreshed first, as with the Build button). The worker checks every ~10 s; runs missed while no worker was up collapse into one, and two workers never fire the same run twice.
+
+Schedules are stored as **iCalendar recurrence rules (RRULE, RFC 5545)** — the standard calendar programs use — in a named timezone, so "07:00" stays 07:00 across daylight-saving changes. The form builds the rule for the common shapes and previews the next five runs:
+
+| Shape | Example | RRULE it produces |
+|---|---|---|
+| Every N minutes/hours, optional days and window | every 15 min, Mon–Fri, 06:00–20:00 | `FREQ=MINUTELY;INTERVAL=15;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6,…,19` |
+| Daily at set times, optional days | 07:00 and 13:30 | one `FREQ=DAILY;BYHOUR=…;BYMINUTE=…` rule per time |
+| Every N weeks on chosen days | fortnightly Monday 07:00 from 23 Nov | `FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=MO;BYHOUR=7;BYMINUTE=0` |
+| Monthly on a day (29–31 fall back to the last day), or `last` | day 31 at 18:00 | `FREQ=MONTHLY;BYMONTHDAY=28,29,30,31;BYSETPOS=-1;…` |
+| First / last working day (Mon–Fri) | first working day 06:00 | `FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;…` |
+| Once | 2027-03-01 09:30 | `FREQ=DAILY;COUNT=1` from that time |
+| **Custom rule** | second Tuesday 09:00 | any RRULE text, e.g. `FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2;BYHOUR=9;BYMINUTE=0` |
+
+The custom-rule option means a new shape needs no code: anything RRULE can say, a schedule can do. Windows run from the start hour up to (not including) the end hour. Public holidays are not yet taken into account (ROADMAP backlog). The timezones offered come from the `schedule.timezones` setting (first = default; default `Australia/Brisbane, Australia/Sydney, Pacific/Auckland`).
+
 ### Build inputs
 
 - **Source files** — upload on the datamodule page, reference in the script as `source('sales.xlsx')`; it expands to the on-disk path as a SQL string literal (e.g. inside `read_xlsx(...)`).
@@ -297,6 +315,7 @@ DB-only settings worth knowing (no env var; restart the app after changing the `
 | `server.threads` | `8` | Request threads per gunicorn worker. Strata runs gunicorn's `gthread` worker, so a long export or build is not killed by the worker timeout. |
 | `server.timeout` | `120` | Seconds a worker may go silent before gunicorn restarts it (a liveness check, not a per-request limit). |
 | `build.sandbox` | `true` | Lock build scripts to their own `sources/` and `tmp/` (see *The DuckDB sandbox*). |
+| `schedule.timezones` | `Australia/Brisbane, Australia/Sydney, Pacific/Auckland` | IANA timezones offered for schedules; the first is the default. Add any others needed. |
 | `serve.max_wait_seconds` | `60` | How long a report request waits for a stale datamodule's rebuild before serving the previous version, marked stale. |
 | `serve.memory_limit` | `2GB` | DuckDB memory limit per report query (it spills to disk beyond it). |
 | `build.memory_limit` | `4GB` | DuckDB memory limit per build. Two concurrent builds (`worker.concurrency`) plus the web app fit a 16 GB host; a build script may `SET memory_limit` higher itself. |

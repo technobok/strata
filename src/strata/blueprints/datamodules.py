@@ -335,8 +335,30 @@ def edit(uuid: str) -> str | Response:
         all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
         all_connections=Connection.get_all(),
         jobs=BuildJob.recent_for_datamodule(dm.id),
+        schedules=_schedule_rows(dm),
         **_status_context(dm),
     )
+
+
+def _schedule_rows(dm: Datamodule) -> list[dict[str, object]]:
+    """Schedules for the datamodule page, described and in their own timezone."""
+    from strata.blueprints.schedules import local_time
+    from strata.models.schedule import Schedule
+    from strata.services import schedule_service
+
+    rows: list[dict[str, object]] = []
+    for schedule in Schedule.for_datamodule(dm.id):
+        definition = schedule_service.Definition.from_json(schedule.schedule_definition)
+        rows.append(
+            {
+                "schedule": schedule,
+                "description": schedule_service.describe(definition),
+                "timezone": definition.timezone,
+                "next_run": local_time(schedule.next_run_at, definition.timezone),
+                "last_run": local_time(schedule.last_run_at, definition.timezone),
+            }
+        )
+    return rows
 
 
 def _status_context(dm: Datamodule) -> dict[str, object]:

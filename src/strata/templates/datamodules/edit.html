@@ -268,6 +268,39 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
 </form>
 
 <hr>
+<h2 id="schedules">Schedules</h2>
+<p><small>Each schedule queues a forced build of this datamodule (stale dependencies are refreshed first). Times are in each schedule's own timezone; runs missed while no worker was up collapse into one.</small></p>
+{% if schedules %}
+<table>
+    <thead><tr><th>Name</th><th>When</th><th>Timezone</th><th>Next run</th><th>Last run</th><th></th></tr></thead>
+    <tbody>
+        {% for row in schedules %}
+        {% set s = row.schedule %}
+        <tr>
+            <td><a href="{{ url_for('schedules.edit', schedule_uuid=s.uuid) }}">{{ s.name }}</a></td>
+            <td>{{ row.description }}</td>
+            <td>{{ row.timezone }}</td>
+            <td>{% if s.enabled %}{{ row.next_run or 'no more runs' }}{% else %}<small>disabled</small>{% endif %}</td>
+            <td>{{ row.last_run }}</td>
+            <td style="display:flex; gap:0.25rem;">
+                <form method="post" action="{{ url_for('schedules.toggle', schedule_uuid=s.uuid) }}">
+                    <button type="submit" class="outline small">{% if s.enabled %}Disable{% else %}Enable{% endif %}</button>
+                </form>
+                <form method="post" action="{{ url_for('schedules.delete', schedule_uuid=s.uuid) }}"
+                      onsubmit="return confirm('Delete schedule {{ s.name }}?');">
+                    <button type="submit" class="outline secondary small">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No schedules: this datamodule is rebuilt only on demand (Build, or a stale read).</p>
+{% endif %}
+<p><a href="{{ url_for('schedules.new', uuid=datamodule.uuid) }}" role="button" class="outline">Add schedule</a></p>
+
+<hr>
 <h2>Build jobs</h2>
 <p><small>Builds run in a <code>strata-worker</code> process (queue <code>{{ datamodule.build_queue }}</code>). Requests coalesce: one queued build per datamodule.</small></p>
 {% if jobs %}

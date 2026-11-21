@@ -115,6 +115,13 @@ REGISTRY: list[ConfigEntry] = [
         "DuckDB memory limit for each report query (spills to disk beyond it); blank = DuckDB's "
         "default (80% of RAM)",
     ),
+    # -- schedules --
+    ConfigEntry(
+        "schedule.timezones",
+        ConfigType.STRING_LIST,
+        ["Australia/Brisbane", "Australia/Sydney", "Pacific/Auckland"],
+        "Timezones offered for schedules (IANA names, comma-separated); the first is the default",
+    ),
     # -- builds --
     ConfigEntry(
         "build.memory_limit",
@@ -232,6 +239,7 @@ KEY_MAP: dict[str, str] = {
     "worker.concurrency": "WORKER_CONCURRENCY",
     "build.sandbox": "BUILD_SANDBOX",
     "serve.max_wait_seconds": "SERVE_MAX_WAIT_SECONDS",
+    "schedule.timezones": "SCHEDULE_TIMEZONES",
     "serve.memory_limit": "SERVE_MEMORY_LIMIT",
     "build.memory_limit": "BUILD_MEMORY_LIMIT",
     "build.threads": "BUILD_THREADS",

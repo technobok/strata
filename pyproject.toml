@@ -16,6 +16,10 @@ dependencies = [
     "gunicorn>=23.0",
     "click>=8.0",
     "cryptography>=42.0",
+    # Schedules are RFC 5545 recurrence rules (RRULE); tzdata backs zoneinfo
+    # where the OS has no timezone database (slim container images).
+    "python-dateutil>=2.9",
+    "tzdata>=2024.1",
 ]
 
 [project.scripts]

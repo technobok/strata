@@ -1,4 +1,4 @@
-"""strata-worker: runs queued datamodule builds.
+"""strata-worker: runs queued datamodule builds, and queues scheduled ones.
 
 One process runs ``--concurrency`` build threads over its ``--queue``\\ s. Each
 thread claims the oldest due job (one running job per datamodule, enforced in
@@ -58,6 +58,7 @@ class Worker:
         try:
             if once:
                 self.sweep()
+                self.tick_schedules()
                 self.drain()
                 return
             threads = [
@@ -71,6 +72,7 @@ class Worker:
             while not self.stop.is_set():
                 with self.app.app_context():
                     WorkerProcess.heartbeat(self.id)
+                self.tick_schedules()
                 if time.monotonic() >= next_sweep:
                     self.sweep()
                     next_sweep = time.monotonic() + sweep_every
@@ -109,6 +111,19 @@ class Worker:
         while self.run_one():
             ran += 1
         return ran
+
+    def tick_schedules(self) -> None:
+        """Queue builds for due schedules (every heartbeat, so within ~10 s of due)."""
+        from strata.services import schedule_service
+
+        try:
+            with self.app.app_context():
+                fired = schedule_service.run_due()
+        except Exception:
+            log.exception("scheduler tick failed")
+            return
+        for line in fired:
+            log.info("schedule fired: %s", line)
 
     def sweep(self) -> None:
         """Clean up after processes that died mid-build."""

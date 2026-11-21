@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}{% if schedule %}{{ schedule.name }}{% else %}New schedule{% endif %} — {{ datamodule.path }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{% if schedule %}Schedule: {{ schedule.name }}{% else %}New schedule{% endif %}</h1>
+    <p>Rebuilds <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}#schedules">{{ datamodule.path }}</a> (a forced build; stale dependencies are refreshed first).</p>
+</hgroup>
+
+{% set f = values.fields %}
+<form method="post" id="schedule-form"
+      action="{% if schedule %}{{ url_for('schedules.edit', schedule_uuid=schedule.uuid) }}{% else %}{{ url_for('schedules.new', uuid=datamodule.uuid) }}{% endif %}">
+    <div class="grid">
+        <label>Name
+            <input type="text" name="name" value="{{ values.name }}" required placeholder="business hours">
+        </label>
+        <label>Timezone
+            <select name="timezone">
+                {% for tz in timezones %}<option value="{{ tz }}" {% if tz == values.timezone %}selected{% endif %}>{{ tz }}</option>{% endfor %}
+                {% if values.timezone not in timezones %}<option value="{{ values.timezone }}" selected>{{ values.timezone }}</option>{% endif %}
+            </select>
+        </label>
+        <label>Runs
+            <select name="kind" id="schedule-kind">
+                {% for key, label in kinds.items() %}<option value="{{ key }}" {% if key == values.kind %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+        </label>
+    </div>
+
+    <fieldset data-kind="every">
+        <div class="grid">
+            <label>Every
+                <input type="number" name="every_n" min="1" value="{{ f.get('every_n', '15') }}">
+            </label>
+            <label>Unit
+                <select name="every_unit">
+                    <option value="minutes" {% if f.get('every_unit', 'minutes') == 'minutes' %}selected{% endif %}>minutes</option>
+                    <option value="hours" {% if f.get('every_unit') == 'hours' %}selected{% endif %}>hours</option>
+                </select>
+            </label>
+            <label>Between (optional, on the hour)
+                <input type="time" name="window_start" step="3600" value="{{ f.get('window_start', '') }}">
+            </label>
+            <label>and (last run before)
+                <input type="time" name="window_end" step="3600" value="{{ f.get('window_end', '') }}">
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset data-kind="daily">
+        <label>At (comma-separated times)
+            <input type="text" name="times" value="{{ f.get('times', '07:00') }}" placeholder="07:00, 13:30">
+        </label>
+    </fieldset>
+
+    <fieldset data-kind="weekly">
+        <div class="grid">
+            <label>Every N weeks
+                <input type="number" name="every_weeks" min="1" max="52" value="{{ f.get('every_weeks', '1') }}">
+            </label>
+            <label>At
+                <input type="time" name="time" value="{{ f.get('time', '07:00') }}">
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset data-kind="every daily weekly">
+        <legend>On days <small>(every/daily: none ticked = every day)</small></legend>
+        {% for d in days %}
+        <label style="display:inline-block; margin-right:0.75rem;">
+            <input type="checkbox" name="days" value="{{ d }}" {% if d in f.get('days', []) %}checked{% endif %}> {{ day_names[d] }}
+        </label>
+        {% endfor %}
+    </fieldset>
+
+    <fieldset data-kind="monthly">
+        <div class="grid">
+            <label>Every N months
+                <input type="number" name="every_months" min="1" max="12" value="{{ f.get('every_months', '1') }}">
+            </label>
+            <label>Day of month (1–31, or "last"; 29–31 fall back to the last day)
+                <input type="text" name="day" value="{{ f.get('day', '1') }}">
+            </label>
+            <label>At
+                <input type="time" name="time" value="{{ f.get('time', '07:00') }}">
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset data-kind="working_day">
+        <div class="grid">
+            <label>Which
+                <select name="which">
+                    <option value="first" {% if f.get('which', 'first') == 'first' %}selected{% endif %}>First working day (Mon–Fri)</option>
+                    <option value="last" {% if f.get('which') == 'last' %}selected{% endif %}>Last working day (Mon–Fri)</option>
+                </select>
+            </label>
+            <label>At
+                <input type="time" name="time" value="{{ f.get('time', '07:00') }}">
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset data-kind="once">
+        <label>At
+            <input type="datetime-local" name="at" value="{{ f.get('at', '') }}">
+        </label>
+    </fieldset>
+
+    <fieldset data-kind="rrule">
+        <label>RRULE (RFC 5545; one rule per line, all combined)
+            <textarea name="rrule" rows="3" style="font-family:monospace;" placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=7;BYMINUTE=0">{{ f.get('rrule', '') }}</textarea>
+        </label>
+        <p><small>Evaluated in the timezone above from the start date. Examples: <code>FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2;BYHOUR=9;BYMINUTE=0</code> (second Tuesday, 09:00).</small></p>
+    </fieldset>
+
+    <fieldset data-kind="weekly rrule">
+        <label>Start date (anchors "every N weeks" / the rule)
+            <input type="date" name="start_date" value="{{ f.get('start_date', '') }}">
+        </label>
+    </fieldset>
+
+    <input type="hidden" name="enabled_present" value="1">
+    <label>
+        <input type="checkbox" name="enabled" value="1" {% if values.enabled %}checked{% endif %}> Enabled
+    </label>
+
+    <div style="display:flex; gap:0.5rem;">
+        <button type="submit">{% if schedule %}Save{% else %}Create{% endif %}</button>
+        <button type="button" class="outline"
+                hx-post="{{ url_for('schedules.preview') }}" hx-include="#schedule-form" hx-target="#schedule-preview">Preview next runs</button>
+    </div>
+</form>
+<div id="schedule-preview"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // Show only the fieldsets for the chosen kind; hidden ones are disabled so
+    // their inputs (e.g. the several "time" fields) are not submitted.
+    const kind = document.getElementById('schedule-kind');
+    function sync() {
+        document.querySelectorAll('fieldset[data-kind]').forEach(function (fs) {
+            const on = fs.dataset.kind.split(' ').includes(kind.value);
+            fs.hidden = !on;
+            fs.disabled = !on;
+        });
+    }
+    kind.addEventListener('change', sync);
+    sync();
+})();
+</script>
+{% endblock %}

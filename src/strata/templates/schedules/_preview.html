@@ -1,0 +1,8 @@
+{# HTMX target: what the schedule form, as filled in, would do. #}
+{% if error %}
+<p class="error-cell">{{ error }}</p>
+{% else %}
+<p><small>Rule: <code>{{ definition.rrule.replace('\n', ' · ') }}</code></small></p>
+<p><small>Next runs:</small></p>
+<ul>{% for run in runs %}<li>{{ run }}</li>{% else %}<li>None</li>{% endfor %}</ul>
+{% endif %}
