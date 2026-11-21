@@ -44,7 +44,7 @@ These replace the old Phases 7–10.
 | # | Phase | Goal |
 |---|---|---|
 | A | **Harden** — done 2026-11-20 (`d510d43`..`18e0a8b`) | pytest suite (`make check` = lint + test); DuckDB sandbox (`services/duck.py`); report bodies and constraint queries must be one SELECT; read-only SQL console; gthread gunicorn so long exports survive; manual builds take the build lock; reconcile reaps dead builds; bug fixes; duckdb pinned `>=1.5.2,<2`. |
-| B | **Build execution** | `strata-worker` with a SQLite job queue and leases (`build_token`/`build_lease_until`) and reaping of stuck builds; serve never builds (stale-while-revalidate); failure backoff; scheduler (`schedule` table + `services/schedule_service.py` date maths); push refresh of dependents; per-build resource caps; queues. |
+| B | **Build execution** — done 2026-11-21 (`9f4eb53`..`049a4c3`) | `strata-worker` + `build_job` queue (coalescing, atomic claims, queues, concurrency) and a cross-process build lease; the serve path never builds (60 s bounded wait, then the last good version marked stale; 503 if never built); failure backoff (1 min doubling to 1 h); "Build with all dependencies" (a plain build refreshes only stale dependencies — dependents are never pushed); RRULE schedules in configurable timezones; per-build/per-query memory limits and a build timeout. |
 | C | **Checks + exception reports** | Check object (gate / notify); per-company templating (parity with webreports' `{codb}`/`{cocode}`); new/open/resolved diffing; mail-on-change via Outbox; run history; exceptions overview page; heartbeat alert when a check stops running; importer for `testtest` SQL rows. |
 | D | **Pilot migration** | Port 5–10 representative webreports checks (one per-company), run them alongside webreports and compare; then plan the batches. |
 | E | **Data layer** | Incremental datamodules (previous version ATTACHed as `prev` + a watermark); lineage (row counts, dependency versions, content-addressed sources); catalog page + FTS (`datamodule_fts`); decide whether `syncdb` keeps feeding coredb. |
@@ -61,7 +61,7 @@ These replace the old Phases 7–10.
 - **Non-root container** — add a `USER` to the Dockerfile. Existing deployments' bind-mounted `instance/` and data root are root-owned, so this needs a one-time `chown` step in the deploy notes.
 - **Row/time caps on serving** — guardrails for pathological queries.
 - **Operations** — metrics endpoint, structured JSON logging, backup CLI (SQLite + data root).
-- **Holiday table** — schedule business-day awareness beyond Mon–Fri (feeds Phase B).
+- **Holiday table** — public holidays for schedules: "first/last working day" and business-hours rules currently mean Mon–Fri (RRULE EXDATE can exclude dates, but a holiday-shifted first working day needs code).
 - **API keys admin view** — global list across datamodules + per-key access-log browser.
 - **Serving niceties** — `page_size` parameter, multi-column sort from the UI (grammar already supports it).
 - **tom-select** — vendored but unwired; wire it (e.g. multiselect args, tag pickers) or drop it.
