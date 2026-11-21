@@ -13,8 +13,9 @@ make config-set KEY=key VAL=value  # Set config
 strata-admin reconcile --dry-run   # Retention + orphaned-file sweep (drop --dry-run to apply)
 
 # Docker (deployment)
-make rebuild             # After git pull: rebuild images + apply DB migrations
-make db-init             # Apply DB migrations only (no rebuild)
+docker compose build && docker compose up -d   # both containers migrate on start (race-safe)
+make rebuild             # Rebuild images + apply DB migrations
+make db-init             # Apply DB migrations only (no rebuild, no restart)
 ```
 
 ## Architecture

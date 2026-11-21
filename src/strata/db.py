@@ -8,9 +8,10 @@ import apsw
 
 _standalone_db: apsw.Connection | None = None
 
-# Highest migration version this code expects; checked at app boot. If the DB on
-# disk reports a lower value, the runtime aborts with a clear message instructing
-# the operator to run `make db-init`. Bump this when adding a new migration file.
+# Highest migration version this code expects; checked at app boot. The containers
+# run `strata-admin init-db` before starting, so a lower value on disk means the
+# migration step did not run; the runtime then aborts with a clear message. Bump
+# this when adding a new migration file.
 EXPECTED_SCHEMA_VERSION = 4
 
 
@@ -51,7 +52,30 @@ def _configure_connection(conn: apsw.Connection) -> None:
     """Apply standard PRAGMAs to a connection."""
     conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA journal_mode = WAL;")
+    _enable_wal(conn)
+
+
+def _enable_wal(conn: apsw.Connection, timeout_seconds: float = 5.0) -> None:
+    """Switch the DB to WAL, retrying while another connection holds a write lock.
+
+    Moving a fresh (rollback-journal) file to WAL while another connection is
+    switching it too, or holds a write transaction (as the migration runner's
+    BEGIN IMMEDIATE does), returns SQLITE_BUSY at once: SQLite does not wait in
+    the busy handler for it. That happens on a first deploy, where the app and
+    worker containers both create the DB on start. Once the file is in WAL the
+    pragma is a no-op that never contends.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+            return
+        except apsw.BusyError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.02)
 
 
 def get_db() -> apsw.Connection:
@@ -189,6 +213,11 @@ def apply_migrations(conn: apsw.Connection) -> int:
     order, inside its own transaction, and recorded in schema_migrations.
     db_metadata.schema_version is stamped with the max applied version for the
     boot-time schema gate (_check_schema_version).
+
+    Safe to run concurrently (the app and worker containers both migrate on
+    start): each version is re-checked inside its BEGIN IMMEDIATE, so the write
+    lock serialises runners and a version another runner applied in the
+    meantime is skipped rather than applied twice.
     """
     from datetime import UTC, datetime
 
@@ -212,6 +241,11 @@ def apply_migrations(conn: apsw.Connection) -> int:
         cursor = conn.cursor()
         cursor.execute("BEGIN IMMEDIATE;")
         try:
+            if cursor.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+            ).fetchone():
+                cursor.execute("COMMIT;")
+                continue
             for _ in cursor.execute(sql):
                 pass
             cursor.execute(

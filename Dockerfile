@@ -68,5 +68,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Default port; override at runtime with the PORT env var.
 EXPOSE 5000
 
-# Default command runs the Flask app via gunicorn (the strata-web CLI).
-CMD ["strata-web"]
+# Default command: apply pending DB migrations, then run the Flask app via
+# gunicorn (the strata-web CLI). The migration runner is safe to run from the
+# app and worker containers at once. `exec` makes the server PID 1 so it gets
+# SIGTERM on `docker compose stop`.
+CMD ["sh", "-c", "strata-admin init-db && exec strata-web"]

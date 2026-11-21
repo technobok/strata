@@ -221,19 +221,20 @@ services:
       - HOST=0.0.0.0
 ```
 
-### 4. Build images and apply schema migrations
+### 4. Build images and start
 
 ```bash
 docker compose build
-make db-init        # creates instance/strata.sqlite3 if absent, applies migrations
 docker compose up -d    # starts both `app` (web) and `worker` (builds)
 ```
 
+Both containers run `strata-admin init-db` before they start, which creates `instance/strata.sqlite3` if it is absent and applies any pending migrations. The migration runner is safe to run from both at once: each migration is applied exactly once.
+
 The `worker` service runs `strata-worker` from the same image with the same volumes; without it, builds are queued but never run (the admin page and each datamodule page say so).
 
-`make db-init` runs `strata-admin init-db` inside a throwaway container based on the *just-built* `app` image, so the binary applying migrations is always in sync with what the long-lived container will run.
+`make db-init` applies migrations without restarting anything: it runs `strata-admin init-db` in a throwaway container from the *just-built* `app` image, so the code applying migrations always matches what the containers will run.
 
-If you start `app` against a DB whose `schema_version` is older than the code expects (e.g. you forgot `make db-init` after a `git pull`), the app aborts at boot with a clear message pointing back at `make db-init`. You won't accidentally serve traffic on a broken schema.
+If the app ever starts against a DB whose `schema_version` is older than the code expects (e.g. its command was overridden so the migration step did not run), it aborts at boot with a clear message pointing at `strata-admin init-db`. You won't accidentally serve traffic on a broken schema.
 
 ### 5. Bootstrap your first admin
 
@@ -255,11 +256,11 @@ Then log in to strata. The **Admin** link will be in the top nav. From `/admin` 
 
 ```bash
 git pull
-make rebuild        # docker compose build + make db-init
-docker compose up -d
+docker compose build
+docker compose up -d    # recreates the containers; each migrates before it starts
 ```
 
-`make rebuild` is the "one button" recipe — it rebuilds images and applies any new schema migrations in the right order.
+`make rebuild` (build + `make db-init`) still works if you prefer to apply migrations before recreating the containers.
 
 ### 7. Reverse-proxy notes
 
@@ -398,8 +399,8 @@ strata/
 | `make test` | Run the pytest suite |
 | `make config-list` | Show all DB-stored configuration |
 | `make config-set` | Set a DB-stored config value |
-| `make rebuild` | After `git pull`: rebuild images + apply DB migrations |
-| `make db-init` | Apply DB migrations against the running deployment |
+| `make rebuild` | Rebuild images + apply DB migrations (the containers also migrate on start) |
+| `make db-init` | Apply DB migrations without restarting the containers |
 | `make docker-up` | `docker compose up -d` |
 | `make docker-down` | `docker compose down` |
 | `make clean` | Remove temp files and the local dev DB |

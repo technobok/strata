@@ -1,8 +1,8 @@
 # Strata - Docker Compose configuration
 # Usage:
-#   make rebuild           # after `git pull`: build images + apply DB migrations
-#   make db-init           # apply DB migrations only (no rebuild)
-#   docker compose up -d   # run the app
+#   docker compose build && docker compose up -d
+#                          # both services apply pending DB migrations on start
+#   make db-init           # apply DB migrations without restarting anything
 
 services:
   app:
@@ -67,13 +67,14 @@ services:
       retries: 3
       start_period: 10s
 
-  # Runs queued datamodule builds (and, from Phase B3, schedules). Same image,
-  # same volumes as app. Scale with --concurrency or a second service using
-  # `strata-worker --queue long` for long-running builds.
+  # Runs queued datamodule builds and schedules. Same image, same volumes as
+  # app. Scale with --concurrency or a second service using
+  # `strata-worker --queue long` for long-running builds. Migrates on start like
+  # app (safe to race); `exec` so SIGTERM reaches the worker (stop_grace_period).
   worker:
     build: .
     container_name: strata-worker
-    command: ["strata-worker"]
+    command: ["sh", "-c", "strata-admin init-db && exec strata-worker"]
     volumes:
       - ./instance:/app/instance
       - ${STRATA_DATA_DIR:-./instance/data}:/data-root

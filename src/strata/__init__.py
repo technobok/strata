@@ -212,8 +212,8 @@ def _check_schema_version(db_path: str) -> None:
         raise RuntimeError(
             f"strata DB schema_version={have}, code expects "
             f">= {EXPECTED_SCHEMA_VERSION}. "
-            "Run: docker compose run --rm app strata-admin init-db "
-            "(or: make db-init)"
+            "Run: strata-admin init-db (docker: make db-init; local: make init-db). "
+            "The containers run it on start unless their command was overridden."
         )
 
 
