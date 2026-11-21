@@ -20,19 +20,24 @@
             <ul>
                 <li><a href="{{ url_for('index') }}" class="brand"><strong>Strata</strong></a></li>
             </ul>
-            <ul>
+            <button type="button" class="nav-toggle" aria-label="Menu"
+                    aria-controls="nav-menu" aria-expanded="false">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+            <ul id="nav-menu" class="nav-menu">
                 {% if g.user %}
                 <li><a href="{{ url_for('datamodules.index') }}">Datamodules</a></li>
                 <li><a href="{{ url_for('checks.index') }}">Checks</a></li>
                 <li><a href="{{ url_for('tags.index') }}">Tags</a></li>
                 {% if g.strata_is_admin %}<li><a href="{{ url_for('admin.index') }}">Admin</a></li>{% endif %}
                 <li><a href="{{ url_for('help.index') }}">Help</a></li>
-                {% endif %}
-                {% if g.user %}
-                <li>{{ g.user.fullname or g.user.username }}</li>
-                <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+                <li><a href="{{ whoami_url() }}" title="Your account">{{ g.user.username }}</a></li>
                 {% else %}
-                <li><button type="button" onclick="location.href='{{ url_for('auth.login') }}'" class="outline">Login</button></li>
+                <li><a href="{{ url_for('auth.login') }}" role="button" class="outline">Login</a></li>
                 {% endif %}
                 <li>
                     <label class="theme-toggle" aria-label="Toggle theme">

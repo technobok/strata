@@ -67,5 +67,4 @@ These replace the old Phases 7–10.
 - **API keys admin view** — global list across datamodules + per-key access-log browser.
 - **Serving niceties** — `page_size` parameter, multi-column sort from the UI (grammar already supports it).
 - **tom-select** — vendored but unwired; wire it (e.g. multiselect args, tag pickers) or drop it.
-- **Phone-width nav** — the top nav overflows at ~390 px (Datamodules, Checks, Tags, Admin, Help, user, Logout, theme); adopt the shared hamburger pattern the sibling apps use.
 - **Run snapshots of gate failures** — a gate that fails a build reports its first 3 rows in the error; saving all its rows as a run would make them browsable.

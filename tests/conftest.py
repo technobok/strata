@@ -239,6 +239,9 @@ class FakeGatekeeper:
     def get_group_members(self, name: str) -> list[str]:
         return self.groups.get(name, [])
 
+    def get_login_url(self) -> str | None:
+        return "https://reports.example.com/gatekeeper/auth/login"
+
 
 @pytest.fixture
 def mail(strata: Strata) -> list[Any]:
