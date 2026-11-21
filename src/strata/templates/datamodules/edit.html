@@ -21,13 +21,13 @@
     <label>Description
         <input type="text" name="description" value="{{ datamodule.description if datamodule else '' }}">
     </label>
-    <label>TTL (seconds; blank = never auto-expire, 0 = always rebuild)
+    <label>TTL (seconds; blank = never auto-expire, 0 = always rebuild){{ help_link('freshness', 'ttl') }}
         <input type="number" name="ttl_seconds" step="1" min="0"
                value="{% if datamodule and datamodule.ttl_seconds is not none %}{{ datamodule.ttl_seconds }}{% endif %}">
     </label>
     {% if datamodule %}
     <div class="grid">
-        <label>Retention policy
+        <label>Retention policy{{ help_link('freshness', 'versions-and-retention') }}
             <select name="retention_kind">
                 <option value="count" {% if datamodule.retention_kind == 'count' %}selected{% endif %}>count — keep newest N versions</option>
                 <option value="age" {% if datamodule.retention_kind == 'age' %}selected{% endif %}>age — keep versions younger than</option>
@@ -41,13 +41,13 @@
             <input type="number" name="retention_age_seconds" step="1" min="0"
                    value="{% if datamodule.retention_age_seconds is not none %}{{ datamodule.retention_age_seconds }}{% endif %}">
         </label>
-        <label>Worker queue
+        <label>Worker queue{{ help_link('freshness', 'builds-and-the-worker') }}
             <input type="text" name="build_queue" value="{{ datamodule.build_queue }}"
                    pattern="[a-z0-9_-]{1,32}" title="lowercase letters, digits, - and _">
         </label>
     </div>
     {% endif %}
-    <label>Build script (DuckDB SQL)
+    <label>Build script (DuckDB SQL){{ help_link('build-scripts') }}
         <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"
                   placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
     </label>
@@ -72,7 +72,7 @@
 </div>
 
 <hr>
-<h2>Sources</h2>
+<h2>Sources{{ help_link('build-scripts', 'source-files') }}</h2>
 <p><small>Reference an uploaded file in the build script as <code>source('filename')</code>.</small></p>
 {% if sources %}
 <table>
@@ -99,7 +99,7 @@
 </form>
 
 <hr>
-<h2>Dependencies</h2>
+<h2>Dependencies{{ help_link('build-scripts', 'dependencies') }}</h2>
 <p><small>ATTACHes another datamodule's live version read-only; query it as <code>local_name.table</code>.</small></p>
 {% if dependencies %}
 <table>
@@ -129,7 +129,7 @@
 </form>
 
 <hr>
-<h2>Connections</h2>
+<h2>Connections{{ help_link('build-scripts', 'connections') }}</h2>
 <p><small>Bind an external connection; query it as <code>local_name.table</code> (SQLite/Postgres).</small></p>
 {% if connections %}
 <table>
@@ -164,7 +164,7 @@
 
 <hr>
 <header style="display:flex; justify-content:space-between; align-items:center;">
-    <h2>Reports</h2>
+    <h2>Reports{{ help_link('reports') }}</h2>
     <a href="{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}" role="button" class="outline small">New Report</a>
 </header>
 {% if reports %}
@@ -186,7 +186,7 @@
 {% endif %}
 
 <hr>
-<h2 id="api-keys">API keys</h2>
+<h2 id="api-keys">API keys{{ help_link('api-keys') }}</h2>
 <p><small>A key grants <em>unauthenticated</em> data access (parquet/csv/json/xlsx, never html)
 via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and shown exactly once.</small></p>
 
@@ -268,7 +268,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
 </form>
 
 <hr>
-<h2 id="schedules">Schedules</h2>
+<h2 id="schedules">Schedules{{ help_link('schedules') }}</h2>
 <p><small>Each schedule queues a forced build of this datamodule (stale dependencies are refreshed first). Times are in each schedule's own timezone; runs missed while no worker was up collapse into one.</small></p>
 {% if schedules %}
 <table>
@@ -301,7 +301,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
 <p><a href="{{ url_for('schedules.new', uuid=datamodule.uuid) }}" role="button" class="outline">Add schedule</a></p>
 
 <hr>
-<h2>Build jobs</h2>
+<h2>Build jobs{{ help_link('freshness', 'builds-and-the-worker') }}</h2>
 <p><small>Builds run in a <code>strata-worker</code> process (queue <code>{{ datamodule.build_queue }}</code>). Requests coalesce: one queued build per datamodule.</small></p>
 {% if jobs %}
 <table>
@@ -324,7 +324,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
 {% endif %}
 
 <hr>
-<h2>Versions</h2>
+<h2>Versions{{ help_link('freshness', 'versions-and-retention') }}</h2>
 <p><small>Old versions are pruned per the retention policy after each build (and by <code>strata-admin reconcile</code>). Open a report over an older version via its links here.</small></p>
 {% if versions %}
 <table>

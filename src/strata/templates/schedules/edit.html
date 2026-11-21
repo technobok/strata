@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h1>{% if schedule %}Schedule: {{ schedule.name }}{% else %}New schedule{% endif %}</h1>
+    <h1>{% if schedule %}Schedule: {{ schedule.name }}{% else %}New schedule{% endif %}{{ help_link('schedules') }}</h1>
     <p>Rebuilds <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}#schedules">{{ datamodule.path }}</a> (a forced build; stale dependencies are refreshed first).</p>
 </hgroup>
 
@@ -15,13 +15,13 @@
         <label>Name
             <input type="text" name="name" value="{{ values.name }}" required placeholder="business hours">
         </label>
-        <label>Timezone
+        <label>Timezone{{ help_link('schedules', 'timezone') }}
             <select name="timezone">
                 {% for tz in timezones %}<option value="{{ tz }}" {% if tz == values.timezone %}selected{% endif %}>{{ tz }}</option>{% endfor %}
                 {% if values.timezone not in timezones %}<option value="{{ values.timezone }}" selected>{{ values.timezone }}</option>{% endif %}
             </select>
         </label>
-        <label>Runs
+        <label>Runs{{ help_link('schedules', 'the-kinds-of-schedule') }}
             <select name="kind" id="schedule-kind">
                 {% for key, label in kinds.items() %}<option value="{{ key }}" {% if key == values.kind %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
@@ -109,7 +109,7 @@
     </fieldset>
 
     <fieldset data-kind="rrule">
-        <label>RRULE (RFC 5545; one rule per line, all combined)
+        <label>RRULE (RFC 5545; one rule per line, all combined){{ help_link('schedules', 'custom-rules') }}
             <textarea name="rrule" rows="3" style="font-family:monospace;" placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=7;BYMINUTE=0">{{ f.get('rrule', '') }}</textarea>
         </label>
         <p><small>Evaluated in the timezone above from the start date. Examples: <code>FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2;BYHOUR=9;BYMINUTE=0</code> (second Tuesday, 09:00).</small></p>

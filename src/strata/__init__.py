@@ -121,7 +121,16 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         return f"{minutes}m {remaining:.0f}s"
 
     # Register blueprints
-    from strata.blueprints import admin, auth, connections, datamodules, reports, schedules, tags
+    from strata.blueprints import (
+        admin,
+        auth,
+        connections,
+        datamodules,
+        help,
+        reports,
+        schedules,
+        tags,
+    )
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(datamodules.bp)
@@ -130,6 +139,8 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.register_blueprint(admin.bp)
     app.register_blueprint(connections.bp)
     app.register_blueprint(schedules.bp)
+    app.register_blueprint(help.bp)
+    app.jinja_env.globals["help_link"] = help.help_link
 
     @app.route("/")
     def index() -> str:

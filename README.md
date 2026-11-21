@@ -5,7 +5,7 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 ## Features
 
 - **Datamodules** — a DuckDB database built by a plain SQL script; every successful build is an immutable, versioned snapshot; "live" flips atomically, so readers are never disturbed
-- **TTL freshness** — request within the TTL serves the current version; past it, the datamodule rebuilds before responding (single-flight; blank TTL = never expire, `0` = always rebuild)
+- **TTL freshness** — within the TTL a request serves the current version; past it, a rebuild is queued and the request waits briefly for it, else serves the previous version marked stale (the serve path never builds; blank TTL = never expire, `0` = always rebuild)
 - **Build inputs** — uploaded source files via `source('name')`, other datamodules ATTACHed as dependencies by local name (TTL-pulled, cycles rejected), and external databases (SQLite/PostgreSQL/ODBC) via encrypted connections
 - **Reports as macros** — a report is a DuckDB table macro (`$arg` parameters) stored in SQLite and applied at serve time, so editing a report never requires a rebuild
 - **Typed arguments** — text/integer/number/decimal/date/time/boolean; input, select, and multiselect widgets; options driven by a constraint query against the live data; defaults and required flags
@@ -18,7 +18,8 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - **CodeMirror SQL editors** — build scripts, report macros, and the admin SQL console (vendored, theme-aware)
 - **Tag system** — 32-colour palette for organising datamodules
 - **Dark/light mode** — PicoCSS with theme toggle
-- **Admin panel** — system stats, configuration editor, read-only SQL console with schema sidebar, and external-connection manager
+- **Admin panel** — system stats, configuration editor (live settings apply without a restart), read-only SQL console with schema sidebar, and external-connection manager
+- **In-app help** — `docs/*.md` rendered at `/help`, with a contextual **?** next to each editor
 
 ## Stack
 
@@ -30,11 +31,26 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - openpyxl for XLSX export, pytz (DuckDB TIMESTAMPTZ results), cryptography (Fernet) for connection params at rest
 - uv for dependency management, ruff + ty for code quality
 
-## Concepts
+## Using Strata
 
-### Datamodules, versions, and the atomic swap
+How to write build scripts and reports, the URL grammar, API keys for Excel, freshness and schedules: all of it is in the in-app help (**Help** in the top bar, at `/help`, with a **?** next to each editor). The same pages are in [`docs/`](docs/) and read fine on GitHub:
 
-A **datamodule** has a human path (e.g. `finance/monthly`), a DuckDB **build script**, and a TTL. Building runs the script into a scratch file, `CHECKPOINT`s it, and atomically publishes it as an immutable snapshot; a single SQLite transaction then marks the version ready and flips the datamodule's live pointer. In-flight readers keep their own file handle, so a rebuild never disturbs them.
+| Page | Covers |
+|---|---|
+| [How Strata fits together](docs/index.md) | Datamodules, versions, reports, the worker; a diagram |
+| [Build scripts](docs/build-scripts.md) | `source()`, dependencies, connections and `odbc_query`, session options, the sandbox |
+| [Reports](docs/reports.md) | The single-SELECT body, `$arguments`, widgets, constraint queries |
+| [Report URLs](docs/urls.md) | Filters (`col__op=v`), `q`, `sort`, `page`, `version`, `key`, response headers |
+| [API keys and Excel](docs/api-keys.md) | Keys, fixed args, PowerQuery |
+| [Freshness and builds](docs/freshness.md) | TTL, the stale-read wait, back-off, the worker, retention |
+| [Schedules](docs/schedules.md) | The schedule kinds and custom RRULEs |
+| [Settings (admin)](docs/settings.md) | Every setting and when a change applies |
+
+The original design rationale is in [`docs/design/future-direction.md`](docs/design/future-direction.md); the plan of record is [`ROADMAP.md`](ROADMAP.md).
+
+### Storage layout
+
+A datamodule's files live under `DATA_ROOT` (pin it to a disk with room; built versions can grow large):
 
 ```
 DATA_ROOT/<uuid[:2]>/<uuid>/
@@ -43,110 +59,11 @@ DATA_ROOT/<uuid[:2]>/<uuid>/
     tmp/<version_uuid>.duckdb        # in-progress build (same filesystem → atomic rename)
 ```
 
-"Live" is only a pointer in the SQLite metadata DB (`datamodule.live_version_id`) — renaming or moving a datamodule is pure metadata, and old versions stay browsable until retention prunes them.
+"Live" is only a pointer in the SQLite metadata DB (`datamodule.live_version_id`); renaming a datamodule is pure metadata.
 
-**Freshness**: the TTL is the oldest data a report may serve (report override falls back to the datamodule's). Blank = never auto-expire; `0` = rebuild on every request; a `valid_until` date forces staleness after a deadline. **The serve path never builds**: a stale request queues a rebuild (requests coalesce into one job) and waits up to `serve.max_wait_seconds` (default 60 s — PowerQuery gives up at 100 s) for the worker. If the rebuild finishes, the fresh data is served; if not, or if it fails, the previous version is served, marked stale. The HTML view always shows "Data as of …" (and a banner when stale); data formats send `X-Data-As-Of` and, when stale, `X-Data-Stale: 1`. A datamodule never built yet returns 503 with `Retry-After` (HTML: a page that refreshes itself).
+### Retention sweeps
 
-**Failure backoff**: after a failed build, automatic rebuilds (stale reads, and stale dependencies pulled by an automatic build) are not retried for 1 min, doubling per consecutive failure up to 1 h; meanwhile the last good version is served, marked stale, with the error. Manual and scheduled builds always run. A dependency that is stale and backed off fails its dependent's automatic build, which keeps its own last good version.
-
-### Builds, the worker, and the build lease
-
-Builds run in a separate **`strata-worker`** process. The Build button (and, from Phase B3, schedules) records a **build job**; the worker claims it and builds. Requests coalesce — one queued job per datamodule — and a forced request made while a build is running queues exactly one follow-up, so an edit made mid-build is still built.
-
-- **One build per datamodule, across processes**: whoever builds holds a lease on the datamodule row, renewed every 15 s. A builder that dies stops renewing; within 60 s the lease expires, the next builder takes over, and the dead build's version is marked failed. The worker also sweeps for dead builds and for jobs whose worker vanished.
-- **Queues and concurrency**: each datamodule names a worker queue (default `default`). A worker runs `--concurrency` builds at once (setting `worker.concurrency`, default 2) from the queues it is given (`--queue`, repeatable). Run a second worker on a `long` queue to keep slow extracts from delaying quick ones.
-- **Health**: workers check in every 10 s. The admin page lists live workers and job counts; a datamodule page warns when no worker has checked in for 2 minutes.
-- **Development**: `make rundev` builds inline in the request (no worker needed); production runs `make worker` or the compose `worker` service.
-
-### Schedules
-
-A datamodule can have any number of **schedules**; each queues a forced build when due (stale dependencies are refreshed first, as with the Build button). The worker checks every ~10 s; runs missed while no worker was up collapse into one, and two workers never fire the same run twice.
-
-Schedules are stored as **iCalendar recurrence rules (RRULE, RFC 5545)** — the standard calendar programs use — in a named timezone, so "07:00" stays 07:00 across daylight-saving changes. The form builds the rule for the common shapes and previews the next five runs:
-
-| Shape | Example | RRULE it produces |
-|---|---|---|
-| Every N minutes/hours, optional days and window | every 15 min, Mon–Fri, 06:00–20:00 | `FREQ=MINUTELY;INTERVAL=15;BYDAY=MO,TU,WE,TH,FR;BYHOUR=6,…,19` |
-| Daily at set times, optional days | 07:00 and 13:30 | one `FREQ=DAILY;BYHOUR=…;BYMINUTE=…` rule per time |
-| Every N weeks on chosen days | fortnightly Monday 07:00 from 23 Nov | `FREQ=WEEKLY;INTERVAL=2;WKST=MO;BYDAY=MO;BYHOUR=7;BYMINUTE=0` |
-| Monthly on a day (29–31 fall back to the last day), or `last` | day 31 at 18:00 | `FREQ=MONTHLY;BYMONTHDAY=28,29,30,31;BYSETPOS=-1;…` |
-| First / last working day (Mon–Fri) | first working day 06:00 | `FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;…` |
-| Once | 2027-03-01 09:30 | `FREQ=DAILY;COUNT=1` from that time |
-| **Custom rule** | second Tuesday 09:00 | any RRULE text, e.g. `FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2;BYHOUR=9;BYMINUTE=0` |
-
-The custom-rule option means a new shape needs no code: anything RRULE can say, a schedule can do. Windows run from the start hour up to (not including) the end hour. Public holidays are not yet taken into account (ROADMAP backlog). The timezones offered come from the `schedule.timezones` setting (first = default; default `Australia/Brisbane, Australia/Sydney, Pacific/Auckland`).
-
-### Build inputs
-
-- **Source files** — upload on the datamodule page, reference in the script as `source('sales.xlsx')`; it expands to the on-disk path as a SQL string literal (e.g. inside `read_xlsx(...)`).
-- **Dependencies** — other datamodules ATTACHed read-only by a local name before the script runs. A dependency is rebuilt first only if it is stale (outside its TTL), so pipelines are just dependencies with different TTLs. **Build with all dependencies** (shown when a datamodule has dependencies) force-rebuilds every dependency all the way down, each one once, then the datamodule itself. Cycles are rejected at add time.
-- **Connections** — encrypted connection records ATTACHed into the build: SQLite and PostgreSQL become schemas named after the local name (`warehouse.dbo.orders`); ODBC connections become a session handle used as `odbc_query(getvariable('conn_<name>'), 'SELECT …')`.
-
-### Reports
-
-A **report** is a DuckDB table macro over its datamodule, stored in SQLite and applied as a `TEMP` macro at serve time — editing the body is instant, no rebuild. Bodies reference declared arguments with `$name`:
-
-```sql
-SELECT * FROM sales
-WHERE region = $region
-  AND order_date >= $from_date
-```
-
-Arguments have a type (`text`/`integer`/`number`/`decimal`/`date`/`time`/`boolean`), a widget (`input`/`select`/`multiselect`), an optional default, a required flag, and optionally a **constraint query** run against the live data to populate select options. A multiselect binds a DuckDB LIST — filter with `list_contains($picks, col)`. (Internally macro parameters are prefixed `arg_`, so an argument named after a column can never self-compare.)
-
-A report body and a constraint query must each be **exactly one SELECT statement** (`WITH …`, `FROM …`, `VALUES`, and `UNION` all count; wrap a bare `PIVOT` as `SELECT * FROM (PIVOT …)`). Anything else is refused when the report is saved and again at serve time.
-
-### The DuckDB sandbox
-
-Every DuckDB connection that runs author SQL is locked down once its trusted setup is done (`services/duck.py`), using DuckDB's own `enable_external_access = false` + `allowed_directories` + `lock_configuration`:
-
-- **Serving** (report bodies, constraint queries) — the live version file is ATTACHed read-only first; the SQL can then reach only that data. File reads, `COPY`, `ATTACH`, `INSTALL`/`LOAD`, and changing any setting are refused. Exports are written under `DATA_ROOT/_exports/` and spills under `DATA_ROOT/_tmp/`.
-- **Builds** — dependencies and connections are attached first; the script can then read only its own datamodule's `sources/` (and write its `tmp/`). The `excel` extension is preloaded so `read_xlsx(source('…'))` keeps working; other extensions must be loaded by a bound connection's driver.
-- **Escape hatch** — set `build.sandbox = false` in `/admin/config` if a build that worked before fails with a `Permission Error` (e.g. a connection driver that turns out to need external access, or a script that reads from an `https://` URL). Serving is always sandboxed.
-- **Session options** — a build script may still `SET TimeZone`, `threads`, `memory_limit`, `storage_compatibility_version` and the like; DuckDB itself refuses to turn external access back on or widen the allowed directories.
-- **Known gap** — once the `sqlite_scanner` extension is loaded (only for a build that binds a SQLite connection), DuckDB's SQLite reader does not apply the directory restriction, so that build can open other SQLite files.
-- **Known DuckDB bug** — `enable_logging(storage='file', …)` pointed outside the allowed directories, followed by any query, aborts the whole process. A report body that does this crashes the web worker serving it (gunicorn restarts it).
-
-## Serving reference
-
-```
-GET /r/<report_uuid>.<ext>?<args>&<grammar>     ext ∈ html | parquet | csv | json | xlsx
-Auth: session (SSO) — or, for the data formats only, ?key=<api key token>
-```
-
-Query parameters:
-
-| Form | Meaning |
-|---|---|
-| `name=value` | A declared argument (by name). If the name isn't an argument but matches an output column, it's an equality filter. |
-| `col__op=value` | Filter on an output column. Ops: `eq ne gt gte lt lte in between contains isnull`. `in`/`between` take comma-separated values; `contains` is case-insensitive; `isnull` takes true/false. |
-| `q=text` | Substring search across **all** columns (case-insensitive). Repeat `q=` to AND multiple fragments. |
-| `sort=-a,b` | Sort by `a` descending then `b` ascending, NULLs last. |
-| `page=N` | 1-based page of 200 rows. HTML is always paginated; exports return the full filtered result unless `page` is given explicitly. |
-| `version=<version_uuid>` | Pin a retained historical version (never rebuilds; the page shows a banner with a back-to-live link). |
-| `key=<token>` | API-key authentication (data formats only — see below). |
-
-Every filter/sort field is validated against the query's real output columns (`DESCRIBE`) and values are always bound as parameters — nothing user-supplied is interpolated into SQL. Unknown query keys are an error (400 on data formats, an inline message on HTML). A single `_` in a hand-typed field name matches a column with a space (`net_sales` → `net sales`) when no exact column matches. `sort`, `page`, `q`, `format`, `key`, and `version` are reserved and rejected as argument names.
-
-The HTML view adds sortable column headers, a search-all-columns box, removable chips for URL-carried filters, a pager, and per-format export links that preserve the current arguments/filters/sort.
-
-## API keys (Excel / PowerQuery)
-
-PowerQuery can't drive SSO, so **API keys** grant unauthenticated access to the *data* formats (never HTML):
-
-- Created on the datamodule page: a name, a scope (the whole datamodule or a single report), optional **fixed arguments** (always win over caller values — one `name=value` per line, repeat a name for multiselect), an optional **whitelist** of caller-suppliable argument names (blank = all), and an optional expiry date.
-- Only the sha256 of the token is stored. The plaintext token — and ready-made absolute PowerQuery URLs per report — are shown **exactly once**, at create or rotate time, with copy buttons. Paste the URL straight into Excel (Get Data → From Web); Parquet is the default format, and `.csv`/`.json`/`.xlsx` work by swapping the extension.
-- Filters, sort, search, and version pins all compose with a key; keys can be rotated (breaks existing workbooks), disabled, and deleted.
-- Every keyed request is access-logged (format, row count, bytes, duration, status, remote address), and the key's use count / last-used timestamp update on success. Invalid, disabled, expired, or out-of-scope tokens all get a uniform 403; keyless anonymous data requests get 401.
-
-## Versions and retention
-
-The datamodule page lists every retained version (status, duration, size, storage-format floor, trigger) with a **live** badge and per-report links that open the report pinned to that version. Retention is per-datamodule:
-
-- **count** — keep the newest N versions (the live one is always kept), or
-- **age** — keep versions younger than a window (blank = keep everything).
-
-Pruning runs automatically after each successful build and deletes both the version row and its file. For everything retention can't reach, run:
+Retention prunes old versions (rows and files) after each successful build. For everything it can't reach, run:
 
 ```bash
 strata-admin reconcile --dry-run    # report what would be removed
@@ -154,6 +71,13 @@ strata-admin reconcile              # prune + sweep
 ```
 
 Reconcile enforces retention across all datamodules and sweeps orphaned datamodule directories (left behind by deletes), stale `tmp/` files from crashed builds, and version files with no database row. A live version whose file is missing is only ever warned about.
+
+### Sandbox notes for operators
+
+Every DuckDB connection that runs author SQL is locked down once its trusted setup is done (`services/duck.py`: `enable_external_access = false` + `allowed_directories` + `lock_configuration`). Author-facing rules are in [Build scripts](docs/build-scripts.md#the-sandbox). Two known limits:
+
+- **SQLite gap** — once the `sqlite_scanner` extension is loaded (only for a build that binds a SQLite connection), DuckDB's SQLite reader does not apply the directory restriction, so that build can open other SQLite files.
+- **Known DuckDB bug** — `enable_logging(storage='file', …)` pointed outside the allowed directories, followed by any query, aborts the whole process. A report body that does this crashes the web worker serving it (gunicorn restarts it).
 
 ## Local development
 
@@ -311,19 +235,7 @@ make config-list
 make config-set KEY=auth.admin_group VAL=strata-admins
 ```
 
-DB-only settings worth knowing (no env var; the `server.*` ones need an app restart):
-
-| Registry key | Default | Purpose |
-|---|---|---|
-| `server.threads` | `8` | Request threads per gunicorn worker. Strata runs gunicorn's `gthread` worker, so a long export or build is not killed by the worker timeout. |
-| `server.timeout` | `120` | Seconds a worker may go silent before gunicorn restarts it (a liveness check, not a per-request limit). |
-| `build.sandbox` | `true` | Lock build scripts to their own `sources/` and `tmp/` (see *The DuckDB sandbox*). |
-| `schedule.timezones` | `Australia/Brisbane, Australia/Sydney, Pacific/Auckland` | IANA timezones offered for schedules; the first is the default. Add any others needed. |
-| `serve.max_wait_seconds` | `60` | How long a report request waits for a stale datamodule's rebuild before serving the previous version, marked stale. |
-| `serve.memory_limit` | `2GB` | DuckDB memory limit per report query (it spills to disk beyond it). |
-| `build.memory_limit` | `4GB` | DuckDB memory limit per build. Two concurrent builds (`worker.concurrency`) plus the web app fit a 16 GB host; a build script may `SET memory_limit` higher itself. |
-| `build.threads` | `0` | DuckDB threads per build; `0` = one per core. |
-| `build.timeout_seconds` | `3600` | A build still running after this long is interrupted and fails (its previous version stays live); `0` = no limit. |
+Every setting, its default and when a change applies: [Settings (admin)](docs/settings.md).
 
 ### Environment variables and registry mapping
 
@@ -347,7 +259,7 @@ DB-only settings worth knowing (no env var; the `server.*` ones need an app rest
 | `PROXY_X_FORWARDED_PREFIX` | `proxy.x_forwarded_prefix` | `1` | **Required behind a subpath proxy** for correct `url_for()` URLs. | Compose `app` |
 | `TZ` | (container TZ) | `UTC` | Container timezone. UI still renders timestamps in the user's local TZ. | Compose `app` |
 
-The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application. `worker.poll_interval` (default 30 s) is how often the worker sweeps for dead builds and checks schedules; `worker.concurrency` (default 2) is how many builds one worker runs at once.
+The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANCE`) are bind-mount source paths consumed by `docker-compose.yml`; they don't reach the application. `worker.poll_interval` (default 30 s) is how often the worker sweeps for dead builds (due schedules are checked every 10 s regardless); `worker.concurrency` (default 2) is how many builds one worker runs at once.
 
 ## Admin CLI
 
@@ -374,6 +286,7 @@ strata/
 │   │   ├── reports.py           # Public serve path /r/<uuid>.<ext>
 │   │   ├── connections.py       # External-DB connection manager (admin)
 │   │   ├── admin.py             # Admin panel, config, SQL console
+│   │   ├── help.py              # In-app help: docs/*.md at /help
 │   │   └── tags.py              # Tag management
 │   ├── models/                  # Dataclass models with static CRUD methods
 │   ├── services/                # datamodule build/prune, report serve, query grammar, streaming
@@ -381,6 +294,7 @@ strata/
 │   └── templates/               # Jinja2 HTML templates
 ├── database/
 │   └── migrations/              # Forward-only NNNN_*.sql, applied by strata-admin init-db
+├── docs/                        # In-app help pages (rendered at /help); design/ = history
 ├── pyproject.toml
 ├── Makefile
 ├── Dockerfile

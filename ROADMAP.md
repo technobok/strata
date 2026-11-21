@@ -1,7 +1,7 @@
 # Strata Roadmap
 
 Strata pivoted from a report-centric tool to **datamodule as core** (design doc:
-`doc/future-direction.md`). The v1 cut line — a complete streaming, secured
+`docs/design/future-direction.md`). The v1 cut line — a complete streaming, secured
 data-API + tabular-report product — shipped as Phases 1–6.
 
 ## Shipped — v1 (Phases 1–6)

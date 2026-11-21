@@ -579,3 +579,100 @@ table button.small {
 .schedule-preview li {
     padding: 0.1rem 0;
 }
+
+/* In-app help (/help) */
+.help-layout {
+    display: grid;
+    grid-template-columns: 14rem minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+}
+
+@media (max-width: 768px) {
+    .help-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+
+    .help-nav {
+        position: static;
+    }
+
+    /* The page's own headings are right below; keep the phone sidebar short. */
+    .help-nav .help-toc-title,
+    .help-nav .help-toc {
+        display: none;
+    }
+}
+
+.help-nav {
+    position: sticky;
+    top: 1rem;
+    font-size: 0.9rem;
+}
+
+.help-nav nav ul,
+.help-toc {
+    display: block;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.help-nav nav li,
+.help-toc li {
+    display: block;
+    margin: 0;
+    padding: 0.15rem 0;
+    list-style: none;
+}
+
+.help-toc a {
+    text-decoration: none;
+}
+
+.help-nav a[aria-current="page"] {
+    font-weight: bold;
+}
+
+.help-toc-title {
+    margin: 1rem 0 0.25rem;
+}
+
+.help-toc {
+    font-size: 0.85rem;
+}
+
+.help-body {
+    min-width: 0;
+}
+
+.help-body pre {
+    overflow-x: auto;
+}
+
+.help-body table {
+    font-size: 0.9rem;
+}
+
+/* The contextual "?" next to an editor or section heading */
+a.help-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3em;
+    height: 1.3em;
+    margin-left: 0.35em;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: bold;
+    line-height: 1;
+    text-decoration: none;
+    vertical-align: middle;
+    opacity: 0.7;
+}
+
+a.help-link:hover {
+    opacity: 1;
+}

@@ -170,26 +170,9 @@ def transaction() -> Generator[apsw.Cursor]:
 
 def _migrations_dir() -> Path:
     """Locate database/migrations/ across dev and installed-package layouts."""
-    import os
+    from strata.paths import repo_dir
 
-    candidates = [
-        # Source checkout: src/strata/db.py -> repo_root/database/migrations
-        Path(__file__).parent.parent.parent / "database" / "migrations",
-        # Container / installed layout: $STRATA_ROOT/database/migrations
-        *(
-            [Path(os.environ["STRATA_ROOT"]) / "database" / "migrations"]
-            if os.environ.get("STRATA_ROOT")
-            else []
-        ),
-        # CWD fallback (e.g. running from /app in docker)
-        Path.cwd() / "database" / "migrations",
-    ]
-    for path in candidates:
-        if path.is_dir():
-            return path
-    raise FileNotFoundError(
-        f"Could not locate database/migrations/. Tried: {[str(p) for p in candidates]}"
-    )
+    return repo_dir("database/migrations")
 
 
 def _migration_files() -> list[tuple[int, Path]]:

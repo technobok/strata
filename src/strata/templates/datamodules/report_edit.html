@@ -14,7 +14,7 @@
         <label>Name
             <input type="text" name="name" value="{{ report.name if report else '' }}" required>
         </label>
-        <label>Macro name (SQL identifier)
+        <label>Macro name (SQL identifier){{ help_link('reports', 'the-report-body') }}
             <input type="text" name="macro_name" value="{{ report.macro_name if report else '' }}"
                    placeholder="nums" required>
         </label>
@@ -27,13 +27,13 @@
         </label>
     </div>
 
-    <label>Body SQL (reference args as <code>$argname</code>)
+    <label>Body SQL (reference args as <code>$argname</code>){{ help_link('reports', 'the-report-body') }}
         <textarea id="body_sql" class="sql-editor" name="body_sql" rows="8" style="font-family:monospace;"
                   placeholder="SELECT n FROM t WHERE n >= $min">{{ report.body_sql if report else '' }}</textarea>
     </label>
 
     <fieldset>
-        <legend>Arguments</legend>
+        <legend>Arguments{{ help_link('reports', 'arguments') }}</legend>
         <p><small>Widgets <code>select</code>/<code>multiselect</code> populate their options from the
         constraint query (first column = value, optional second column = label). Row order = macro
         parameter order; blank-name rows are ignored.</small></p>
@@ -41,7 +41,7 @@
         <table>
             <thead><tr>
                 <th>Name</th><th>Type</th><th>Widget</th><th>Required</th>
-                <th>Default</th><th>Constraint query</th><th>Description</th>
+                <th>Default</th><th>Constraint query{{ help_link('reports', 'constraint-queries') }}</th><th>Description</th>
             </tr></thead>
             <tbody>
                 {% for arg in args %}

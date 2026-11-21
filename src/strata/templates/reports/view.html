@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h1>{{ report.name }}</h1>
+    <h1>{{ report.name }}{{ help_link('urls') }}</h1>
     <p>
         <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>
         {% if report.description %} — {{ report.description }}{% endif %}

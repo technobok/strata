@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}{{ doc.title }} — Help — Strata{% endblock %}
+
+{% block content %}
+<div class="help-layout">
+    <aside class="help-nav">
+        <nav>
+            <ul>
+                {% for name, title in pages.items() %}
+                <li><a href="{{ url_for('help.page', name=name) }}"{% if name == doc.name %} aria-current="page"{% endif %}>{{ title }}</a></li>
+                {% endfor %}
+            </ul>
+        </nav>
+        {% if doc.toc %}
+        <p class="help-toc-title"><small>On this page</small></p>
+        <ul class="help-toc">
+            {% for anchor, text in doc.toc %}
+            <li><a href="#{{ anchor }}">{{ text }}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </aside>
+    <article class="help-body">
+        {{ doc.html }}
+    </article>
+</div>
+{% endblock %}

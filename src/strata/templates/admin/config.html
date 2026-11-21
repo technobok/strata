@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h2>Configuration</h2>
+    <h2>Configuration{{ help_link('settings') }}</h2>
     <p>Application settings. Each row shows the stored value, where it came from,
     and when a change takes effect: settings marked <em>applies immediately</em>
     reach the web app at once and the worker within 5 seconds; the others need the
