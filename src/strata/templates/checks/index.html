@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Checks — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Checks{{ help_link('checks', 'the-exceptions-overview') }}</h1>
+    <p>Every check, flagged first: a check is <strong>flagged</strong> when its latest run found rows.</p>
+</hgroup>
+
+<form method="get" class="check-filters">
+    <select name="severity" aria-label="Severity" onchange="this.form.submit()">
+        <option value="" {% if not severity %}selected{% endif %}>every severity</option>
+        {% for s in severities | reverse %}<option value="{{ s }}" {% if s == severity %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    <label>
+        <input type="checkbox" name="flagged" value="1" {% if flagged %}checked{% endif %} onchange="this.form.submit()">
+        flagged only
+    </label>
+    <noscript><button type="submit" class="small">Filter</button></noscript>
+</form>
+
+{% if rows %}
+<div class="results-container">
+<table class="checks-table">
+    <thead><tr><th>Severity</th><th>Check</th><th>Datamodule</th><th>Last run</th><th>Rows</th><th>Next run</th><th>Data</th></tr></thead>
+    <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.flagged %}check-flagged{% endif %}">
+            <td><span class="severity severity-{{ row.check.severity }}">{{ row.check.severity }}</span>{% if row.check.gate %} <span class="severity severity-gate" title="Runs inside each build">gate</span>{% endif %}</td>
+            <td><a href="{{ url_for('reports.serve', report_uuid=row.report.uuid, ext='html') }}">{{ row.report.name }}</a></td>
+            <td>{{ row.datamodule.path }}</td>
+            <td>{% if row.last_run %}<a href="{{ url_for('runs.view', run_uuid=row.last_run.uuid) }}">{{ row.last_run.finished_at | localdatetime }}</a>{% else %}<small>never</small>{% endif %}</td>
+            <td>{% if row.last_run %}{% if row.last_run.status == 'error' %}<span class="severity severity-error">error</span>{% else %}<strong>{{ row.last_run.row_count }}</strong>{% endif %}{% endif %}</td>
+            <td>{% if row.next_run_at %}{{ row.next_run_at | localdatetime }}{% else %}<small>not scheduled</small>{% endif %}</td>
+            <td><span class="health health-{{ row.health | replace(' ', '-') }}"{% if row.health_note %} title="{{ row.health_note }}"{% endif %}>{{ row.health }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p>{% if severity or flagged %}No check matches.{% else %}No checks yet. Any report becomes a check with <em>This is a check</em> on its page.{% endif %}</p>
+{% endif %}
+{% endblock %}

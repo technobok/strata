@@ -124,6 +124,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     from strata.blueprints import (
         admin,
         auth,
+        checks,
         connections,
         datamodules,
         help,
@@ -142,6 +143,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.register_blueprint(schedules.bp)
     app.register_blueprint(help.bp)
     app.register_blueprint(runs.bp)
+    app.register_blueprint(checks.bp)
     app.jinja_env.globals["help_link"] = help.help_link
 
     @app.route("/")

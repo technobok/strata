@@ -113,6 +113,15 @@ class ReportRun:
         self.notified_at, self.notify_note = notified_at, note
 
     @staticmethod
+    def get_by_id(run_id: int) -> ReportRun | None:
+        row = (
+            get_db()
+            .execute(f"SELECT {ReportRun._COLUMNS} FROM report_run WHERE id = ?", (run_id,))
+            .fetchone()
+        )
+        return ReportRun._from_row(row) if row else None
+
+    @staticmethod
     def get_by_uuid(run_uuid: str) -> ReportRun | None:
         row = (
             get_db()

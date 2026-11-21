@@ -698,3 +698,33 @@ a.help-link:hover {
     width: 9rem;
     font-weight: 600;
 }
+
+/* Exceptions overview (/checks) */
+.check-filters {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.check-filters select {
+    width: auto;
+    margin: 0;
+}
+
+.check-filters label {
+    margin: 0;
+}
+
+tr.check-flagged td {
+    background: rgba(255, 200, 80, 0.12);
+}
+
+.health {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.health-failing { color: #b3261e; font-weight: 600; }
+.health-stale { color: #9a6700; }
+.health-never-built { color: #888; }

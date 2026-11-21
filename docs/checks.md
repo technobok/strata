@@ -46,6 +46,20 @@ Use a gate for problems that make the data unusable, such as missing companies, 
 empty extract or duplicated keys, where yesterday's correct data is better than
 today's broken data.
 
+## The exceptions overview
+
+**Checks** in the top bar lists every check, flagged ones first. A check is
+**flagged** when its latest run found rows. For each check it shows:
+
+- its severity, and whether it is a gate;
+- its last run (open it to see the rows) and how many rows that found;
+- when it runs next, from its enabled schedules;
+- how current its datamodule's data is: **fresh**, **stale** (past its TTL),
+  **failing** (the last build failed; hover for the error) or **never built**.
+  A check can only be as current as the data it reads.
+
+Filter by severity, or show only flagged checks.
+
 ## Runs
 
 A **run** executes a report or check once and saves every row it returned, so you
