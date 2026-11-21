@@ -128,6 +128,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         datamodules,
         help,
         reports,
+        runs,
         schedules,
         tags,
     )
@@ -140,6 +141,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app.register_blueprint(connections.bp)
     app.register_blueprint(schedules.bp)
     app.register_blueprint(help.bp)
+    app.register_blueprint(runs.bp)
     app.jinja_env.globals["help_link"] = help.help_link
 
     @app.route("/")

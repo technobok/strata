@@ -168,6 +168,25 @@ def serve_conn(version_file: Path) -> duckdb.DuckDBPyConnection:
     return conn
 
 
+def snapshot_conn(parquet_file: Path) -> duckdb.DuckDBPyConnection:
+    """An in-memory connection that reads one saved run (a Parquet file) as the
+    view ``snapshot``, locked down to that file's directory plus the export and
+    spill directories (downloads COPY under exports)."""
+    conn = duckdb.connect(":memory:")
+    try:
+        scratch = _scratch_root()
+        conn.execute(f"SET temp_directory = '{_escape(scratch / uuid.uuid4().hex)}'")
+        _apply_limits(conn, live_str("serve.memory_limit"), 0, "serve")
+        conn.execute(
+            f"CREATE TEMP VIEW snapshot AS SELECT * FROM read_parquet('{_escape(parquet_file)}')"
+        )
+        lock_down(conn, [parquet_file.parent, exports_dir(), scratch])
+    except Exception:
+        conn.close()
+        raise
+    return conn
+
+
 def build_sandbox_enabled() -> bool:
     return live_bool("build.sandbox")
 

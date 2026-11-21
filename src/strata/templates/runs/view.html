@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.name }} — run {{ run.uuid[:8] }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>{{ report.name }}{% if check %} <span class="severity severity-{{ check.severity }}">{{ check.severity }}</span>{% endif %}{{ help_link('checks', 'runs') }}</h1>
+    <p>
+        <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>
+        — saved run <code>{{ run.uuid[:8] }}</code>
+    </p>
+</hgroup>
+
+<table class="run-header">
+    <tbody>
+        <tr><th>Ran</th><td>{{ run.finished_at | localdatetime }} by {{ run.triggered_by }}{% if schedule_name %} (schedule <em>{{ schedule_name }}</em>){% endif %}</td></tr>
+        <tr><th>Data as of</th><td>{{ run.data_as_of | localdatetime if run.data_as_of else '—' }}</td></tr>
+        <tr><th>Arguments</th><td>{% for name, vals in run.args.items() %}<code>{{ name }}={{ vals | join(',') }}</code> {% else %}defaults{% endfor %}</td></tr>
+        <tr><th>Result</th><td>{% if run.status == 'error' %}<span class="severity severity-error">error</span> {{ run.error }}{% else %}{{ run.row_count }} row{{ 's' if run.row_count != 1 else '' }}{% endif %}</td></tr>
+    </tbody>
+</table>
+
+{% if run.data_note %}
+<article class="freshness-banner freshness-failed">This run may show out-of-date data: {{ run.data_note }}</article>
+{% endif %}
+
+<p><a href="{{ current_url }}" role="button" class="outline small">View current</a>
+<small>the live report with the same arguments</small></p>
+
+{% if run.snapshot_path %}
+<div id="report-container">
+    {% include "reports/_table.html" %}
+</div>
+{% endif %}
+{% endblock %}

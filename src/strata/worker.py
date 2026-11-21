@@ -133,7 +133,7 @@ class Worker:
         """Clean up after processes that died mid-build."""
         from strata.models.build_job import BuildJob
         from strata.models.worker_process import STALE_SECONDS, WorkerProcess
-        from strata.services import datamodule_service
+        from strata.services import datamodule_service, run_service
 
         with self.app.app_context():
             alive = [w.id for w in WorkerProcess.alive()]
@@ -141,8 +141,11 @@ class Worker:
             orphans = BuildJob.reap_orphans(alive, cutoff)
             dead = datamodule_service.reap_dead_builds()
             WorkerProcess.forget_stale()
+            expired_runs = run_service.prune_runs()
         if orphans or dead:
             log.warning("swept %d orphaned job(s) and %d dead build(s)", orphans, len(dead))
+        if expired_runs:
+            log.info("removed %d expired run(s)", len(expired_runs))
 
 
 @click.command()

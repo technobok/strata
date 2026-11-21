@@ -198,6 +198,15 @@ REGISTRY: list[ConfigEntry] = [
         "access off). Turn off only if a connection driver fails under the sandbox.",
         applies=Applies.LIVE,
     ),
+    # -- runs (report and check snapshots) --
+    ConfigEntry(
+        "runs.retention_days",
+        ConfigType.INT,
+        30,
+        "Days a report or check run (its row and its saved rows) is kept; the worker's "
+        "sweep and strata-admin reconcile delete older ones",
+        applies=Applies.LIVE,
+    ),
     # -- proxy --
     ConfigEntry(
         "proxy.x_forwarded_for",

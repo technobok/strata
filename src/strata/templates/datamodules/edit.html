@@ -169,13 +169,13 @@
 </header>
 {% if reports %}
 <table>
-    <thead><tr><th>Name</th><th>Macro</th><th>Kind</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Macro</th><th>Check{{ help_link('checks') }}</th><th></th></tr></thead>
     <tbody>
         {% for r in reports %}
         <tr>
             <td><a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a></td>
             <td><code>{{ r.macro_name }}</code></td>
-            <td>{{ r.kind }}</td>
+            <td>{% set c = checks.get(r.id) %}{% if c %}<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>{% if c.gate %} <span class="severity severity-gate" title="Runs inside each build; rows fail the build">gate</span>{% endif %}{% endif %}</td>
             <td><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}">Edit</a></td>
         </tr>
         {% endfor %}

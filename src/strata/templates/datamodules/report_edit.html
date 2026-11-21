@@ -85,17 +85,61 @@
         </div>
     </fieldset>
 
+    <fieldset>
+        <legend>Check{{ help_link('checks') }}</legend>
+        <label>
+            <input type="checkbox" name="is_check" {% if check %}checked{% endif %}>
+            This is a check: a run that finds rows is an exception
+        </label>
+        <div class="grid">
+            <label>Severity
+                <select name="severity">
+                    {% for s in severities %}<option value="{{ s }}" {% if (check.severity if check else 'warning') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                </select>
+            </label>
+            <label style="align-self:end;">
+                <input type="checkbox" name="gate" {% if check and check.gate %}checked{% endif %}>
+                Gate{{ help_link('checks', 'gate-checks') }}: also run inside each build; rows fail the
+                build and the previous version stays live
+            </label>
+        </div>
+    </fieldset>
+
     <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>
 </form>
 
 {% if report %}
 <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Run</a>
+    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Open</a>
+    <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}"
+          title="Run with the default arguments and save the rows">
+        <button type="submit" class="outline small">Run now</button>
+    </form>
     <form method="post" action="{{ url_for('datamodules.report_delete', report_uuid=report.uuid) }}"
           onsubmit="return confirm('Delete this report?');">
         <button type="submit" class="outline secondary small">Delete</button>
     </form>
 </div>
+
+<h2 id="runs">Runs{{ help_link('checks', 'runs') }}</h2>
+{% if runs %}
+<table>
+    <thead><tr><th>Ran</th><th>Rows</th><th>Data as of</th><th>By</th><th></th></tr></thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td><a href="{{ url_for('runs.view', run_uuid=run.uuid) }}">{{ run.finished_at | localdatetime }}</a></td>
+            <td>{% if run.status == 'error' %}<span class="severity severity-error">error</span>{% else %}{{ run.row_count }}{% endif %}</td>
+            <td>{{ run.data_as_of | localdatetime }}{% if run.data_note %} <span title="{{ run.data_note }}">⚠</span>{% endif %}</td>
+            <td>{{ run.triggered_by }}</td>
+            <td><a href="{{ url_for('runs.view', run_uuid=run.uuid) }}">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No runs yet. <strong>Run now</strong> saves one.</p>
+{% endif %}
 {% endif %}
 {% endblock %}
 

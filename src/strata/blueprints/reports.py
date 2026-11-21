@@ -12,6 +12,7 @@ lives in blueprints/datamodules.py.
 
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode
 
@@ -134,7 +135,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         pinned_version=pinned,
         served=served,
         served_version=version,
-        ui=_build_ui(report, pairs, spec, result),
+        ui=build_ui(lambda ext, p: _serve_url(report, ext, p), pairs, spec, result),
     )
     # HTMX swaps just the table fragment; history restores need the full page.
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
@@ -280,14 +281,17 @@ def _drop_first(pairs: list[tuple[str, str]], target: tuple[str, str]) -> list[t
     return out
 
 
-def _build_ui(
-    report: Report,
+def build_ui(
+    url: Callable[[str, list[tuple[str, str]]], str],
     pairs: list[tuple[str, str]],
     spec: QuerySpec | None,
     result: TableResult | None,
 ) -> dict[str, Any] | None:
     """Precompute the URLs/state the table fragment needs (search, chips, sort
     headers, pager, exports). Templates never assemble query strings.
+
+    ``url(ext, pairs)`` builds a link to the same table (a report, or a saved
+    run) in ``ext`` with ``pairs`` as its query string.
 
     Chips are built from the raw spec, not the result, so a filter whose value
     fails to cast at runtime still shows up and can be removed.
@@ -302,31 +306,25 @@ def _build_ui(
     chips = []
     for i, f in enumerate(spec.filters):
         label = resolved[i].label if resolved else f"{f.key} = {f.value}"
-        chips.append(
-            {"label": label, "url": _serve_url(report, "html", _drop_first(keep, (f.key, f.value)))}
-        )
+        chips.append({"label": label, "url": url("html", _drop_first(keep, (f.key, f.value)))})
     for fragment in spec.q:
         chips.append(
             {
                 "label": f"search: {fragment}",
-                "url": _serve_url(report, "html", _drop_first(keep, ("q", fragment))),
+                "url": url("html", _drop_first(keep, ("q", fragment))),
             }
         )
 
     ui: dict[str, Any] = {
-        "search_action": url_for("reports.serve", report_uuid=report.uuid, ext="html"),
+        "search_action": url("html", []),
         "search_hidden": keep,
         "chips": chips,
-        "exports": [
-            (fmt, _serve_url(report, fmt, keep)) for fmt in ("parquet", "csv", "json", "xlsx")
-        ],
+        "exports": [(fmt, url(fmt, keep)) for fmt in ("parquet", "csv", "json", "xlsx")],
         "sort_state": {},
         "sort_urls": {},
         "pager": {"prev_url": None, "next_url": None},
         "back_to_live": (
-            _serve_url(report, "html", [(k, v) for k, v in keep if k != "version"])
-            if spec.version
-            else None
+            url("html", [(k, v) for k, v in keep if k != "version"]) if spec.version else None
         ),
     }
     if result is None or result.error:
@@ -339,13 +337,11 @@ def _build_ui(
         # unsorted -> asc, asc -> desc, desc -> asc; a click replaces the whole
         # sort (multi-column stays URL-only).
         token = f"-{col}" if sort_state.get(col) == "asc" else col
-        ui["sort_urls"][col] = _serve_url(report, "html", base_no_sort + [("sort", token)])
+        ui["sort_urls"][col] = url("html", base_no_sort + [("sort", token)])
 
     if result.page > 1:
         prev = keep if result.page == 2 else keep + [("page", str(result.page - 1))]
-        ui["pager"]["prev_url"] = _serve_url(report, "html", prev)
+        ui["pager"]["prev_url"] = url("html", prev)
     if result.page < result.page_count:
-        ui["pager"]["next_url"] = _serve_url(
-            report, "html", keep + [("page", str(result.page + 1))]
-        )
+        ui["pager"]["next_url"] = url("html", keep + [("page", str(result.page + 1))])
     return ui

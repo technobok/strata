@@ -14,6 +14,13 @@
 {% if g.strata_is_admin %}
 <div class="form-actions" style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
+    {% if not pinned_version %}
+    <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}" style="margin:0;"
+          title="Run with these arguments and save the rows">
+        {% for name, vals in arg_values.items() %}{% for v in vals %}<input type="hidden" name="{{ name }}" value="{{ v }}">{% endfor %}{% endfor %}
+        <button type="submit" class="outline small">Save a run</button>
+    </form>
+    {% endif %}
 </div>
 {% endif %}
 

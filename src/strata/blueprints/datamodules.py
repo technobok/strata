@@ -33,9 +33,11 @@ from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.dependency import Dependency
 from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
+from strata.models.report_check import SEVERITIES, ReportCheck
+from strata.models.report_run import ReportRun
 from strata.models.source_file import SourceFile
 from strata.models.worker_process import WorkerProcess
-from strata.services import build_queue, datamodule_service, duck
+from strata.services import build_queue, datamodule_service, duck, run_service
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
@@ -322,6 +324,7 @@ def edit(uuid: str) -> str | Response:
         "datamodules/edit.html",
         datamodule=dm,
         reports=reports,
+        checks=ReportCheck.for_datamodule(dm.id),
         report_by_id={r.id: r for r in reports},
         api_keys=api_keys,
         reveal=reveal,
@@ -442,6 +445,9 @@ def report_new(uuid: str) -> str | Response:
         args=[],
         data_types=DATA_TYPES,
         widgets=WIDGETS,
+        check=None,
+        severities=SEVERITIES,
+        runs=[],
     )
 
 
@@ -470,6 +476,9 @@ def report_edit(report_uuid: str) -> str | Response:
         args=ReportArg.get_for_report(report.id) if report else [],
         data_types=DATA_TYPES,
         widgets=WIDGETS,
+        check=ReportCheck.get(report.id) if report else None,
+        severities=SEVERITIES,
+        runs=ReportRun.recent_for_report(report.id) if report else [],
     )
 
 
@@ -480,6 +489,8 @@ def report_delete(report_uuid: str) -> Response:
     if report is None:
         raise NotFound()
     dm = Datamodule.get_by_id(report.datamodule_id)
+    if dm is not None:
+        run_service.delete_files_for_report(report, dm.uuid)  # rows cascade with the report
     report.delete()
     flash(f"Report '{report.name}' deleted.", "success")
     if dm is None:
@@ -502,6 +513,18 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
     args, arg_error = _parse_args_form()
     if arg_error:
         return arg_error
+    is_check = request.form.get("is_check") == "on"
+    severity = request.form.get("severity", "warning")
+    gate = is_check and request.form.get("gate") == "on"
+    if is_check and severity not in SEVERITIES:
+        return f"Unknown severity '{severity}'."
+    if gate:
+        for arg in args:
+            if arg["required"] and not arg["default_value"]:
+                return (
+                    f"A gate check runs inside each build with its arguments' defaults: "
+                    f"give '{arg['name']}' a default, make it optional, or untick Gate."
+                )
     try:
         duck.validate_select(body_sql, "The report body")
         for arg in args:
@@ -536,6 +559,10 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
         return f"Could not save report: {exc}"
 
     ReportArg.replace_all(saved.id, args)
+    if is_check:
+        ReportCheck.save(saved.id, severity, gate)
+    else:
+        ReportCheck.clear(saved.id)
     return None
 
 

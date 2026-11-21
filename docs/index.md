@@ -42,6 +42,13 @@ available until retention removes them. See [Freshness and builds](freshness.md)
 **Report.** A single SELECT over the datamodule, with typed `$arguments` the
 reader fills in. Editing a report needs no rebuild. See [Reports](reports.md).
 
+**Check.** A report that looks for problems: rows it finds are exceptions. A
+**gate** check also runs inside every build and stops bad data from going live.
+See [Checks and runs](checks.md).
+
+**Run.** One execution of a report or check, with its rows saved so the result can
+be looked at later. See [Checks and runs](checks.md#runs).
+
 **Report URL.** Every report is served at `/r/<id>.<format>`. The URL also carries
 filters, sorting, search and paging. See [Report URLs](urls.md).
 

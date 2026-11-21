@@ -52,6 +52,12 @@ default (80% of RAM) instead, set an empty value from the shell:
 | `serve.max_wait_seconds` | `60` | How long a read of stale data waits for the rebuild before serving the previous version (see [Freshness and builds](freshness.md#stale-data)). Keep it under Excel's 100 seconds. |
 | `serve.memory_limit` | `2GB` | DuckDB memory per report query; it spills to disk beyond this. |
 
+## Runs — apply immediately
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `runs.retention_days` | `30` | Days a report or check run, with its saved rows, is kept (see [Checks and runs](checks.md#how-long-runs-are-kept)). The worker's sweep and `strata-admin reconcile` delete older ones. |
+
 ## Schedules and the worker
 
 | Setting | Default | Takes effect | Meaning |

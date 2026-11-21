@@ -288,6 +288,38 @@ BACKOFF_BASE_SECONDS = 60
 BACKOFF_MAX_SECONDS = 3600
 
 
+class GateError(RuntimeError):
+    """A gate check found rows, or could not run: the build fails before the swap."""
+
+
+def _run_gate_checks(
+    conn: duckdb.DuckDBPyConnection, dm: Datamodule, deadline: duck.Deadline
+) -> None:
+    """Evaluate the datamodule's gate checks on the build connection (the new
+    data). Any rows, or a check that cannot run, fail the build: the previous
+    version stays live, through the normal failure path and its back-off."""
+    from strata.models.report import Report
+    from strata.models.report_check import ReportCheck
+    from strata.services import report_service
+
+    for report_id, check in sorted(ReportCheck.for_datamodule(dm.id).items()):
+        if not check.gate:
+            continue
+        report = Report.get_by_id(report_id)
+        if report is None:
+            continue
+        try:
+            count, sample = report_service.gate_rows(conn, report)
+        except (report_service.ArgError, duck.SqlShapeError, duckdb.Error) as exc:
+            if deadline.expired:
+                raise  # the build's own time limit, reported as such
+            raise GateError(f"check '{report.name}' could not run: {exc}") from exc
+        if count:
+            shown = "; ".join(", ".join(str(v) for v in row) for row in sample)
+            more = " …" if count > len(sample) else ""
+            raise GateError(f"check '{report.name}' found {count} row(s): {shown}{more}")
+
+
 class BackoffError(RuntimeError):
     """An automatic rebuild was not attempted: the datamodule's last build failed recently."""
 
@@ -441,6 +473,7 @@ def _build_leased(
             duck.lock_down_build(conn, base)
             if rendered.strip():
                 conn.execute(rendered)
+            _run_gate_checks(conn, dm, deadline)
             conn.execute("CHECKPOINT")
             storage_version = _storage_version(conn)
         except duckdb.Error as exc:
@@ -686,6 +719,8 @@ class ReconcileReport:
     orphan_files: list[str] = field(default_factory=list)
     stuck_builds: list[str] = field(default_factory=list)  # "<path>: ab12cd34"
     stale_scratch: list[str] = field(default_factory=list)  # DATA_ROOT/_exports + _tmp
+    expired_runs: list[str] = field(default_factory=list)  # older than runs.retention_days
+    orphan_snapshots: list[str] = field(default_factory=list)  # runs/ files with no run row
     warnings: list[str] = field(default_factory=list)
 
 
@@ -698,11 +733,14 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
     a missing file is only ever WARNED about. Prune runs first so its unlinked
     files never double-count as orphans.
     """
+    from strata.services import run_service
+
     report = ReconcileReport(dry_run=dry_run)
     dms = Datamodule.get_all()
     known = {dm.uuid for dm in dms}
 
     report.stuck_builds = reap_dead_builds(dry_run=dry_run)
+    report.expired_runs = run_service.prune_runs(dry_run=dry_run)
     for dm in dms:
         if dry_run:
             for v in prune_candidates(dm):
@@ -727,6 +765,7 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
 
         # Crashed builds leave <uuid>.duckdb plus its .wal and .tmp/ spill dir.
         report.stale_tmp.extend(_sweep_old(base / "tmp", dry_run))
+        report.orphan_snapshots.extend(run_service.orphan_snapshot_files(dm, dry_run))
 
         version_uuids = {v.uuid for v in DatamoduleVersion.list_for(dm.id)}
         for f in sorted((base / "versions").glob("*.duckdb")):

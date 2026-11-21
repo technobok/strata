@@ -676,3 +676,25 @@ a.help-link {
 a.help-link:hover {
     opacity: 1;
 }
+
+/* Check severity badges (reports table, run page) */
+.severity {
+    display: inline-block;
+    padding: 0 0.45rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.severity-info { background: #d9ecff; color: #0b3d6e; }
+.severity-warning { background: #ffe8b0; color: #5a3e00; }
+.severity-error { background: #ffd1cc; color: #7a1408; }
+.severity-gate { background: #e4dcff; color: #33206e; }
+
+.run-header th {
+    width: 9rem;
+    font-weight: 600;
+}

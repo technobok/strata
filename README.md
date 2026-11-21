@@ -40,6 +40,7 @@ How to write build scripts and reports, the URL grammar, API keys for Excel, fre
 | [How Strata fits together](docs/index.md) | Datamodules, versions, reports, the worker; a diagram |
 | [Build scripts](docs/build-scripts.md) | `source()`, dependencies, connections and `odbc_query`, session options, the sandbox |
 | [Reports](docs/reports.md) | The single-SELECT body, `$arguments`, widgets, constraint queries |
+| [Checks and runs](docs/checks.md) | Checks and severity, gate checks inside builds, saved runs and their retention |
 | [Report URLs](docs/urls.md) | Filters (`col__op=v`), `q`, `sort`, `page`, `version`, `key`, response headers |
 | [API keys and Excel](docs/api-keys.md) | Keys, fixed args, PowerQuery |
 | [Freshness and builds](docs/freshness.md) | TTL, the stale-read wait, back-off, the worker, retention |
@@ -228,7 +229,7 @@ Every setting strata reads is in the registry at `src/strata/config.py`. The run
 
 `/admin/config` shows the full registry, the *effective* value for each row, which layer it came from (`env` / `db` / `default`), and when a change takes effect. Env-overridden rows are read-only — to change them, edit the env var (typically in `docker-compose.yml`). All other rows are editable; saving writes to the DB layer.
 
-The `build.*`, `serve.*`, `schedule.*` settings and `worker.poll_interval` **apply immediately**: they are read when used (cached for 5 seconds), so the web app uses a saved change at once and the worker within 5 seconds. The rest are read once at start, and each row says whether it needs the app, the worker, or both restarted. Each registry entry is also reachable from the CLI:
+The `build.*`, `serve.*`, `schedule.*`, `runs.*` settings and `worker.poll_interval` **apply immediately**: they are read when used (cached for 5 seconds), so the web app uses a saved change at once and the worker within 5 seconds. The rest are read once at start, and each row says whether it needs the app, the worker, or both restarted. Each registry entry is also reachable from the CLI:
 
 ```bash
 make config-list

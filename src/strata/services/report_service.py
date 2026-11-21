@@ -15,7 +15,10 @@ identifier literals and comments via template_service._strip_literals).
 """
 
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -176,20 +179,7 @@ def _prepare(
 
     conn = duck.serve_conn(vpath)
     try:
-        params = ", ".join(f"{_PARAM_PREFIX}{arg.name}" for arg in args)
-        body = _rewrite_body(report.body_sql)
-        conn.execute(
-            f"CREATE OR REPLACE TEMP MACRO {report.macro_name}({params}) AS TABLE ({body})"
-        )
-        # multiselect binds a LIST: give it an explicit element type so an empty
-        # selection still types correctly.
-        placeholders = ", ".join(
-            f"CAST(? AS {_DUCK_LIST_TYPE.get(arg.data_type, 'VARCHAR')}[])"
-            if arg.widget == "multiselect"
-            else "?"
-            for arg in args
-        )
-        call = f"{report.macro_name}({placeholders})"
+        call = _register_macro(conn, report, args)
         described = conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
         columns = [(str(row[0]), str(row[1])) for row in described]
         final_sql = f"SELECT * FROM {call}"
@@ -197,6 +187,23 @@ def _prepare(
         conn.close()
         raise
     return conn, final_sql, binds, columns
+
+
+def _register_macro(conn: duckdb.DuckDBPyConnection, report: Report, args: list[ReportArg]) -> str:
+    """Register ``report`` as a TEMP macro on ``conn``; return its call with one
+    ``?`` per argument (bind them with ``_bind_args``)."""
+    params = ", ".join(f"{_PARAM_PREFIX}{arg.name}" for arg in args)
+    body = _rewrite_body(report.body_sql)
+    conn.execute(f"CREATE OR REPLACE TEMP MACRO {report.macro_name}({params}) AS TABLE ({body})")
+    # multiselect binds a LIST: give it an explicit element type so an empty
+    # selection still types correctly.
+    placeholders = ", ".join(
+        f"CAST(? AS {_DUCK_LIST_TYPE.get(arg.data_type, 'VARCHAR')}[])"
+        if arg.widget == "multiselect"
+        else "?"
+        for arg in args
+    )
+    return f"{report.macro_name}({placeholders})"
 
 
 def run_table(
@@ -217,6 +224,21 @@ def run_table(
         conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     except duckdb.Error as exc:
         return TableResult(error=f"Query error: {exc}")
+    return page_of(conn, final_sql, binds, columns, spec)
+
+
+def page_of(
+    conn: duckdb.DuckDBPyConnection,
+    final_sql: str,
+    binds: list[Any],
+    columns: list[tuple[str, str]],
+    spec: query_filter.QuerySpec,
+) -> TableResult:
+    """One page of ``final_sql`` with the spec's filters/search/sort applied.
+
+    Closes ``conn``. FilterError propagates; DuckDB errors are captured into the
+    result (it keeps the applied filters so a failing chip stays removable).
+    """
     try:
         clauses = query_filter.build_clauses(spec, columns)
     except query_filter.FilterError:
@@ -225,8 +247,8 @@ def run_table(
     col_names = [name for name, _ in columns]
     page = spec.page or 1
     try:
-        # One extra count execution per HTML view; the datamodule is a local
-        # DuckDB file, so this is cheap relative to rendering.
+        # One extra count execution per HTML view; the data is a local DuckDB or
+        # Parquet file, so this is cheap relative to rendering.
         count_sql, count_binds = query_filter.wrap_count(final_sql, clauses)
         count_row = conn.execute(count_sql, binds + count_binds).fetchone()
         total = int(count_row[0]) if count_row else 0
@@ -275,23 +297,88 @@ def stream(
     """
     conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     try:
-        clauses = query_filter.build_clauses(spec, columns)
-        limit = offset = None
-        if spec.page is not None:
-            limit = query_filter.PAGE_SIZE
-            offset = (spec.page - 1) * query_filter.PAGE_SIZE
-        select_sql, extra = query_filter.wrap_select(final_sql, clauses, limit=limit, offset=offset)
-        download_name = f"{report.macro_name}.{fmt}"
-        if fmt == "xlsx":
-            return stream_service.stream_xlsx(
-                conn, select_sql, binds + extra, download_name, [name for name, _ in columns]
-            )
-        if fmt in stream_service.COPY_FORMATS:
-            return stream_service.stream_copy(conn, select_sql, binds + extra, fmt, download_name)
-        raise ArgError(f"Unsupported format '{fmt}'")
+        return stream_rows(conn, final_sql, binds, columns, spec, fmt, report.macro_name)
     except Exception:
         conn.close()  # idempotent — the stream writers close on their own paths
         raise
+
+
+def stream_rows(
+    conn: duckdb.DuckDBPyConnection,
+    final_sql: str,
+    binds: list[Any],
+    columns: list[tuple[str, str]],
+    spec: query_filter.QuerySpec,
+    fmt: str,
+    name: str,
+) -> Response:
+    """Stream ``final_sql`` (spec applied) as ``fmt``; the writer closes ``conn``.
+
+    Exports cover the full result; an explicit ``page=N`` yields just that slice.
+    """
+    clauses = query_filter.build_clauses(spec, columns)
+    limit = offset = None
+    if spec.page is not None:
+        limit = query_filter.PAGE_SIZE
+        offset = (spec.page - 1) * query_filter.PAGE_SIZE
+    select_sql, extra = query_filter.wrap_select(final_sql, clauses, limit=limit, offset=offset)
+    download_name = f"{name}.{fmt}"
+    if fmt == "xlsx":
+        return stream_service.stream_xlsx(
+            conn, select_sql, binds + extra, download_name, [n for n, _ in columns]
+        )
+    if fmt in stream_service.COPY_FORMATS:
+        return stream_service.stream_copy(conn, select_sql, binds + extra, fmt, download_name)
+    raise ArgError(f"Unsupported format '{fmt}'")
+
+
+def snapshot(
+    report: Report,
+    dm: Datamodule,
+    arg_values: dict[str, list[str]],
+    version: DatamoduleVersion,
+    dest: Path,
+) -> int:
+    """Run the report on ``version`` and save every row to ``dest`` (Parquet).
+
+    The serve sandbox only writes under the exports directory, so the COPY goes
+    there and the finished file is renamed into place (same filesystem).
+    Returns the row count. ArgError and DuckDB errors propagate.
+    """
+    conn, final_sql, binds, _columns = _prepare(report, dm, arg_values, version)
+    options, _content_type = stream_service.COPY_FORMATS["parquet"]
+    fd, tmp_path = tempfile.mkstemp(suffix=".parquet", dir=duck.exports_dir())
+    os.close(fd)
+    try:
+        row = conn.execute(f"COPY ({final_sql}) TO '{tmp_path}' {options}", binds).fetchone()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(tmp_path, dest)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+    finally:
+        conn.close()
+    return int(row[0]) if row else 0
+
+
+def gate_rows(
+    conn: duckdb.DuckDBPyConnection, report: Report, sample: int = 3
+) -> tuple[int, list[tuple[Any, ...]]]:
+    """Evaluate a gate check on a build connection (the new data, before the swap),
+    with its arguments' defaults. Returns (row count, the first ``sample`` rows).
+
+    ArgError (a required argument without a default) and DuckDB errors propagate.
+    """
+    duck.validate_select(report.body_sql, f"The body of check '{report.name}'")
+    args = ReportArg.get_for_report(report.id)
+    binds = _bind_args(args, {})
+    call = _register_macro(conn, report, args)
+    row = conn.execute(f"SELECT count(*) FROM {call}", binds).fetchone()
+    count = int(row[0]) if row else 0
+    rows = (
+        conn.execute(f"SELECT * FROM {call} LIMIT {int(sample)}", binds).fetchall() if count else []
+    )
+    return count, rows
 
 
 # Constraint-query options, memoised per (arg_id, live_version_id). Editing a

@@ -132,8 +132,15 @@ class Strata:
         name: str = "Sales",
         macro: str = "sales_report",
         args: list[dict[str, str]] | None = None,
+        check: str | None = None,
+        gate: bool = False,
     ) -> str:
+        """Create a report; ``check`` = a severity makes it a check (``gate`` too)."""
         data: dict[str, Any] = {"name": name, "macro_name": macro, "body_sql": body}
+        if check is not None:
+            data.update(is_check="on", severity=check)
+            if gate:
+                data["gate"] = "on"
         for key in ("name", "type", "widget", "default", "required", "constraint", "description"):
             data[f"arg_{key}"] = [a.get(key, "") for a in args or []]
         resp = self.client.post(f"/datamodules/{dm_uuid}/reports/new", data=data)
