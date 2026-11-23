@@ -25,8 +25,10 @@
 <article class="freshness-banner freshness-failed">This run may show out-of-date data: {{ run.data_note }}</article>
 {% endif %}
 
-<p><a href="{{ current_url }}" role="button" class="outline small">View current</a>
-<small>the live report with the same arguments</small></p>
+<div class="actions">
+    <a href="{{ current_url }}" role="button" class="outline small">View current</a>
+    <small>the live report with the same arguments</small>
+</div>
 
 {% if run.snapshot_path %}
 <div id="report-container">

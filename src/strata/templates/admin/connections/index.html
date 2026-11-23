@@ -1,16 +1,18 @@
 {% extends "base.html" %}
+{% from "_macros.html" import post_button %}
 
 {% block title %}Connections — Admin — Strata{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h2>Connections{{ help_link('build-scripts', 'connections') }}</h2>
-    <p>External database connections that reports can attach to.</p>
-</hgroup>
-
-<div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-    <button type="button" onclick="location.href='{{ url_for('connections.new') }}'">New Connection</button>
-    <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back to Admin</button>
+<div class="section-header">
+    <hgroup>
+        <h1>Connections{{ help_link('build-scripts', 'connections') }}</h1>
+        <p>External database connections that datamodules can bind.</p>
+    </hgroup>
+    <div class="actions">
+        <a href="{{ url_for('connections.new') }}" role="button" class="outline">New connection</a>
+        <a href="{{ url_for('admin.index') }}" role="button" class="outline secondary">Back to Admin</a>
+    </div>
 </div>
 
 {% if connections %}
@@ -33,15 +35,11 @@
             <td>{{ c.description }}</td>
             <td><small>{{ (c.users or ['admins only']) | join(', ') }}</small></td>
             <td><small>{{ c.modified_at | localdate }}</small></td>
-            <td>
-                <form method="post" action="{{ url_for('connections.test', uuid=c.uuid) }}" style="display:inline">
-                    <button type="submit" class="small outline">Test</button>
-                </form>
-                <button type="button" class="small outline" onclick="location.href='{{ url_for('connections.edit', uuid=c.uuid) }}'">Edit</button>
-                <form method="post" action="{{ url_for('connections.delete', uuid=c.uuid) }}" style="display:inline">
-                    <button type="submit" class="small outline secondary" onclick="return confirm('Delete connection {{ c.name }}? Reports referencing it will lose the connection.')">Delete</button>
-                </form>
-            </td>
+            <td><div class="actions">
+                <a href="{{ url_for('connections.edit', uuid=c.uuid) }}" role="button" class="outline small">Edit</a>
+                {{ post_button(url_for('connections.test', uuid=c.uuid), 'Test') }}
+                {{ post_button(url_for('connections.delete', uuid=c.uuid), 'Delete', 'outline secondary small', confirm='Delete connection ' ~ c.name ~ '? Datamodules bound to it lose the connection.') }}
+            </div></td>
         </tr>
         {% endfor %}
     </tbody>

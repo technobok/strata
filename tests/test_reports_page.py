@@ -80,4 +80,4 @@ def test_the_nav_offers_each_role_what_it_can_use(strata: Strata) -> None:
         "Help",
         "tester",
     ]
-    assert "href='/tags/'" in strata.client.get("/admin/").get_data(as_text=True)
+    assert 'href="/tags/" role="button"' in strata.client.get("/admin/").get_data(as_text=True)

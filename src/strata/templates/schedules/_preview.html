@@ -1,6 +1,6 @@
 {# HTMX target: what the schedule form, as filled in, would do. #}
 {% if error %}
-<p class="error-cell">{{ error }}</p>
+<article class="error-box">{{ error }}</article>
 {% else %}
 <p><small>Rule: <code>{{ definition.rrule.replace('\n', ' · ') }}</code></small></p>
 <p><small>Next runs:</small></p>

@@ -153,7 +153,7 @@
         <input type="checkbox" name="enabled" value="1" {% if values.enabled %}checked{% endif %}> Enabled
     </label>
 
-    <div style="display:flex; gap:0.5rem;">
+    <div class="actions">
         <button type="submit">{% if schedule %}Save{% else %}Create{% endif %}</button>
         <button type="button" class="outline"
                 hx-post="{{ url_for('schedules.preview') }}" hx-include="#schedule-form" hx-target="#schedule-preview">Preview next runs</button>

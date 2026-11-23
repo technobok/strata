@@ -15,10 +15,10 @@
 <article class="freshness-banner freshness-failed">
     This report's data has not been built yet, and the last attempt failed: {{ served.failure }}
 </article>
-<div class="form-actions">
-    <form method="post" action="{{ url_for('reports.build_now', report_uuid=report.uuid) }}" style="margin:0;"
+<div class="actions">
+    <form method="post" action="{{ url_for('reports.build_now', report_uuid=report.uuid) }}"
           title="Rebuild this report's data now">
-        <button type="submit" class="outline small secondary">Build now</button>
+        <button type="submit" class="outline small">Build now</button>
     </form>
 </div>
 {% else %}

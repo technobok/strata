@@ -1,3 +1,4 @@
+{% from "_macros.html" import post_button %}
 {# A list of schedules (datamodule rebuilds, or a report's runs); rows from schedules.schedule_rows. #}
 <table>
     <thead><tr><th>Name</th><th>When</th><th>Timezone</th>{% if report %}<th>Recipients</th>{% endif %}<th>Next run</th><th>Last run</th><th></th></tr></thead>
@@ -12,15 +13,10 @@
                 {% if row.outside %}<br><small class="outside-viewers" title="They get the mail but cannot open the run it links to">Cannot open the run: {{ row.outside }}</small>{% endif %}</td>{% endif %}
             <td>{% if s.enabled %}{{ row.next_run or 'no more runs' }}{% else %}<small>disabled</small>{% endif %}</td>
             <td>{{ row.last_run }}</td>
-            <td style="display:flex; gap:0.25rem;">
-                <form method="post" action="{{ url_for('schedules.toggle', schedule_uuid=s.uuid) }}">
-                    <button type="submit" class="outline small">{% if s.enabled %}Disable{% else %}Enable{% endif %}</button>
-                </form>
-                <form method="post" action="{{ url_for('schedules.delete', schedule_uuid=s.uuid) }}"
-                      onsubmit="return confirm('Delete schedule {{ s.name }}?');">
-                    <button type="submit" class="outline secondary small">Delete</button>
-                </form>
-            </td>
+            <td><div class="actions">
+                {{ post_button(url_for('schedules.toggle', schedule_uuid=s.uuid), 'Disable' if s.enabled else 'Enable') }}
+                {{ post_button(url_for('schedules.delete', schedule_uuid=s.uuid), 'Delete', 'outline secondary small', confirm='Delete schedule ' ~ s.name ~ '?') }}
+            </div></td>
         </tr>
         {% endfor %}
     </tbody>

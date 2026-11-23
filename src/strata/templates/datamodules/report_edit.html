@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import post_button %}
 
 {% block title %}{% if report %}{{ report.name }}{% else %}New Report{% endif %} — Strata{% endblock %}
 
@@ -102,22 +103,20 @@
 </form>
 
 {% if report %}
-<div style="display:flex; gap:0.5rem; margin-top:1rem;">
+<div class="actions">
     <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Open</a>
     <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}"
           title="Run with the default arguments and save the rows">
         <button type="submit" class="outline small">Run now</button>
     </form>
-    <form method="post" action="{{ url_for('datamodules.report_delete', report_uuid=report.uuid) }}"
-          onsubmit="return confirm('Delete this report?');">
-        <button type="submit" class="outline secondary small">Delete</button>
-    </form>
+    {{ post_button(url_for('datamodules.report_delete', report_uuid=report.uuid), 'Delete', 'outline secondary small', confirm='Delete this report?') }}
 </div>
 
-<header style="display:flex; justify-content:space-between; align-items:center;">
+<hr>
+<div class="section-header">
     <h2 id="schedules">Schedules{{ help_link('checks', 'scheduled-runs-and-mail') }}</h2>
     <a href="{{ url_for('schedules.report_new', report_uuid=report.uuid) }}" role="button" class="outline small">New schedule</a>
-</header>
+</div>
 {% if schedules %}
 {% include "schedules/_table.html" %}
 {% else %}

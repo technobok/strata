@@ -11,20 +11,20 @@
     </p>
 </hgroup>
 
-<div class="form-actions" style="margin-bottom:1rem; display:flex; gap:0.5rem; align-items:center;">
+<div class="actions">
     {% if can_own(datamodule) %}
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
     {% endif %}
     {% if can_own(datamodule) and not pinned_version %}
-    <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}" style="margin:0;"
+    <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}"
           title="Run with these arguments and save the rows">
         {% for name, vals in arg_values.items() %}{% for v in vals %}<input type="hidden" name="{{ name }}" value="{{ v }}">{% endfor %}{% endfor %}
         <button type="submit" class="outline small">Save a run</button>
     </form>
     {% endif %}
-    <form method="post" action="{{ url_for('reports.build_now', report_uuid=report.uuid) }}" style="margin:0;"
+    <form method="post" action="{{ url_for('reports.build_now', report_uuid=report.uuid) }}"
           title="Rebuild this report's data now">
-        <button type="submit" class="outline small secondary">Build now</button>
+        <button type="submit" class="outline small">Build now</button>
     </form>
 </div>
 

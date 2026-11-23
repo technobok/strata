@@ -4,13 +4,13 @@
 
 {% block content %}
 <div class="datamodules-page">
-    <header style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="section-header">
         <hgroup>
             <h1>Datamodules</h1>
             <p>Versioned DuckDB databases built from a script</p>
         </hgroup>
-        <a href="{{ url_for('datamodules.new') }}" role="button">New Datamodule</a>
-    </header>
+        <a href="{{ url_for('datamodules.new') }}" role="button" class="outline">New datamodule</a>
+    </div>
 
     {% if datamodules %}
     <table>

@@ -1,0 +1,5 @@
+{# A POST action as one button. Inside .actions its form takes no box of its own.
+   ``confirm`` asks first (app.js handles data-confirm on any form). #}
+{% macro post_button(action, label, cls="outline small", confirm=None) -%}
+<form method="post" action="{{ action }}"{% if confirm %} data-confirm="{{ confirm }}"{% endif %}><button type="submit"{% if cls %} class="{{ cls }}"{% endif %}>{{ label }}</button></form>
+{%- endmacro %}

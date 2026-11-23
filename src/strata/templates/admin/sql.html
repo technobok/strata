@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h2>SQL Console</h2>
+    <h1>SQL Console</h1>
     <p>Execute read-only queries against the metadata database.</p>
 </hgroup>
 
@@ -26,9 +26,9 @@
     <label for="query">SQL Query (SELECT, PRAGMA, EXPLAIN only)</label>
     <textarea id="query" name="query" rows="5" class="sql-editor" placeholder="SELECT * FROM report LIMIT 10;">{{ query }}</textarea>
 
-    <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+    <div class="actions">
         <button type="submit">Execute</button>
-        <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back</button>
+        <a href="{{ url_for('admin.index') }}" role="button" class="outline secondary">Back</a>
     </div>
 </form>
 
@@ -38,8 +38,8 @@
 
 {% if columns %}
 <p>{{ row_count }} row{{ 's' if row_count != 1 }} returned.</p>
-<div class="results-table-wrapper">
-    <table class="results-table">
+<div class="table-scroll">
+    <table>
         <thead>
             <tr>
                 {% for col in columns %}

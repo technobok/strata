@@ -1,14 +1,16 @@
 {% extends "base.html" %}
+{% from "_macros.html" import post_button %}
 
 {% block title %}Tags - Strata{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h1>Tags</h1>
-    <p>Manage report tags</p>
-</hgroup>
-
-<a href="{{ url_for('tags.new') }}" role="button" class="outline" style="margin-bottom: 1rem;">New Tag</a>
+<div class="section-header">
+    <hgroup>
+        <h1>Tags</h1>
+        <p>Manage report tags</p>
+    </hgroup>
+    <a href="{{ url_for('tags.new') }}" role="button" class="outline">New tag</a>
+</div>
 
 {% if tags %}
 <table>
@@ -24,14 +26,10 @@
         <tr>
             <td><span class="tag-badge" style="background-color: {{ tag.color }}" data-light="{{ tag.is_light()|lower }}">{{ tag.name }}</span></td>
             <td>{{ tag_counts.get(tag.id, 0) }}</td>
-            <td>
-                <div class="form-actions">
-                    <a href="{{ url_for('tags.edit', tag_id=tag.id) }}" role="button" class="small outline">Edit</a>
-                    <form method="post" action="{{ url_for('tags.delete', tag_id=tag.id) }}" style="display:inline">
-                        <button type="submit" class="small outline secondary" onclick="return confirm('Delete tag {{ tag.name }}?')">Delete</button>
-                    </form>
-                </div>
-            </td>
+            <td><div class="actions">
+                <a href="{{ url_for('tags.edit', tag_id=tag.id) }}" role="button" class="outline small">Edit</a>
+                {{ post_button(url_for('tags.delete', tag_id=tag.id), 'Delete', 'outline secondary small', confirm='Delete tag ' ~ tag.name ~ '?') }}
+            </div></td>
         </tr>
         {% endfor %}
     </tbody>

@@ -4,13 +4,13 @@
 
 {% block content %}
 {% if g.user %}
-<header style="display:flex; justify-content:space-between; align-items:center;">
+<div class="section-header">
     <hgroup>
         <h1>Reports</h1>
         <p>Every report you can open, by datamodule</p>
     </hgroup>
-    {% if is_writer() %}<a href="{{ url_for('datamodules.new') }}" role="button" class="outline">New Datamodule</a>{% endif %}
-</header>
+    {% if is_writer() %}<a href="{{ url_for('datamodules.new') }}" role="button" class="outline">New datamodule</a>{% endif %}
+</div>
 
 {% for dm, reports, checks in groups %}
 <section class="report-group">

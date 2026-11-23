@@ -59,6 +59,7 @@ These replace the old Phases 7–10. **Order decided 2026-11-21: XL → G → D 
 ## Backlog (unscheduled, carried forward)
 
 - **API rate limiting** — throttle keyed endpoints; must also cover key-triggered TTL rebuilds (cost amplification).
+- **CSRF tokens** — POST forms carry no token; Gatekeeper's `SameSite=Lax` cookie blocks cross-site posts but not posts from another `*.demant.com` site. A token in a `base.html` meta tag + `hx-headers` + the `post_button` macro would cover every form at once.
 - **Authorization-header token auth** — alternative to `?key=` so tokens stay out of proxy/server request logs.
 - **Version keep/pin flag** — mark a specific version exempt from retention (e.g. year-end snapshots).
 - **Editor assists** — DuckDB `sql_auto_complete()` completion, `$arg` name completion, EXPLAIN preview for build scripts/macros.

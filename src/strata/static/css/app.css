@@ -36,19 +36,111 @@ header nav ul li {
     font-size: 1.1rem;
 }
 
-/* Compact buttons */
-button,
-input[type="submit"],
-input[type="button"] {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.9rem;
+/* Buttons and links that look like buttons (<a role="button">) share one size, and
+   it matches the inputs': Pico sizes all of them from the form-element spacing
+   variables on :root, so nothing here sets a button's or an input's padding.
+   <a> = going somewhere (GET); <button> = doing something (a POST form, a script).
+   A button is as wide as its label (Pico makes submits span their form). */
+button[type="submit"],
+input[type="submit"] {
+    width: auto;
 }
 
-/* Compact form elements */
-input,
-select,
-textarea {
-    padding: 0.4rem 0.6rem;
+/* Smaller, for table rows and toolbars: on a <button> or an <a role="button">. */
+:is(button, [role="button"], input[type="submit"]).small {
+    --pico-form-element-spacing-vertical: 0.25rem;
+    --pico-form-element-spacing-horizontal: 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* A row of actions: links and POST buttons side by side, one height, one baseline.
+   A POST button's <form> takes no box of its own (display: contents). */
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: var(--pico-spacing);
+}
+
+.actions > form {
+    display: contents;
+}
+
+.actions :is(button, [role="button"], input[type="submit"]) {
+    margin: 0;
+}
+
+.actions.column {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+td .actions {
+    gap: 0.25rem;
+    margin-bottom: 0;
+}
+
+td :is(button, [role="button"]) {
+    white-space: nowrap;
+}
+
+/* A form on one row: inputs share the room, the button keeps its label's width. */
+.inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: var(--pico-spacing);
+}
+
+.inline-form > :is(input, select) {
+    flex: 1 1 12rem;
+    width: auto;
+    margin: 0;
+}
+
+.inline-form > :is(button, [role="button"], input[type="submit"]) {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+.inline-form > label {
+    margin: 0;
+}
+
+/* A heading with an action beside it. */
+.section-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-bottom: var(--pico-spacing);
+}
+
+.section-header > :is(h1, h2, h3, hgroup) {
+    margin-bottom: 0;
+}
+
+/* A long value (a link with a key) on one line, scrolling, with its Copy button. */
+.token-line {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.25rem 0 var(--pico-spacing);
+}
+
+.token-line code {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.token-line :is(button, [role="button"]) {
+    flex: 0 0 auto;
+    margin: 0;
 }
 
 /* Compact tables */
@@ -247,27 +339,12 @@ footer small {
     color: white;
 }
 
-/* Reports page */
-.reports-page header {
+/* The tag form's colour swatches */
+.swatches {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.25rem;
     margin-bottom: 1rem;
-}
-
-.reports-page header hgroup {
-    margin-bottom: 0;
-}
-
-/* Form actions */
-.form-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: flex-start;
-}
-
-.form-actions button {
-    width: auto;
 }
 
 /* Tag badges */
@@ -295,6 +372,21 @@ footer small {
     display: inline-flex;
     flex-wrap: wrap;
     gap: 0.25rem;
+}
+
+/* A wide table scrolls sideways instead of widening the page. */
+.table-scroll {
+    overflow-x: auto;
+    margin: 1rem 0;
+}
+
+/* On a phone a table wider than the screen scrolls sideways on its own instead of
+   widening the page. */
+@media (max-width: 767px) {
+    main table {
+        display: block;
+        overflow-x: auto;
+    }
 }
 
 /* Results table */
@@ -367,32 +459,6 @@ footer small {
     font-size: 0.85rem;
 }
 
-/* One-time API token reveal (not .flash: app.js auto-dismisses those) */
-.token-reveal {
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    border: 1px solid var(--pico-primary);
-    border-radius: var(--pico-border-radius);
-}
-
-.token-reveal .token-line {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    margin: 0.25rem 0;
-}
-
-.token-reveal .token-line code {
-    flex: 1;
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-.token-reveal .token-line button {
-    width: auto;
-    margin-bottom: 0;
-}
-
 /* Table controls: search box, filter chips, export links */
 .table-controls {
     display: flex;
@@ -437,6 +503,7 @@ footer small {
 /* "Use in Excel": a full-width row under the search, chips and export links. */
 .excel-box {
     flex-basis: 100%;
+    min-width: 0; /* a flex item: without this its one-line link widens the page */
     margin: 0;
     font-size: 0.9rem;
 }
@@ -451,6 +518,7 @@ footer small {
 
 .excel-box select {
     width: auto;
+    max-width: 100%;
 }
 
 .excel-replaced {
@@ -464,9 +532,10 @@ footer small {
     font-size: 0.85rem;
 }
 
-/* Pager */
+/* Pager (Pico spreads a <nav> with space-between) */
 .pager {
     display: flex;
+    justify-content: flex-start;
     align-items: center;
     gap: 1rem;
     margin: 0.75rem 0;
@@ -514,15 +583,6 @@ textarea.sql-editor {
     margin: 0.5rem 0 1rem;
     font-size: 0.9rem;
     color: var(--pico-muted-color);
-}
-
-/* Small buttons */
-table button.small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-    margin: 0 0.25rem 0 0;
-    min-width: 5rem;
-    text-align: center;
 }
 
 /* Tom Select - PicoCSS Theme */

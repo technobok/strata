@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h2>Configuration{{ help_link('settings') }}</h2>
+    <h1>Configuration{{ help_link('settings') }}</h1>
     <p>Application settings. Each row shows the stored value, where it came from,
     and when a change takes effect: settings marked <em>applies immediately</em>
     reach the web app at once and the worker within 5 seconds; the others need the
@@ -90,9 +90,9 @@
         </tbody>
     </table>
 
-    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-        <button type="submit">Save Configuration</button>
-        <button type="button" class="outline secondary" onclick="location.href='{{ url_for('admin.index') }}'">Back</button>
+    <div class="actions">
+        <button type="submit">Save configuration</button>
+        <a href="{{ url_for('admin.index') }}" role="button" class="outline secondary">Back</a>
     </div>
 </form>
 

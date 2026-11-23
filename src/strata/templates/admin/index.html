@@ -3,7 +3,7 @@
 {% block title %}Admin — Strata{% endblock %}
 
 {% block content %}
-<h2>Admin</h2>
+<h1>Admin</h1>
 
 {% if public_url_missing %}
 <article class="freshness-banner freshness-failed">
@@ -49,13 +49,13 @@
     </article>
     <article>
         <header>Quick Links</header>
-        <div style="display:flex; flex-direction:column; gap:0.5rem;">
-            <button type="button" class="outline" onclick="location.href='{{ url_for('admin.config') }}'">Configuration</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('admin.sql_console') }}'">SQL Console</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('connections.index') }}'">Connections</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('admin.keys') }}'">API keys</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('datamodules.index') }}'">Datamodules</button>
-            <button type="button" class="outline" onclick="location.href='{{ url_for('tags.index') }}'">Tags</button>
+        <div class="actions column">
+            <a href="{{ url_for('admin.config') }}" role="button" class="outline">Configuration</a>
+            <a href="{{ url_for('admin.sql_console') }}" role="button" class="outline">SQL Console</a>
+            <a href="{{ url_for('connections.index') }}" role="button" class="outline">Connections</a>
+            <a href="{{ url_for('admin.keys') }}" role="button" class="outline">API keys</a>
+            <a href="{{ url_for('datamodules.index') }}" role="button" class="outline">Datamodules</a>
+            <a href="{{ url_for('tags.index') }}" role="button" class="outline">Tags</a>
         </div>
     </article>
 </div>

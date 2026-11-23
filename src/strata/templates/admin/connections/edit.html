@@ -4,7 +4,7 @@
 
 {% block content %}
 <hgroup>
-    <h2>{% if connection %}Edit Connection{% else %}New Connection{% endif %}</h2>
+    <h1>{% if connection %}Edit connection{% else %}New connection{% endif %}</h1>
     <p>External database the query engine can attach as <code>src</code>.</p>
 </hgroup>
 
@@ -33,9 +33,9 @@
 
     {% include "admin/connections/_params.html" %}
 
-    <div class="form-actions">
+    <div class="actions">
         <button type="submit">{% if connection %}Save{% else %}Create{% endif %}</button>
-        <button type="button" class="outline secondary" onclick="window.location.href='{{ url_for('connections.index') }}'">Cancel</button>
+        <a href="{{ url_for('connections.index') }}" role="button" class="outline secondary">Cancel</a>
     </div>
 </form>
 {% endblock %}

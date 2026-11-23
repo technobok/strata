@@ -74,6 +74,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.cookie = 'tz=' + tz + ';path=/;SameSite=Lax';
 })();
 
+// A form with data-confirm asks before it submits (the post_button macro's confirm).
+document.addEventListener('submit', function(event) {
+    var message = event.target.getAttribute && event.target.getAttribute('data-confirm');
+    if (message && !window.confirm(message)) event.preventDefault();
+});
+
 // Copy-to-clipboard for [data-copy] buttons (Excel and API-key links).
 // navigator.clipboard needs a secure context (https/localhost); elsewhere the
 // button is a no-op and the text stays selectable.

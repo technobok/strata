@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import post_button %}
 
 {% block title %}{% if datamodule %}{{ datamodule.path }}{% else %}New Datamodule{% endif %} — Strata{% endblock %}
 
@@ -95,32 +96,29 @@
                   placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
     </label>
     {% if datamodule %}
-    <p>
+    <div class="actions">
         <button type="button" class="outline small"
                 hx-post="{{ url_for('datamodules.preview_script', uuid=datamodule.uuid) }}"
                 hx-include="[name='build_script']" hx-target="#script-preview">Preview rendered script</button>
         <small>for a script with <code>{% raw %}{% … %}{% endraw %}</code> loops{{ help_link('build-scripts', 'loops-over-rows-jinja') }}</small>
-    </p>
+    </div>
     <div id="script-preview"></div>
     {% endif %}
     <button type="submit">{% if datamodule %}Save{% else %}Create{% endif %}</button>
 </form>
 
 {% if datamodule %}
-<div style="display:flex; gap:0.5rem; margin:1rem 0;">
+<div class="actions">
     <form method="post" action="{{ url_for('datamodules.build', uuid=datamodule.uuid) }}">
-        <button type="submit" title="Rebuild this datamodule; dependencies are rebuilt only if stale">Build now</button>
+        <button type="submit" class="outline" title="Rebuild this datamodule; dependencies are rebuilt only if stale">Build now</button>
     </form>
     {% if dependencies %}
     <form method="post" action="{{ url_for('datamodules.build', uuid=datamodule.uuid) }}">
         <input type="hidden" name="cascade" value="1">
-        <button type="submit" class="secondary" title="Rebuild every dependency (all the way down, each once), then this datamodule">Build with all dependencies</button>
+        <button type="submit" class="outline" title="Rebuild every dependency (all the way down, each once), then this datamodule">Build with all dependencies</button>
     </form>
     {% endif %}
-    <form method="post" action="{{ url_for('datamodules.delete', uuid=datamodule.uuid) }}"
-          onsubmit="return confirm('Delete this datamodule and all its versions?');">
-        <button type="submit" class="outline secondary">Delete</button>
-    </form>
+    {{ post_button(url_for('datamodules.delete', uuid=datamodule.uuid), 'Delete', 'outline secondary', confirm='Delete this datamodule and all its versions?') }}
 </div>
 
 <hr>
@@ -135,17 +133,13 @@
             <td><a href="{{ url_for('datamodules.source_download', uuid=datamodule.uuid, source_id=s.id) }}">{{ s.filename }}</a></td>
             <td>{{ s.byte_size if s.byte_size is not none else '' }}</td>
             <td>{{ s.uploaded_by }}</td>
-            <td>
-                <form method="post" action="{{ url_for('datamodules.source_delete', uuid=datamodule.uuid, source_id=s.id) }}" onsubmit="return confirm('Delete this source file?');">
-                    <button type="submit" class="outline secondary small">Delete</button>
-                </form>
-            </td>
+            <td>{{ post_button(url_for('datamodules.source_delete', uuid=datamodule.uuid, source_id=s.id), 'Delete', 'outline secondary small', confirm='Delete this source file?') }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 {% endif %}
-<form method="post" action="{{ url_for('datamodules.source_upload', uuid=datamodule.uuid) }}" enctype="multipart/form-data" style="display:flex; gap:0.5rem; align-items:center;">
+<form method="post" action="{{ url_for('datamodules.source_upload', uuid=datamodule.uuid) }}" enctype="multipart/form-data" class="inline-form">
     <input type="file" name="file" required>
     <button type="submit" class="outline">Upload</button>
 </form>
@@ -161,17 +155,13 @@
         <tr>
             <td><code>{{ d.local_name }}</code></td>
             <td>{{ dep_names[d.depends_on_id].path if dep_names[d.depends_on_id] else '(deleted)' }}</td>
-            <td>
-                <form method="post" action="{{ url_for('datamodules.dependency_delete', uuid=datamodule.uuid, dep_id=d.id) }}">
-                    <button type="submit" class="outline secondary small">Remove</button>
-                </form>
-            </td>
+            <td>{{ post_button(url_for('datamodules.dependency_delete', uuid=datamodule.uuid, dep_id=d.id), 'Remove', 'outline secondary small') }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 {% endif %}
-<form method="post" action="{{ url_for('datamodules.dependency_add', uuid=datamodule.uuid) }}" style="display:flex; gap:0.5rem; align-items:center;">
+<form method="post" action="{{ url_for('datamodules.dependency_add', uuid=datamodule.uuid) }}" class="inline-form">
     <select name="depends_on_uuid" required>
         <option value="">— datamodule —</option>
         {% for d in all_datamodules %}<option value="{{ d.uuid }}">{{ d.path }}</option>{% endfor %}
@@ -192,18 +182,14 @@
             <td><code>{{ c.local_name }}</code></td>
             <td>{{ conn_names[c.connection_id].name if conn_names[c.connection_id] else '(deleted)' }}</td>
             <td>{% if c.id in conn_usage %}<code>{{ conn_usage[c.id] }}</code>{% endif %}</td>
-            <td>
-                <form method="post" action="{{ url_for('datamodules.connection_delete', uuid=datamodule.uuid, link_id=c.id) }}">
-                    <button type="submit" class="outline secondary small">Remove</button>
-                </form>
-            </td>
+            <td>{{ post_button(url_for('datamodules.connection_delete', uuid=datamodule.uuid, link_id=c.id), 'Remove', 'outline secondary small') }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 {% endif %}
 {% if all_connections %}
-<form method="post" action="{{ url_for('datamodules.connection_add', uuid=datamodule.uuid) }}" style="display:flex; gap:0.5rem; align-items:center;">
+<form method="post" action="{{ url_for('datamodules.connection_add', uuid=datamodule.uuid) }}" class="inline-form">
     <select name="connection_id" required>
         <option value="">— connection —</option>
         {% for c in all_connections %}<option value="{{ c.id }}">{{ c.name }} ({{ c.driver }})</option>{% endfor %}
@@ -216,10 +202,10 @@
 {% endif %}
 
 <hr>
-<header style="display:flex; justify-content:space-between; align-items:center;">
+<div class="section-header">
     <h2>Reports{{ help_link('reports') }}</h2>
-    <a href="{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}" role="button" class="outline small">New Report</a>
-</header>
+    <a href="{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}" role="button" class="outline small">New report</a>
+</div>
 {% if reports %}
 <table>
     <thead><tr><th>Name</th><th>Macro</th><th>Check{{ help_link('checks') }}</th><th>Excel{{ help_link('api-keys', 'excel-links') }}</th><th></th></tr></thead>
@@ -230,7 +216,7 @@
             <td><code>{{ r.macro_name }}</code></td>
             <td>{% set c = checks.get(r.id) %}{% if c %}<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>{% if c.gate %} <span class="severity severity-gate" title="Runs inside each build; rows fail the build">gate</span>{% endif %}{% endif %}</td>
             <td>{% if r.id in excel_links %}<button type="button" class="outline small excel-link" data-copy="{{ excel_links[r.id] }}" title="{{ excel_links[r.id] }}">Copy link</button>{% endif %}</td>
-            <td><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}">Edit</a></td>
+            <td><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}" role="button" class="outline small">Edit</a></td>
         </tr>
         {% endfor %}
     </tbody>
@@ -260,19 +246,11 @@ via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of 
             <td>{{ k.expires_at|localdate }}</td>
             <td>{{ k.last_used_at|localdatetime }}</td>
             <td>{{ k.use_count }}</td>
-            <td style="display:flex; gap:0.25rem;">
-                <form method="post" action="{{ url_for('datamodules.apikey_rotate', key_uuid=k.uuid) }}"
-                      onsubmit="return confirm('Rotate this key? Workbooks using the old token will stop working.');">
-                    <button type="submit" class="outline small">Rotate</button>
-                </form>
-                <form method="post" action="{{ url_for('datamodules.apikey_toggle', key_uuid=k.uuid) }}">
-                    <button type="submit" class="outline small">{{ 'Disable' if k.enabled else 'Enable' }}</button>
-                </form>
-                <form method="post" action="{{ url_for('datamodules.apikey_delete', key_uuid=k.uuid) }}"
-                      onsubmit="return confirm('Delete this API key? Existing workbooks will stop working.');">
-                    <button type="submit" class="outline secondary small">Delete</button>
-                </form>
-            </td>
+            <td><div class="actions">
+                {{ post_button(url_for('datamodules.apikey_rotate', key_uuid=k.uuid), 'Rotate', confirm='Rotate this key? Workbooks using the old token will stop working.') }}
+                {{ post_button(url_for('datamodules.apikey_toggle', key_uuid=k.uuid), 'Disable' if k.enabled else 'Enable') }}
+                {{ post_button(url_for('datamodules.apikey_delete', key_uuid=k.uuid), 'Delete', 'outline secondary small', confirm='Delete this API key? Existing workbooks will stop working.') }}
+            </div></td>
         </tr>
         {% endfor %}
     </tbody>
@@ -300,14 +278,16 @@ via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of 
 </form>
 
 <hr>
-<h2 id="schedules">Schedules{{ help_link('schedules') }}</h2>
+<div class="section-header">
+    <h2 id="schedules">Schedules{{ help_link('schedules') }}</h2>
+    <a href="{{ url_for('schedules.new', uuid=datamodule.uuid) }}" role="button" class="outline small">New schedule</a>
+</div>
 <p><small>Each schedule queues a forced build of this datamodule (stale dependencies are refreshed first). Times are in each schedule's own timezone; runs missed while no worker was up collapse into one.</small></p>
 {% if schedules %}
 {% include "schedules/_table.html" %}
 {% else %}
 <p>No schedules: this datamodule is rebuilt only on demand (Build, or a stale read).</p>
 {% endif %}
-<p><a href="{{ url_for('schedules.new', uuid=datamodule.uuid) }}" role="button" class="outline">Add schedule</a></p>
 
 <hr>
 <h2>Build jobs{{ help_link('freshness', 'builds-and-the-worker') }}</h2>
