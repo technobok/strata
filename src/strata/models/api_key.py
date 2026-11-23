@@ -3,9 +3,11 @@
 A key grants Gatekeeper-bypass access to a report's data formats via
 ``?key=<token>`` (Excel/PowerQuery). Two kinds:
 
-- **admin keys** (scope 'datamodule' or 'report', made on the datamodule page):
-  only the sha256 of the token is stored, and the plaintext is returned exactly
-  once from ``create``/``rotate``.
+- **admin keys** (made by owners on the datamodule page; every report of the
+  datamodule since 2026-11-23, older ones may be scope 'report'): looked up by the
+  sha256 of the token; the token is also kept Fernet-encrypted (``token_encrypted``,
+  since 2026-11-23) so the datamodule page shows each key's links any time (keys
+  made before keep only the hash until rotated).
   ``fixed_args_json`` values always win over caller-supplied args, and
   ``parameterised_args_json``, when set, whitelists the arg names a caller may
   supply.
@@ -197,38 +199,35 @@ class ApiKey:
     @staticmethod
     def create(
         name: str,
-        scope_type: str,
-        datamodule_id: int | None,
-        report_id: int | None,
+        datamodule_id: int,
         fixed_args_json: str | None,
         parameterised_args_json: str | None,
         expires_at: str | None,
         created_by: str,
     ) -> tuple[ApiKey, str]:
-        """Insert a key and return (key, plaintext token) — the only time the
-        plaintext exists server-side."""
+        """Insert a key and return (key, plaintext token). The token is kept
+        encrypted too, so its links can be shown again."""
         now = datetime.now(UTC).isoformat()
         key_uuid = str(uuid_lib.uuid4())
         token, token_h, prefix = _new_token()
         with transaction() as cursor:
             cursor.execute(
                 "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
-                "datamodule_id, report_id, fixed_args_json, parameterised_args_json, "
-                "enabled, expires_at, created_by, created_at, use_count) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)",
+                "datamodule_id, fixed_args_json, parameterised_args_json, "
+                "enabled, expires_at, created_by, created_at, use_count, token_encrypted) "
+                "VALUES (?, ?, ?, ?, 'datamodule', ?, ?, ?, 1, ?, ?, ?, 0, ?)",
                 (
                     key_uuid,
                     token_h,
                     prefix,
                     name.strip(),
-                    scope_type,
                     datamodule_id,
-                    report_id,
                     fixed_args_json,
                     parameterised_args_json,
                     expires_at,
                     created_by,
                     now,
+                    encrypt_text(token),
                 ),
             )
             row = cursor.execute("SELECT last_insert_rowid()").fetchone()
@@ -242,7 +241,7 @@ class ApiKey:
         Replacing a datamodule's Excel link also disables its reports' old Excel links:
         "every workbook on the datamodule stops refreshing" includes theirs."""
         token, token_h, prefix = _new_token()
-        encrypted = encrypt_text(token) if self.excel_link or self.old_report_link else None
+        encrypted = encrypt_text(token)
         with transaction() as cursor:
             cursor.execute(
                 "UPDATE api_key SET token_hash = ?, token_prefix = ?, token_encrypted = ? "

@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.cookie = 'tz=' + tz + ';path=/;SameSite=Lax';
 })();
 
-// Copy-to-clipboard for [data-copy] buttons (API key one-time reveal).
+// Copy-to-clipboard for [data-copy] buttons (Excel and API-key links).
 // navigator.clipboard needs a secure context (https/localhost); elsewhere the
 // button is a no-op and the text stays selectable.
 document.addEventListener('click', function(event) {

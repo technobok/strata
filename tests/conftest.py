@@ -190,13 +190,19 @@ class Strata:
             return reports[0].uuid
 
     def new_api_key(self, dm_uuid: str, **form: str) -> str:
-        data = {"name": "excel", "scope": "datamodule", **form}
+        """Make an admin key on the datamodule page; returns its token."""
+        data = {"name": "excel", **form}
         resp = self.client.post(f"/datamodules/{dm_uuid}/apikeys", data=data)
         assert resp.status_code == 302
-        with self.client.session_transaction() as sess:
-            revealed = sess.get("new_api_token")
-        assert revealed, self.flashes()
-        return revealed["token"]
+        with self.app.app_context():
+            from strata.models.api_key import ApiKey
+            from strata.models.datamodule import Datamodule
+
+            dm = Datamodule.get_by_uuid(dm_uuid)
+            assert dm is not None
+            keys = [k for k in ApiKey.get_for_datamodule(dm.id) if k.name == data["name"]]
+            assert keys, self.flashes()
+            return keys[0].link_token()
 
     def set_config(self, settings: dict[str, str | int | bool]) -> None:
         """Save settings through /admin/config, as an admin would (no restart)."""

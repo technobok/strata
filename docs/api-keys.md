@@ -38,27 +38,31 @@ Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel
 
 ## Admin keys
 
-On the datamodule page, under **API keys**, choose:
+On the datamodule page, under **API keys**, its owners make keys for another program,
+or for a workbook that needs fixed arguments, an expiry date, or a key it can lose
+without affecting anyone else. A key reads **every report of the datamodule**. Choose:
 
 | Field | Meaning |
 |---|---|
 | Name | What the key is for, e.g. `finance workbook`. |
-| Scope | The whole datamodule (every report on it) or one report. |
 | Expires | Optional; the key works through that day (UTC). |
 | Fixed args | Argument values the key always sends, one `name=value` per line. They win over anything in the URL. Repeat a name for a multiselect. |
 | Caller-suppliable args | The argument names a URL may set, comma-separated. Blank means every argument that is not fixed. |
 
-After **Create**, the token and a ready-made URL for each report are shown **once**,
-with copy buttons. Strata stores only a hash of the token, so it cannot show the token
-again. If it is lost, **rotate** the key.
+Each key's links (one per report, `.xlsx`) stay in the API keys table, under its
+token prefix, with copy buttons: its owners can copy them again at any time. Strata
+looks a key up by a hash of its token and keeps the token itself encrypted, like the
+Excel link. Keys made before 2026-11-23 kept only the hash: **rotate** one once to see
+its links. Keys made before then for one report keep reading only that report.
 
 Fixed args are how one report serves several audiences safely. For example, a key
 with `company=BRS` fixed always gets BRS rows, whatever the URL says.
 
 ## Using a key in Excel
 
-1. Copy the report's URL with the key: from the report's **Use in Excel** box, or from
-   an admin key's reveal box. It looks like
+1. Copy the report's URL with the key: from the report's **Use in Excel** box (for the
+   view you are looking at), from the **Excel** column of the datamodule page's Reports
+   table, or from an admin key's links. It looks like
    `https://<server>/strata/r/<report id>.xlsx?key=<token>`.
 2. In Excel: **Data → Get Data → From Other Sources → From Web**, and paste the URL.
 3. When Excel asks how to connect, choose **Anonymous** (the key is the credential).
@@ -95,7 +99,7 @@ Every request made with a key, Excel link or admin, is logged: format, rows, byt
 time taken, status and the caller's address. The key's use count and last-used time are on the datamodule
 page.
 
-A wrong, disabled, expired or out-of-scope token gets HTTP 403. A data request with
+A wrong, disabled or expired token, or one for another datamodule, gets HTTP 403. A data request with
 no login and no key gets 401.
 
 ## Testing Excel's sign-in (the auth probe)

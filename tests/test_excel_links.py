@@ -264,6 +264,9 @@ def test_an_old_report_link_works_until_the_datamodules_key_is_replaced(
     assert strata.client.get(f"/r/{report}.csv?key={old}", headers=ANON).status_code == 200
     box = _box(strata, report)
     assert old not in box  # the box shows the datamodule's key, not the old one
+    page = strata.client.get(f"/datamodules/{_dm}/edit").get_data(as_text=True)
+    assert f"/r/{report}.xlsx?key={old}" in page  # its owners still see where it reads
+    assert f"/r/{other}.xlsx?key={old}" not in page
     assert strata.client.get(f"/r/{other}.csv?key={old}", headers=ANON).status_code == 403
     assert strata.client.post(f"/r/{report}/excel/replace").status_code == 200
     assert strata.client.get(f"/r/{report}.csv?key={old}", headers=ANON).status_code == 403

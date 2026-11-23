@@ -19,7 +19,6 @@ from flask import (
     render_template,
     request,
     send_file,
-    session,
     url_for,
 )
 from werkzeug.exceptions import NotFound
@@ -338,34 +337,22 @@ def edit(uuid: str) -> str | Response:
     }
     reports = Report.get_for_datamodule(dm.id)
 
-    # One-time API-token reveal: create/rotate stashed the plaintext in the
-    # session; it renders exactly once, with ready-made PowerQuery URLs.
+    # Excel: each report's link carries the datamodule's Excel key (made now if it
+    # has none, so it is listed with the keys below); every key's links stay shown.
+    excel_key = ApiKey.ensure_excel_link(dm.id, g.user.username) if reports else None
+    excel_links = (
+        {r.id: _excel_url(r, excel_key.link_token()) for r in reports} if excel_key else {}
+    )
     api_keys = ApiKey.get_for_datamodule(dm.id)
-    reveal = session.pop("new_api_token", None)
-    reveal_urls: list[tuple[str, str]] = []
-    if reveal:
-        reveal_key = ApiKey.get_by_uuid(reveal.get("key_uuid", ""))
-        if reveal_key is None:
-            reveal = None
-        else:
-            targets = (
-                [r for r in reports if r.id == reveal_key.report_id]
-                if reveal_key.scope_type == "report"
-                else reports
-            )
-            reveal_urls = [
-                (
-                    r.name,
-                    url_for(
-                        "reports.serve",
-                        report_uuid=r.uuid,
-                        ext="xlsx",
-                        key=reveal["token"],
-                        _external=True,
-                    ),
-                )
-                for r in targets
-            ]
+    key_links = {
+        k.id: [
+            (r.name, _excel_url(r, k.link_token()))
+            for r in reports
+            if k.scope_type == "datamodule" or r.id == k.report_id
+        ]
+        for k in api_keys
+        if k.token_encrypted is not None
+    }
 
     jobs = BuildJob.recent_for_datamodule(dm.id)
     return render_template(
@@ -375,8 +362,8 @@ def edit(uuid: str) -> str | Response:
         checks=ReportCheck.for_datamodule(dm.id),
         report_by_id={r.id: r for r in reports},
         api_keys=api_keys,
-        reveal=reveal,
-        reveal_urls=reveal_urls,
+        excel_links=excel_links,
+        key_links=key_links,
         versions=DatamoduleVersion.list_for(dm.id),
         sources=SourceFile.get_for_datamodule(dm.id),
         dependencies=deps,
@@ -393,6 +380,11 @@ def edit(uuid: str) -> str | Response:
         **_status_context(dm),
         **_access_context(dm),
     )
+
+
+def _excel_url(report: Report, token: str) -> str:
+    """A report's data link for Excel's From Web: xlsx (it cannot open Parquet)."""
+    return url_for("reports.serve", report_uuid=report.uuid, ext="xlsx", key=token, _external=True)
 
 
 def _schedule_rows(dm: Datamodule) -> list[dict[str, object]]:
@@ -821,8 +813,8 @@ def apikey_create(uuid: str) -> Response:
     if dm is None:
         raise NotFound()
 
+    # A key reads every report of the datamodule (user decision 2026-11-23: no scope).
     name = request.form.get("name", "").strip()
-    scope = request.form.get("scope", "datamodule")
     fixed, fixed_error = _parse_fixed_args(request.form.get("fixed_args", ""))
     whitelist, wl_error = _parse_whitelist(request.form.get("whitelist", ""))
     expires_at, exp_error = _parse_expires(request.form.get("expires", ""))
@@ -830,40 +822,19 @@ def apikey_create(uuid: str) -> Response:
     error = fixed_error or wl_error or exp_error
     if not name:
         error = "API key name is required."
-    scope_type = "datamodule"
-    datamodule_id: int | None = dm.id
-    report_id: int | None = None
-    if error is None and scope != "datamodule":
-        rpt = (
-            Report.get_by_uuid(scope.removeprefix("report:"))
-            if scope.startswith("report:")
-            else None
-        )
-        if rpt is None or rpt.datamodule_id != dm.id:
-            error = "Scope report not found on this datamodule."
-        else:
-            scope_type = "report"
-            datamodule_id = None
-            report_id = rpt.id
     if error is not None:
         flash(error, "error")
         return _apikey_redirect(dm)
 
-    key, token = ApiKey.create(
+    key, _token = ApiKey.create(
         name=name,
-        scope_type=scope_type,
-        datamodule_id=datamodule_id,
-        report_id=report_id,
+        datamodule_id=dm.id,
         fixed_args_json=json.dumps(fixed) if fixed else None,
         parameterised_args_json=json.dumps(whitelist) if whitelist is not None else None,
         expires_at=expires_at,
         created_by=g.user.username,
     )
-    session["new_api_token"] = {"token": token, "key_uuid": key.uuid}
-    flash(
-        f"API key '{key.name}' created — copy the token below; it cannot be shown again.",
-        "success",
-    )
+    flash(f"API key '{key.name}' created: its links are in the API keys table.", "success")
     return _apikey_redirect(dm)
 
 
@@ -872,9 +843,12 @@ def apikey_create(uuid: str) -> Response:
 def apikey_rotate(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
-    token = key.rotate()
-    session["new_api_token"] = {"token": token, "key_uuid": key.uuid}
-    flash(f"API key '{key.name}' rotated — the old token no longer works.", "success")
+    key.rotate()
+    flash(
+        f"API key '{key.name}' rotated: the old token no longer works; its new links are "
+        "in the API keys table.",
+        "success",
+    )
     return _apikey_redirect(dm)
 
 

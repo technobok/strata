@@ -222,18 +222,20 @@
 </header>
 {% if reports %}
 <table>
-    <thead><tr><th>Name</th><th>Macro</th><th>Check{{ help_link('checks') }}</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Macro</th><th>Check{{ help_link('checks') }}</th><th>Excel{{ help_link('api-keys', 'excel-links') }}</th><th></th></tr></thead>
     <tbody>
         {% for r in reports %}
         <tr>
             <td><a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a></td>
             <td><code>{{ r.macro_name }}</code></td>
             <td>{% set c = checks.get(r.id) %}{% if c %}<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>{% if c.gate %} <span class="severity severity-gate" title="Runs inside each build; rows fail the build">gate</span>{% endif %}{% endif %}</td>
+            <td>{% if r.id in excel_links %}<button type="button" class="outline small excel-link" data-copy="{{ excel_links[r.id] }}" title="{{ excel_links[r.id] }}">Copy link</button>{% endif %}</td>
             <td><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}">Edit</a></td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+<p><small><strong>Excel:</strong> each report's link (xlsx) carries this datamodule's Excel key. In Excel: <strong>Data → Get Data → From Other Sources → From Web</strong>, paste it, choose <strong>Anonymous</strong>. Viewers copy the same links from a report's <strong>Use in Excel</strong> box, for the view they are looking at.</small></p>
 {% else %}
 <p>No reports yet.</p>
 {% endif %}
@@ -241,36 +243,19 @@
 <hr>
 <h2 id="api-keys">API keys{{ help_link('api-keys') }}</h2>
 <p><small>A key grants <em>unauthenticated</em> data access (parquet/csv/json/xlsx, never html)
-via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and shown exactly once.</small></p>
-
-{% if reveal %}
-<article class="token-reveal">
-    <p><strong>Copy this token now — it cannot be shown again.</strong></p>
-    <div class="token-line">
-        <code class="reveal-token">{{ reveal.token }}</code>
-        <button type="button" class="outline small" data-copy="{{ reveal.token }}">Copy</button>
-    </div>
-    <p><small>Excel / PowerQuery URLs (parquet shown; <code>.csv</code>, <code>.json</code> and
-    <code>.xlsx</code> also work):</small></p>
-    {% for name, url in reveal_urls %}
-    <div class="token-line">
-        <small>{{ name }}</small>
-        <code>{{ url }}</code>
-        <button type="button" class="outline small" data-copy="{{ url }}">Copy</button>
-    </div>
-    {% endfor %}
-</article>
-{% endif %}
+via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of this datamodule; its links (one per report, xlsx; change the extension for <code>.csv</code>, <code>.json</code> or <code>.parquet</code>) stay here for its owners. The <em>Excel link</em> is the key in every report's Use in Excel box.</small></p>
 
 {% if api_keys %}
 <table>
-    <thead><tr><th>Name</th><th>Token</th><th>Scope</th><th>Enabled</th><th>Expires</th><th>Last used</th><th>Uses</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Links</th><th>Reads</th><th>Enabled</th><th>Expires</th><th>Last used</th><th>Uses</th><th></th></tr></thead>
     <tbody>
         {% for k in api_keys %}
         <tr>
             <td>{{ k.name }}</td>
-            <td><code>{{ k.token_prefix }}…</code></td>
-            <td>{% if k.scope_type == 'report' %}report: <code>{{ report_by_id[k.report_id].macro_name if k.report_id in report_by_id else '(deleted)' }}</code>{% else %}datamodule{% endif %}</td>
+            <td>{% if k.id in key_links %}<details class="key-links"><summary><code>{{ k.token_prefix }}…</code></summary>
+                {% for name, url in key_links[k.id] %}<div class="token-line"><small>{{ name }}</small> <code class="wrap-anywhere">{{ url }}</code> <button type="button" class="outline small" data-copy="{{ url }}">Copy</button></div>{% endfor %}
+                </details>{% else %}<code>{{ k.token_prefix }}…</code><br><small>Made before keys kept their token: Rotate to see its links.</small>{% endif %}</td>
+            <td>{% if k.scope_type == 'report' %}report: <code>{{ report_by_id[k.report_id].macro_name if k.report_id in report_by_id else '(deleted)' }}</code>{% if k.old_report_link %}<br><small>disabled when the Excel link is replaced</small>{% endif %}{% else %}every report{% endif %}</td>
             <td>{{ 'yes' if k.enabled else 'no' }}</td>
             <td>{{ k.expires_at|localdate }}</td>
             <td>{{ k.last_used_at|localdatetime }}</td>
@@ -298,12 +283,6 @@ via <code>?key=…</code> — for Excel/PowerQuery. Tokens are stored hashed and
     <div class="grid">
         <label>Name
             <input type="text" name="name" placeholder="finance team excel" required>
-        </label>
-        <label>Scope
-            <select name="scope">
-                <option value="datamodule">datamodule — every report</option>
-                {% for r in reports %}<option value="report:{{ r.uuid }}">report — {{ r.macro_name }}</option>{% endfor %}
-            </select>
         </label>
         <label>Expires (optional; valid through that day UTC)
             <input type="date" name="expires">
