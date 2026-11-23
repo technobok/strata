@@ -134,10 +134,8 @@ def new() -> str | Response:
         "admin/connections/edit.html",
         connection=None,
         drivers=DRIVERS,
-        # request.values combines args+form so the driver-change GET resubmit
-        # (which puts every field in the URL query string) repopulates correctly.
-        selected_driver=request.values.get("driver") or "sqlite",
-        form_values=request.values,
+        selected_driver=_selected_driver(request.form.get("driver"), "sqlite"),
+        form_values=request.form,
     )
 
 
@@ -185,8 +183,33 @@ def edit(uuid: str) -> str | Response:
         "admin/connections/edit.html",
         connection=connection,
         drivers=DRIVERS,
-        selected_driver=request.values.get("driver") or connection.driver,
-        form_values=request.values,
+        selected_driver=_selected_driver(request.form.get("driver"), connection.driver),
+        form_values=request.form,
+    )
+
+
+def _selected_driver(asked: str | None, fallback: str) -> str:
+    return asked if asked in DRIVERS else fallback
+
+
+@bp.route("/params")
+@admin_required
+def params() -> str:
+    """HTMX: the parameter fields of the driver in ``?driver=``, for the connection
+    form's Driver select. Only the driver (and which connection) is in the URL: the
+    other fields, a password among them, never leave the page."""
+    uuid = request.args.get("connection")
+    connection = Connection.get_by_uuid(uuid) if uuid else None
+    if uuid and connection is None:
+        raise NotFound()
+    return render_template(
+        "admin/connections/_params.html",
+        connection=connection,
+        drivers=DRIVERS,
+        selected_driver=_selected_driver(
+            request.args.get("driver"), connection.driver if connection else "sqlite"
+        ),
+        form_values={},
     )
 
 
