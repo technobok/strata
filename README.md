@@ -191,6 +191,28 @@ docker compose up -d    # recreates the containers; each migrates before it star
 
 `make rebuild` (build + `make db-init`) still works if you prefer to apply migrations before recreating the containers.
 
+### Upgrading from the Strata before datamodules
+
+A database made by the Strata from before datamodules (its tables: `report` with
+`sql_template`, `report_parameter`, `api_link`, ...) cannot be migrated: reports were
+reshaped with no conversion. `init-db` refuses it with a message saying so, and leaves
+it unchanged, so both containers stop at start. To move on:
+
+```bash
+docker compose stop                                              # nothing may hold the DB open
+docker compose run --rm app strata-admin adopt-prepivot --dry-run  # what is kept, what is not
+docker compose run --rm app strata-admin adopt-prepivot
+docker compose up -d
+```
+
+`adopt-prepivot` renames the old file beside itself
+(`instance/strata.prepivot-<UTC time>.sqlite3`, the backup), creates a new database at
+the old path, and copies in the settings this Strata knows, the secret key (connection
+passwords are encrypted with it) and the connections. It warns about any connection
+whose saved parameters the old key cannot open. The old reports, schedules, runs and
+API links stay in the backup only; it lists the reports, to re-create them as
+datamodules and reports.
+
 ### 7. Reverse-proxy notes
 
 Strata's compose file ships with `PROXY_X_FORWARDED_PREFIX=1` (and the other three `PROXY_X_FORWARDED_*` flags) so `url_for()` produces correct URLs when fronted at a subpath. If you front strata with Caddy at `/strata`, make sure the proxy strips the prefix and sends `X-Forwarded-Prefix: /strata`. The reference setup is [`webreports-caddy`](../webreports-caddy/), whose Caddyfile contains a working `handle_path /strata/* { reverse_proxy strata-app:5005 { header_up X-Forwarded-Prefix /strata } }` block.
@@ -270,6 +292,7 @@ The host-only entries (`STRATA_DATA_DIR`, `GATEKEEPER_INSTANCE`, `OUTBOX_INSTANC
 
 ```bash
 strata-admin init-db                  # create / migrate the metadata DB
+strata-admin adopt-prepivot [--dry-run]  # replace a pre-datamodule DB (old file kept)
 strata-admin config list|get|set|export
 strata-admin reconcile [--dry-run]    # retention + orphaned-file sweep + dead builds
 strata-worker [--queue Q]... [--concurrency N] [--once]   # run queued builds

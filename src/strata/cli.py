@@ -14,6 +14,7 @@ from strata.config import (
     serialize_value,
 )
 from strata.db import (
+    UnusableDatabase,
     close_standalone_db,
     get_db_path,
     get_standalone_db,
@@ -211,8 +212,36 @@ def config_export(output_file: str) -> None:
 def init_db_command() -> None:
     """Initialize the database schema."""
     db_path = get_db_path()
-    init_db_at(db_path)
+    try:
+        init_db_at(db_path)
+    except UnusableDatabase as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo("Database initialized.")
+
+
+@main.command("adopt-prepivot")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Show what would be kept, without changing anything.",
+)
+def adopt_prepivot_command(dry_run: bool) -> None:
+    """Replace a database from the Strata before datamodules with a new one.
+
+    The old file is kept beside it as a backup. The settings this Strata knows,
+    the secret key and the connections are copied into the new database; the old
+    reports, schedules and API links stay in the backup. Stop strata-web and
+    strata-worker first.
+    """
+    from strata.prepivot import AdoptError, adopt
+
+    try:
+        result = adopt(get_db_path(), dry_run=dry_run)
+    except AdoptError as exc:
+        raise click.ClickException(str(exc)) from exc
+    for line in result.summary():
+        click.echo(line)
 
 
 @main.command("reconcile")

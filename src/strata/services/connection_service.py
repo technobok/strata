@@ -29,9 +29,13 @@ def _fernet() -> Fernet:
     secret = get_setting("secret_key")
     if not secret:
         raise RuntimeError("secret_key missing from app_setting; run 'strata-admin init-db' first")
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
-    _fernet_cache = Fernet(key)
+    _fernet_cache = fernet_for(secret)
     return _fernet_cache
+
+
+def fernet_for(secret: str) -> Fernet:
+    """The Fernet that connection params are encrypted with, from a secret_key."""
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()))
 
 
 def encrypt_params(params: dict) -> str:

@@ -14,6 +14,17 @@ _standalone_db: apsw.Connection | None = None
 # this when adding a new migration file.
 EXPECTED_SCHEMA_VERSION = 7
 
+# Tables only the Strata from before datamodules had (its database/schema.sql,
+# removed in 9953905). Its schema cannot be migrated: the baseline's
+# CREATE TABLE IF NOT EXISTS would skip the same-named old tables and fail on
+# their missing columns. `strata-admin adopt-prepivot` replaces such a database.
+PREPIVOT_TABLES = frozenset({"report_parameter", "report_access", "report_tag", "api_link"})
+
+
+class UnusableDatabase(RuntimeError):
+    """init-db refuses a file that holds tables but no record of Strata's
+    migrations: Strata did not make it, so migrating it would fail half-way."""
+
 
 def get_db_path() -> str:
     """Resolve the database path.
@@ -229,6 +240,10 @@ def apply_migrations(conn: apsw.Connection) -> int:
             ).fetchone():
                 cursor.execute("COMMIT;")
                 continue
+            # Checked under the write lock: a runner racing us on a new file sees
+            # our first migration recorded, not our tables without a record.
+            if cursor.execute("SELECT 1 FROM schema_migrations LIMIT 1").fetchone() is None:
+                _refuse_foreign_schema(cursor, conn.filename)
             for _ in cursor.execute(sql):
                 pass
             cursor.execute(
@@ -245,6 +260,39 @@ def apply_migrations(conn: apsw.Connection) -> int:
         (str(max_version),),
     )
     return max_version
+
+
+def schema_tables(cursor: apsw.Cursor) -> list[str]:
+    """The database's own tables: not SQLite's, not the migration ledger."""
+    return [
+        str(name)
+        for (name,) in cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name"
+        ).fetchall()
+    ]
+
+
+def _refuse_foreign_schema(cursor: apsw.Cursor, db_path: str) -> None:
+    """Before the first migration: a file that already holds tables was not made
+    by Strata's migrations, and the baseline must not run over it."""
+    tables = schema_tables(cursor)
+    if not tables:
+        return
+    if PREPIVOT_TABLES & set(tables):
+        raise UnusableDatabase(
+            f"{db_path} was made by the Strata from before datamodules (it has the old "
+            "report tables), and this Strata cannot use it. Its contents were not changed. "
+            "Stop strata-web and strata-worker, then run `strata-admin adopt-prepivot`: it "
+            "keeps this file as a backup and starts a new database with its settings and "
+            'connections (README: "Upgrading from the Strata before datamodules").'
+        )
+    shown = ", ".join(tables[:5]) + (", ..." if len(tables) > 5 else "")
+    raise UnusableDatabase(
+        f"{db_path} holds tables ({shown}) but no record of Strata's migrations, so "
+        "Strata did not make it. Its contents were not changed. Set STRATA_DB to a "
+        "Strata database, or to a new file."
+    )
 
 
 def init_db_at(db_path: str) -> None:
