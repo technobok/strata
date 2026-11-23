@@ -85,6 +85,17 @@ class Dependency:
             stack.extend(int(v) for (v,) in rows if v is not None)
         return False
 
+    @staticmethod
+    def dependants_of(depends_on_id: int) -> list[Dependency]:
+        """The dependencies other datamodules have on this one."""
+        db = get_db()
+        rows = db.execute(
+            "SELECT id, datamodule_id, depends_on_id, local_name FROM dependency "
+            "WHERE depends_on_id = ? ORDER BY id",
+            (depends_on_id,),
+        ).fetchall()
+        return [Dependency._from_row(row) for row in rows]
+
     def delete(self) -> bool:
         with transaction() as cursor:
             cursor.execute("DELETE FROM dependency WHERE id = ?", (self.id,))

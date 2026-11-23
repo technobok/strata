@@ -264,19 +264,43 @@ class Directory:
 
 class AccessError(RuntimeError):
     """A datamodule's owners are not allowed one of its inputs (or that could not be
-    checked): it must not build."""
+    checked): it must not build, and it is locked. ``dm_id`` says which datamodule, so a
+    dependant whose parent's build raised it fails without being locked itself."""
+
+    def __init__(self, dm_id: int, message: str) -> None:
+        super().__init__(message)
+        self.dm_id = dm_id
 
 
 def _names(people: list[str]) -> str:
     return ", ".join(describe(p) for p in people)
 
 
+def parent_problem(
+    owners: list[str], parent: Datamodule, local_name: str, directory: Directory
+) -> str | None:
+    """Why ``owners`` may not depend on ``parent``: one of them may not read it."""
+    missing = directory.missing(owners, owners_of(parent) + viewers_of(parent))
+    if not missing:
+        return None
+    return f"{_names(missing)} may not read '{parent.path}' (dependency {local_name})"
+
+
 def input_problems(dm: Datamodule, owners: list[str], directory: Directory) -> list[str]:
     """Why ``owners`` may not own ``dm``'s inputs, one line each: an owner who may not
-    use a bound connection. Raises DirectoryUnavailable when that cannot be told."""
+    read a parent (its owners or viewers) or use a bound connection. Raises
+    DirectoryUnavailable when that cannot be told."""
     from strata.models.datamodule_connection import DatamoduleConnection
+    from strata.models.dependency import Dependency
 
     problems: list[str] = []
+    for dep in Dependency.get_for_datamodule(dm.id):
+        parent = Datamodule.get_by_id(dep.depends_on_id)
+        if parent is None:
+            continue  # the build reports a deleted dependency itself
+        problem = parent_problem(owners, parent, dep.local_name, directory)
+        if problem:
+            problems.append(problem)
     for binding in DatamoduleConnection.get_for_datamodule(dm.id):
         crow = Connection.get_by_id(binding.connection_id)
         if crow is None:
@@ -291,11 +315,15 @@ def input_problems(dm: Datamodule, owners: list[str], directory: Directory) -> l
 
 
 def check_build(dm: Datamodule) -> None:
-    """Raise AccessError unless every owner of ``dm`` may use each of its inputs. Run at
-    every build: group membership changes in Gatekeeper, out of Strata's sight."""
+    """Raise AccessError unless every owner of ``dm`` may read each parent and use each
+    connection. Run at every build: group membership changes in Gatekeeper, out of
+    Strata's sight."""
     try:
         problems = input_problems(dm, owners_of(dm), Directory())
     except DirectoryUnavailable as exc:
-        raise AccessError(f"access could not be checked: {exc}") from exc
+        raise AccessError(dm.id, f"access could not be checked: {exc}") from exc
     if problems:
-        raise AccessError("; ".join(problems))
+        raise AccessError(dm.id, "; ".join(problems))
+
+
+LOCKED = "This datamodule is locked: it serves nothing until its owners fix who may read it."

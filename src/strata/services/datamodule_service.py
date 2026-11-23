@@ -387,6 +387,13 @@ def _resolve_dependencies(
             dep_version = ensure_fresh(
                 dep_dm, f"dependency:{dm.path}", dep_dm.ttl_seconds, _stack=chain, run=run
             )
+        # Read after any rebuild above: that build may have locked (or unlocked) it.
+        current = Datamodule.get_by_id(dep_dm.id)
+        if current is not None and current.access_lock:
+            raise RuntimeError(
+                f"dependency '{dep.local_name}': '{dep_dm.path}' is locked (its owners are "
+                "fixing who may read it), so it cannot be read"
+            )
         attachments.append((dep.local_name, str(version_path(dep_dm.uuid, dep_version.uuid))))
     return attachments
 
@@ -550,7 +557,16 @@ def _build_leased(
     except Exception as exc:
         duration_ms = int((time.monotonic() - start) * 1000)
         version.mark_failed(str(exc), duration_ms)
+        # Its own owners lost an input: lock it (a parent's AccessError only fails it).
+        lock = str(exc) if isinstance(exc, access.AccessError) and exc.dm_id == dm.id else None
+        newly_locked = False
         with transaction() as cur:
+            if lock is not None:
+                row = cur.execute(
+                    "SELECT access_lock FROM datamodule WHERE id = ?", (dm.id,)
+                ).fetchone()
+                newly_locked = row is not None and row[0] is None
+                cur.execute("UPDATE datamodule SET access_lock = ? WHERE id = ?", (lock, dm.id))
             cur.execute(
                 "UPDATE datamodule SET build_status = 'failed', last_build_error = ?, "
                 "consecutive_failures = consecutive_failures + 1 WHERE id = ?",
@@ -569,6 +585,8 @@ def _build_leased(
         log.warning("datamodule build failed (uuid=%s): %s", dm.uuid, exc)
         from strata.services import alert_service
 
+        if newly_locked:
+            alert_service.access_locked(dm.id, triggered_by, str(exc))
         alert_service.build_failed(dm.id, triggered_by, str(exc))
         raise
 
@@ -591,7 +609,7 @@ def _build_leased(
         cur.execute(
             "UPDATE datamodule SET live_version_id = ?, build_status = 'ready', "
             "storage_version = ?, last_build_error = NULL, consecutive_failures = 0, "
-            "retry_after = NULL, modified_at = ? WHERE id = ?",
+            "retry_after = NULL, access_lock = NULL, modified_at = ? WHERE id = ?",
             (version.id, storage_version, ended_at, dm.id),
         )
 

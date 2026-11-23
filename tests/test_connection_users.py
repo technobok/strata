@@ -157,7 +157,8 @@ def test_every_build_checks_the_owners_may_use_its_connections(
     assert strata.datamodule(dm_uuid).build_status == "ready"
     _edit_users(strata, "ext_db", "carol", source_db)  # an admin narrows the list
     assert any(
-        "their next build fails: test/sales (alice)" in msg for _cat, msg in strata.flashes()
+        "their next build fails and locks them: test/sales (alice)" in msg
+        for _cat, msg in strata.flashes()
     )
     strata.build(dm_uuid)
     dm = strata.datamodule(dm_uuid)

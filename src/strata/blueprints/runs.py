@@ -34,6 +34,8 @@ def _load(run_uuid: UUID) -> tuple[ReportRun, Report, Datamodule]:
         raise NotFound()
     if not access.can_view(dm):
         forbid("You are not one of this report's viewers; its owners can add you.")
+    if dm.access_lock:
+        forbid(access.LOCKED)
     return run, report, dm
 
 
@@ -58,6 +60,8 @@ def run_now(report_uuid: str) -> WerkzeugResponse:
     if resolved is None:
         raise NotFound()
     report, dm = resolved
+    if dm.access_lock:
+        forbid(access.LOCKED)
     names = {a.name for a in ReportArg.get_for_report(report.id)}
     arg_values: dict[str, list[str]] = {}
     for key, value in request.form.items(multi=True):

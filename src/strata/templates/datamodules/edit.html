@@ -8,6 +8,13 @@
     {% if datamodule %}{% include "datamodules/_status.html" %}{% endif %}
 </hgroup>
 
+{% if datamodule and datamodule.access_lock %}
+<article class="error-box access-lock">
+    <strong>Locked:</strong> this datamodule serves nothing (pages, runs, data links, Excel links) until its access is fixed and a build succeeds.
+    <br>{{ datamodule.access_lock }}
+</article>
+{% endif %}
+
 {% if datamodule and datamodule.last_build_error %}
 <article class="error-box">Last build error: {{ datamodule.last_build_error }}</article>
 {% endif %}

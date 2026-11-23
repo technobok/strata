@@ -55,7 +55,7 @@ def _parse_users() -> tuple[list[str], str | None]:
 
 def _warn_bound(connection: Connection) -> None:
     """Say which datamodules bound to ``connection`` have owners not on its list: their
-    next build fails (the list is the admins' to set; this is not a refusal)."""
+    next build fails and locks them (the list is the admins' to set; not a refusal)."""
     from strata.db import get_db
 
     rows = get_db().execute(
@@ -77,7 +77,7 @@ def _warn_bound(connection: Connection) -> None:
     if affected:
         flash(
             "These datamodules have owners who may not use this connection, so their next "
-            f"build fails: {'; '.join(affected)}.",
+            f"build fails and locks them: {'; '.join(affected)}.",
             "error",
         )
 

@@ -67,6 +67,9 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         if ext == "html":
             forbid(NOT_A_VIEWER)
         return FlaskResponse(NOT_A_VIEWER, status=403)
+    # A locked datamodule serves nothing to anyone: pages, data, admin keys, Excel links.
+    if dm.access_lock:
+        return _locked(dm, ext)
 
     # Session users pass straight through; anonymous callers need a valid
     # ?key= and get data formats only (html keeps the SSO redirect).
@@ -89,6 +92,10 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     served: build_queue.Served | None = None
     if pinned is None and version_error is None:
         served = build_queue.servable_version(dm, report_service.effective_ttl(report, dm))
+        # The rebuild it may have waited for can have locked the datamodule.
+        current = Datamodule.get_by_id(dm.id)
+        if current is None or current.access_lock:
+            return _locked(current or dm, ext)
         if served.version is None:
             return _not_built_yet(report, dm, served, ext, api_key)
     version = pinned if pinned is not None else (served.version if served else None)
@@ -156,6 +163,15 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
         return render_template("reports/_table.html", **context)
     return render_template("reports/view.html", **context)
+
+
+def _locked(dm: Datamodule, ext: str) -> FlaskResponse:
+    """403 for a locked datamodule. The reason names people: its owners and the
+    admins see it, everyone else (and every key) only that it is locked."""
+    if ext != "html":
+        return FlaskResponse(access.LOCKED, status=403)
+    reason = dm.access_lock if g.get("user") is not None and access.can_own(dm) else None
+    forbid(f"{access.LOCKED} {reason}" if reason else access.LOCKED)
 
 
 def _freshness_headers(
@@ -344,6 +360,8 @@ def excel_box(report_uuid: str) -> str:
     report, dm = resolved
     if not access.can_view(dm):
         forbid(NOT_A_VIEWER)
+    if dm.access_lock:
+        forbid(access.LOCKED)
     return _excel_box(report, dm, ApiKey.ensure_excel_link(report.id, g.user.username))
 
 
@@ -379,6 +397,8 @@ def build_now(report_uuid: str) -> WerkzeugResponse:
     report, dm = resolved
     if not access.can_view(dm):
         forbid(NOT_A_VIEWER)
+    if dm.access_lock:
+        forbid(f"{access.LOCKED} Its owners rebuild it from its page once it is fixed.")
     job = build_queue.request_build(dm, f"manual:{g.user.username}", force=True)
     if job.status == "done":
         flash("Build finished.", "success")

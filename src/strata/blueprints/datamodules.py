@@ -322,6 +322,8 @@ def edit(uuid: str) -> str | Response:
             if lists is not None and lists != (dm.owners, dm.viewers):
                 dm.set_access(*lists, modified_by=g.user.username)
             flash("Datamodule saved.", "success")
+            if lists is not None:
+                _warn_dependants(dm)
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
     deps = Dependency.get_for_datamodule(dm.id)
@@ -479,6 +481,31 @@ def _inputs_allow(dm: Datamodule, owners: list[str] | None) -> str | None:
     return f"Access: {'; '.join(problems)}." if problems else None
 
 
+def _warn_dependants(dm: Datamodule) -> None:
+    """Say which datamodules that depend on ``dm`` have owners who may no longer read
+    it: their next build fails and locks them. A warning, not a refusal: narrowing who
+    reads this datamodule is its owners' call."""
+    affected: list[str] = []
+    for dep in Dependency.dependants_of(dm.id):
+        child = Datamodule.get_by_id(dep.datamodule_id)
+        if child is None:
+            continue
+        try:
+            problem = access.parent_problem(
+                access.owners_of(child), dm, dep.local_name, access.Directory()
+            )
+        except access.DirectoryUnavailable:
+            problem = "(could not be checked)"
+        if problem:
+            affected.append(f"{child.path}: {problem}")
+    if affected:
+        flash(
+            "These datamodules depend on this one and their next build fails and locks "
+            f"them: {'; '.join(affected)}.",
+            "error",
+        )
+
+
 def _access_context(dm: Datamodule | None) -> dict[str, object]:
     """The Access fieldset: each list, or the default it follows."""
     return {
@@ -511,6 +538,8 @@ def preview_script(uuid: str) -> str:
     rendered, error = None, None
     if not script_template.is_template(script):
         error = "This script has no {{ … }} or {% … %}: it runs as written."
+    elif (refused := _preview_refusal(dm)) is not None:
+        error = refused  # the preview reads the parents' rows: the build's rule applies
     else:
         dependencies: dict[str, Path | None] = {}
         for dep in Dependency.get_for_datamodule(dm.id):
@@ -526,6 +555,19 @@ def preview_script(uuid: str) -> str:
         except script_template.ScriptTemplateError as exc:
             error = str(exc)
     return render_template("datamodules/_script_preview.html", rendered=rendered, error=error)
+
+
+def _preview_refusal(dm: Datamodule) -> str | None:
+    """Why the preview may not read ``dm``'s parents: the build would refuse too."""
+    try:
+        access.check_build(dm)
+    except access.AccessError as exc:
+        return f"Not previewed: {exc}"
+    for dep in Dependency.get_for_datamodule(dm.id):
+        parent = Datamodule.get_by_id(dep.depends_on_id)
+        if parent is not None and parent.access_lock:
+            return f"Not previewed: dependency '{dep.local_name}' ({parent.path}) is locked."
+    return None
 
 
 @bp.route("/<uuid>/status")
@@ -920,6 +962,8 @@ def dependency_add(uuid: str) -> Response:
         flash("A datamodule cannot depend on itself.", "error")
     elif Dependency.reaches(dep_dm.id, dm.id):
         flash(f"Adding this dependency would create a cycle via '{dep_dm.path}'.", "error")
+    elif (problem := _owners_may_read(dm, dep_dm, local_name)) is not None:
+        flash(f"Not added: {problem}.", "error")
     else:
         try:
             Dependency.create(dm.id, dep_dm.id, local_name)
@@ -970,6 +1014,14 @@ def connection_add(uuid: str) -> Response:
         except Exception as exc:  # UNIQUE(datamodule_id, local_name)
             flash(f"Could not bind connection: {exc}", "error")
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+def _owners_may_read(dm: Datamodule, parent: Datamodule, local_name: str) -> str | None:
+    """Why ``dm``'s owners may not depend on ``parent``: one of them may not read it."""
+    try:
+        return access.parent_problem(access.owners_of(dm), parent, local_name, access.Directory())
+    except access.DirectoryUnavailable as exc:
+        return f"access could not be checked: {exc}"
 
 
 def _owners_may_use(dm: Datamodule, crow: Connection) -> list[str]:

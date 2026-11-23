@@ -105,7 +105,12 @@ def run(
     started_at = datetime.now(UTC).isoformat()
     run_uuid = ReportRun.new_uuid()
     status, row_count, error, snapshot_path = "error", None, None, None
-    if version is None:
+    # Read now, after the version was chosen: its refresh may have locked it.
+    current = Datamodule.get_by_id(dm.id)
+    if current is not None and current.access_lock:
+        version = None
+        error = f"the datamodule is locked: {current.access_lock}"
+    elif version is None:
         error = "the datamodule has never been built"
     else:
         relative = f"runs/{run_uuid}.parquet"

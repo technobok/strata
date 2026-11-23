@@ -34,6 +34,8 @@ class CheckRow:
 
 
 def _health(dm: Datamodule) -> tuple[str, str | None]:
+    if dm.access_lock:
+        return "locked", None  # the reason names people: it is on the datamodule's page
     if dm.build_status == "failed" or dm.consecutive_failures:
         return "failing", dm.last_build_error
     live = datamodule_service.live_version(dm)

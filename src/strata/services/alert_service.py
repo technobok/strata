@@ -96,6 +96,26 @@ def build_failed(dm_id: int, triggered_by: str, error: str) -> None:
         log.exception("build-failure alert for datamodule %s failed", dm_id)
 
 
+def access_locked(dm_id: int, triggered_by: str, reason: str) -> None:
+    """A build found that an owner may no longer read a parent or use a connection:
+    the datamodule is locked. Mail the list once, whoever started the build (a lock
+    matters even after a manual build); "recovered" follows the next success."""
+    try:
+        dm = Datamodule.get_by_id(dm_id)
+        if dm is None:
+            return
+        body = Markup(
+            "<p><strong>{path}</strong> is <strong>locked</strong> ({trigger}): it serves "
+            "nothing (pages, runs, data links, Excel links) until its owners or an admin fix "
+            "its access and a build succeeds.</p><p><code>{reason}</code></p>"
+            "<p>Fix it on its page: change its owners, or ask for access to what it reads.</p>"
+        ).format(path=dm.path, trigger=triggered_by, reason=reason)
+        if _mail(dm, f"[STRATA] {dm.path}: locked (access)", body):
+            dm.mark_alerted("failure_alerted_at", _now())
+    except Exception:  # noqa: BLE001
+        log.exception("access-lock alert for datamodule %s failed", dm_id)
+
+
 def build_succeeded(dm_id: int, failures: int) -> None:
     """After a successful build: "recovered" if "failing" was mailed; re-arm stale."""
     try:
