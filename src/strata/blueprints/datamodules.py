@@ -382,7 +382,8 @@ def edit(uuid: str) -> str | Response:
         connections=conns,
         conn_names=conn_names,
         conn_usage=conn_usage,
-        all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
+        # Only what the user may read: a picker must not show (say) payroll's path.
+        all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id and access.can_view(d)],
         all_connections=Connection.get_all(),
         jobs=jobs,
         run_uuids=ReportRun.uuids_for([j.run_id for j in jobs if j.run_id is not None]),
@@ -901,7 +902,8 @@ def dependency_add(uuid: str) -> Response:
 
     if not local_name or not ALIAS_RE.match(local_name):
         flash("Local name must be a letter/underscore identifier.", "error")
-    elif dep_dm is None:
+    elif dep_dm is None or not access.can_view(dep_dm):
+        # One message either way: a refusal must not confirm what it is.
         flash("Choose a datamodule to depend on.", "error")
     elif dep_dm.id == dm.id:
         flash("A datamodule cannot depend on itself.", "error")

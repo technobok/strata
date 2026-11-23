@@ -18,29 +18,8 @@ WRITER = as_user("wendy", "strata-writers")
 OUTSIDER = as_user("olly", "brs-finance")
 
 
-def _save_access(
-    strata: Strata,
-    dm_uuid: str,
-    owners: str | None = None,
-    viewers: str | None = None,
-    headers: dict[str, str] | None = None,
-) -> Any:
-    """Post the datamodule form as a browser would; a list of None ticks its
-    "use the default" box."""
-    dm = strata.datamodule(dm_uuid)
-    data: dict[str, str] = {
-        "path": dm.path,
-        "build_script": dm.build_script,
-        "ttl_seconds": "" if dm.ttl_seconds is None else str(dm.ttl_seconds),
-        "access_present": "1",
-        "owners": owners or "",
-        "viewers": viewers or "",
-    }
-    if owners is None:
-        data["owners_default"] = "1"
-    if viewers is None:
-        data["viewers_default"] = "1"
-    return strata.client.post(f"/datamodules/{dm_uuid}/edit", data=data, headers=headers or {})
+def _save_access(strata: Strata, dm_uuid: str, *args: Any, **kwargs: Any) -> Any:
+    return strata.set_access(dm_uuid, *args, **kwargs)
 
 
 def _errors(strata: Strata) -> list[str]:

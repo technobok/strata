@@ -116,7 +116,7 @@ def test_the_box_needs_a_login(strata: Strata) -> None:
     assert _excel_key(strata, report) is None
 
 
-def test_only_an_admin_or_the_owner_replaces_the_key(strata: Strata) -> None:
+def test_only_the_datamodules_owners_replace_the_key(strata: Strata) -> None:
     _dm, report, _other = _setup(strata)
     viewer_box = _box(strata, report, headers=VIEWER)
     assert "Replace this report's key" not in viewer_box
@@ -135,10 +135,8 @@ def test_only_an_admin_or_the_owner_replaces_the_key(strata: Strata) -> None:
     assert strata.client.get(old, headers=ANON).status_code == 403
     assert strata.client.get(new, headers=ANON).status_code == 200
 
-    with strata.app.app_context():
-        from strata.db import get_db
-
-        get_db().execute("UPDATE report SET created_by = 'viewer' WHERE uuid = ?", (report,))
+    # who made the report no longer matters: its datamodule's owners replace
+    strata.set_access(_dm, owners="viewer")
     assert "Replace this report's key" in _box(strata, report, headers=VIEWER)
     assert strata.client.post(f"/r/{report}/excel/replace", headers=VIEWER).status_code == 200
 

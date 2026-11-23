@@ -6,7 +6,7 @@
 <hgroup>
     <h1>{{ report.name }}{% if check %} <span class="severity severity-{{ check.severity }}">{{ check.severity }}</span>{% endif %}{{ help_link('checks', 'runs') }}</h1>
     <p>
-        <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>
+        {% if can_own(datamodule) %}<a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>{% else %}{{ datamodule.path }}{% endif %}
         — saved run <code>{{ run.uuid[:8] }}</code>
     </p>
 </hgroup>

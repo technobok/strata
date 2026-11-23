@@ -12,7 +12,7 @@ from flask import Blueprint, Response, g, redirect, render_template, request, ur
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from strata.blueprints.auth import login_required, owner_required
+from strata.blueprints.auth import forbid, login_required, owner_required
 from strata.blueprints.reports import build_ui
 from strata.db import get_db
 from strata.models.datamodule import Datamodule
@@ -20,7 +20,7 @@ from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
-from strata.services import query_filter, report_service, run_service, stream_service
+from strata.services import access, query_filter, report_service, run_service, stream_service
 from strata.services.query_filter import FilterError
 
 bp = Blueprint("runs", __name__)
@@ -32,6 +32,8 @@ def _load(run_uuid: UUID) -> tuple[ReportRun, Report, Datamodule]:
     dm = Datamodule.get_by_id(report.datamodule_id) if report else None
     if run is None or report is None or dm is None:
         raise NotFound()
+    if not access.can_view(dm):
+        forbid("You are not one of this report's viewers; its owners can add you.")
     return run, report, dm
 
 

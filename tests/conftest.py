@@ -118,6 +118,30 @@ class Strata:
         )
         assert resp.status_code == 302
 
+    def set_access(
+        self,
+        dm_uuid: str,
+        owners: str | None = None,
+        viewers: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        """Post the datamodule form with its Access fieldset, as a browser would. A list
+        given as None ticks its "use the default" box; lines are newline-separated."""
+        dm = self.datamodule(dm_uuid)
+        data: dict[str, str] = {
+            "path": dm.path,
+            "build_script": dm.build_script,
+            "ttl_seconds": "" if dm.ttl_seconds is None else str(dm.ttl_seconds),
+            "access_present": "1",
+            "owners": owners or "",
+            "viewers": viewers or "",
+        }
+        if owners is None:
+            data["owners_default"] = "1"
+        if viewers is None:
+            data["viewers_default"] = "1"
+        return self.client.post(f"/datamodules/{dm_uuid}/edit", data=data, headers=headers or {})
+
     def add_dependency(self, dm_uuid: str, depends_on_uuid: str, local_name: str) -> None:
         resp = self.client.post(
             f"/datamodules/{dm_uuid}/dependencies",

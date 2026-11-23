@@ -17,12 +17,12 @@ from typing import Any
 from urllib.parse import urlencode
 
 import duckdb
-from flask import Blueprint, g, redirect, render_template, request, url_for
+from flask import Blueprint, flash, g, redirect, render_template, request, url_for
 from flask import Response as FlaskResponse
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from strata.blueprints.auth import login_required
+from strata.blueprints.auth import forbid, login_required
 from strata.models.api_key import ApiKey, hash_token
 from strata.models.api_key_access_log import ApiKeyAccessLog
 from strata.models.datamodule import Datamodule
@@ -30,6 +30,7 @@ from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.services import (
+    access,
     build_queue,
     datamodule_service,
     query_filter,
@@ -45,6 +46,8 @@ bp = Blueprint("reports", __name__)
 
 _SUPPORTED = frozenset({"html"}) | stream_service.STREAM_FORMATS
 
+NOT_A_VIEWER = "You are not one of this report's viewers; its owners can add you."
+
 # Never propagated into generated (search/chip/sort/pager/export) URLs:
 # page resets on any change; format/key are ignored placeholders.
 _DROP_KEYS = ("page", "format", "key")
@@ -59,6 +62,11 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
 
     if ext not in _SUPPORTED:
         return FlaskResponse(f"Unsupported format '{ext}'", status=400)
+    # Before anything that could start a build: a non-viewer never refreshes data.
+    if g.get("user") is not None and not access.can_view(dm):
+        if ext == "html":
+            forbid(NOT_A_VIEWER)
+        return FlaskResponse(NOT_A_VIEWER, status=403)
 
     # Session users pass straight through; anonymous callers need a valid
     # ?key= and get data formats only (html keeps the SSO redirect).
@@ -302,12 +310,7 @@ def _excel_box_url(report: Report, pairs: list[tuple[str, str]]) -> str:
     return f"{base}?{urlencode(pairs)}" if pairs else base
 
 
-def _may_replace_excel_link(report: Report) -> bool:
-    """Replacing breaks every workbook on the report: admins and its owner only."""
-    return bool(g.get("strata_is_admin")) or report.created_by == g.user.username
-
-
-def _excel_box(report: Report, key: ApiKey, replaced: bool = False) -> str:
+def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = False) -> str:
     view = _excel_view(list(request.args.items(multi=True)))
     query = urlencode([*view, ("key", key.link_token())])
     links = [
@@ -323,7 +326,8 @@ def _excel_box(report: Report, key: ApiKey, replaced: bool = False) -> str:
         "reports/_excel.html",
         links=links,
         replaced=replaced,
-        can_replace=_may_replace_excel_link(report),
+        # Replacing breaks every workbook on the report: its datamodule's owners only.
+        can_replace=access.can_own(dm),
         replace_url=url_for("reports.excel_replace", report_uuid=report.uuid)
         + (f"?{urlencode(view)}" if view else ""),
     )
@@ -337,8 +341,10 @@ def excel_box(report_uuid: str) -> str:
     resolved = report_service.resolve(report_uuid)
     if resolved is None:
         raise NotFound()
-    report, _dm = resolved
-    return _excel_box(report, ApiKey.ensure_excel_link(report.id, g.user.username))
+    report, dm = resolved
+    if not access.can_view(dm):
+        forbid(NOT_A_VIEWER)
+    return _excel_box(report, dm, ApiKey.ensure_excel_link(report.id, g.user.username))
 
 
 @bp.route("/r/<report_uuid>/excel/replace", methods=["POST"])
@@ -349,12 +355,38 @@ def excel_replace(report_uuid: str) -> str | FlaskResponse:
     resolved = report_service.resolve(report_uuid)
     if resolved is None:
         raise NotFound()
-    report, _dm = resolved
-    if not _may_replace_excel_link(report):
-        return FlaskResponse("Only an admin or the report's owner can replace its key.", status=403)
+    report, dm = resolved
+    if not access.can_own(dm):
+        return FlaskResponse(
+            "Only the owners of this report's datamodule and the Strata admins can replace "
+            "its key.",
+            status=403,
+        )
     key = ApiKey.ensure_excel_link(report.id, g.user.username)
     key.rotate()
-    return _excel_box(report, key, replaced=True)
+    return _excel_box(report, dm, key, replaced=True)
+
+
+@bp.route("/r/<report_uuid>/build", methods=["POST"])
+@login_required
+def build_now(report_uuid: str) -> WerkzeugResponse:
+    """A viewer's "Build now": rebuild the report's datamodule (its dependencies only
+    if they are stale; "with all dependencies" is for owners, on the datamodule's
+    page), then back to the report."""
+    resolved = report_service.resolve(report_uuid)
+    if resolved is None:
+        raise NotFound()
+    report, dm = resolved
+    if not access.can_view(dm):
+        forbid(NOT_A_VIEWER)
+    job = build_queue.request_build(dm, f"manual:{g.user.username}", force=True)
+    if job.status == "done":
+        flash("Build finished.", "success")
+    elif job.status == "failed":
+        flash(f"Build failed: {job.error}", "error")
+    else:
+        flash("Build queued; the worker will run it.", "success")
+    return redirect(url_for("reports.serve", report_uuid=report.uuid, ext="html"))
 
 
 def _drop_first(pairs: list[tuple[str, str]], target: tuple[str, str]) -> list[tuple[str, str]]:
