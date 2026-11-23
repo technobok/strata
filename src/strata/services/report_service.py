@@ -73,11 +73,6 @@ class TableResult:
     applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
 
 
-def effective_ttl(report: Report, dm: Datamodule) -> int | None:
-    """The report's own TTL override, falling back to the datamodule's."""
-    return report.ttl_seconds if report.ttl_seconds is not None else dm.ttl_seconds
-
-
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
     report = Report.get_by_uuid(report_uuid)
     if report is None:

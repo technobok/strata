@@ -91,7 +91,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     # a bounded wait, then the last good version is served, marked stale.
     served: build_queue.Served | None = None
     if pinned is None and version_error is None:
-        served = build_queue.servable_version(dm, report_service.effective_ttl(report, dm))
+        served = build_queue.servable_version(dm, dm.ttl_seconds)
         # The rebuild it may have waited for can have locked the datamodule.
         current = Datamodule.get_by_id(dm.id)
         if current is None or current.access_lock:

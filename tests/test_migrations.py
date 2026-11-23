@@ -158,3 +158,35 @@ def test_0009_pins_existing_datamodules_to_the_admins(tmp_path, monkeypatch):
         "SELECT owners_json, viewers_json, access_lock FROM datamodule"
     ).fetchall() == [("[]", None, None)]
     conn.close()
+
+
+def test_0012_drops_the_unused_report_columns(tmp_path, monkeypatch):
+    """X6: a report's default_format and ttl_seconds go; the report keeps the rest."""
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 11])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 't/x', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO report (uuid, datamodule_id, name, macro_name, kind, body_sql, "
+        "ttl_seconds, default_format, created_by, modified_by, created_at, modified_at) "
+        "VALUES ('r1', 1, 'Sales', 'sales', 'query', 'SELECT 1', 60, 'xlsx', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.close()
+
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(report)")]
+    assert "default_format" not in columns and "ttl_seconds" not in columns
+    assert conn.execute("SELECT uuid, name, macro_name, body_sql FROM report").fetchall() == [
+        ("r1", "Sales", "sales", "SELECT 1")
+    ]
+    conn.close()

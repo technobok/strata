@@ -26,8 +26,6 @@ class Report:
     kind: str
     description: str
     body_sql: str
-    ttl_seconds: int | None
-    default_format: str
     created_by: str
     modified_by: str
     created_at: str
@@ -35,7 +33,7 @@ class Report:
 
     _COLUMNS = (
         "id, uuid, datamodule_id, name, macro_name, kind, description, body_sql, "
-        "ttl_seconds, default_format, created_by, modified_by, created_at, modified_at"
+        "created_by, modified_by, created_at, modified_at"
     )
 
     @staticmethod
@@ -49,12 +47,10 @@ class Report:
             kind=str(row[5]),
             description=str(row[6]),
             body_sql=str(row[7]),
-            ttl_seconds=int(row[8]) if row[8] is not None else None,
-            default_format=str(row[9]),
-            created_by=str(row[10]),
-            modified_by=str(row[11]),
-            created_at=str(row[12]),
-            modified_at=str(row[13]),
+            created_by=str(row[8]),
+            modified_by=str(row[9]),
+            created_at=str(row[10]),
+            modified_at=str(row[11]),
         )
 
     @staticmethod
@@ -91,16 +87,14 @@ class Report:
         created_by: str,
         kind: str = "query",
         description: str = "",
-        ttl_seconds: int | None = None,
-        default_format: str = "html",
     ) -> Report:
         now = datetime.now(UTC).isoformat()
         report_uuid = str(uuid_lib.uuid4())
         with transaction() as cursor:
             cursor.execute(
                 "INSERT INTO report (uuid, datamodule_id, name, macro_name, kind, description, "
-                "body_sql, ttl_seconds, default_format, created_by, modified_by, created_at, "
-                "modified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "body_sql, created_by, modified_by, created_at, modified_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     report_uuid,
                     datamodule_id,
@@ -109,8 +103,6 @@ class Report:
                     kind,
                     description.strip(),
                     body_sql,
-                    ttl_seconds,
-                    default_format,
                     created_by,
                     created_by,
                     now,
@@ -123,8 +115,6 @@ class Report:
         assert created is not None
         return created
 
-    _UNSET: object = object()
-
     def update(
         self,
         modified_by: str,
@@ -132,8 +122,6 @@ class Report:
         macro_name: str | None = None,
         description: str | None = None,
         body_sql: str | None = None,
-        ttl_seconds: object = _UNSET,
-        default_format: str | None = None,
     ) -> bool:
         updates: list[str] = []
         params: list[Any] = []
@@ -150,12 +138,6 @@ class Report:
         if body_sql is not None:
             updates.append("body_sql = ?")
             params.append(body_sql)
-        if ttl_seconds is not Report._UNSET:
-            updates.append("ttl_seconds = ?")
-            params.append(ttl_seconds)
-        if default_format is not None:
-            updates.append("default_format = ?")
-            params.append(default_format)
 
         if not updates:
             return False

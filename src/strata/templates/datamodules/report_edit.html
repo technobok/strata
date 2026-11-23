@@ -18,13 +18,6 @@
             <input type="text" name="macro_name" value="{{ report.macro_name if report else '' }}"
                    placeholder="nums" required>
         </label>
-        <label>Default format
-            <select name="default_format">
-                {% for f in ('html', 'parquet', 'csv', 'json', 'xlsx') %}
-                <option value="{{ f }}" {% if report and report.default_format == f %}selected{% endif %}>{{ f }}</option>
-                {% endfor %}
-            </select>
-        </label>
     </div>
 
     <label>Body SQL (reference args as <code>$argname</code>){{ help_link('reports', 'the-report-body') }}

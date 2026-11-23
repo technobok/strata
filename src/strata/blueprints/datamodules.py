@@ -720,7 +720,6 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
     name = request.form.get("name", "").strip()
     macro_name = request.form.get("macro_name", "").strip()
     body_sql = request.form.get("body_sql", "")
-    default_format = request.form.get("default_format", "html")
 
     if not name:
         return "Report name is required."
@@ -761,7 +760,6 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
                 macro_name=macro_name,
                 body_sql=body_sql,
                 created_by=g.user.username,
-                default_format=default_format,
             )
         else:
             existing.update(
@@ -769,7 +767,6 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
                 name=name,
                 macro_name=macro_name,
                 body_sql=body_sql,
-                default_format=default_format,
             )
             saved = existing
     except Exception as exc:  # UNIQUE(datamodule_id, macro_name|name) etc.

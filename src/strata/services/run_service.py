@@ -64,7 +64,7 @@ def snapshot_file(dm_uuid: str, run: ReportRun) -> Path | None:
 def version_for_web(report: Report, dm: Datamodule) -> tuple[DatamoduleVersion | None, str | None]:
     """The serve path's choice (never builds here): fresh within the wait, else the
     last good version with a note."""
-    served = build_queue.servable_version(dm, report_service.effective_ttl(report, dm))
+    served = build_queue.servable_version(dm, dm.ttl_seconds)
     if not served.stale:
         return served.version, None
     if served.failure:
@@ -79,7 +79,7 @@ def version_inline(report: Report, dm: Datamodule) -> tuple[DatamoduleVersion | 
         version = datamodule_service.ensure_fresh(
             dm,
             f"run:{report.macro_name}",
-            report_service.effective_ttl(report, dm),
+            dm.ttl_seconds,
             run=datamodule_service.BuildRun(auto=True),
         )
         return version, None
