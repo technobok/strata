@@ -43,6 +43,10 @@ from strata.services.report_service import ArgError, TableResult
 
 log = logging.getLogger(__name__)
 
+# A run on the last good data after its refresh failed: ``data_note`` starts with this
+# (notify_service keeps the words but drops the error for a restricted datamodule).
+REFRESH_FAILED = "refresh failed: "
+
 ORPHAN_MIN_AGE_SECONDS = 3600  # a snapshot file younger than this may be mid-run
 
 
@@ -64,7 +68,7 @@ def version_for_web(report: Report, dm: Datamodule) -> tuple[DatamoduleVersion |
     if not served.stale:
         return served.version, None
     if served.failure:
-        return served.version, f"refresh failed: {served.failure}"
+        return served.version, f"{REFRESH_FAILED}{served.failure}"
     return served.version, "the data is past its TTL and its rebuild is still running"
 
 
@@ -82,7 +86,7 @@ def version_inline(report: Report, dm: Datamodule) -> tuple[DatamoduleVersion | 
     except Exception as exc:  # noqa: BLE001 -- a failed refresh never stops the run
         log.warning("run of report %s: refresh of %s failed: %s", report.uuid, dm.path, exc)
         current = Datamodule.get_by_id(dm.id) or dm
-        return datamodule_service.live_version(current), f"refresh failed: {exc}"
+        return datamodule_service.live_version(current), f"{REFRESH_FAILED}{exc}"
 
 
 # ---------------------------------------------------------------------------

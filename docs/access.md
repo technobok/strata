@@ -117,6 +117,12 @@ scheduled run mail carries the count, the data-as-of line and a link to the run,
 stay in Strata, behind its viewers list. Datamodules everyone may read mail the
 first 20 rows as usual.
 
+No mail about a restricted datamodule quotes an error either: run mail, a failed
+run's mail, and the "build failing" and "data is stale" alerts say only that the
+error is in Strata. An error can hold data: a failed gate check's error lists its
+first rows, and the database quotes values it cannot convert. The datamodule's
+page shows the error to its owners.
+
 Mail goes to every recipient on a schedule. A recipient who is not a viewer can
 open the mail but not the run. The schedule's page and the report's Schedules
 table name such recipients. Email addresses cannot be matched to a viewer, so

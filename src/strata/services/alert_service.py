@@ -75,6 +75,8 @@ def _when(iso: str | None) -> str:
 
 def build_failed(dm_id: int, triggered_by: str, error: str) -> None:
     """After a failed build: alert once per run of failures (not for the Build button)."""
+    from strata.services import notify_service
+
     try:
         dm = Datamodule.get_by_id(dm_id)
         if dm is None or dm.failure_alerted_at is not None or triggered_by.startswith("manual:"):
@@ -86,10 +88,15 @@ def build_failed(dm_id: int, triggered_by: str, error: str) -> None:
             else "It has never been built, so its reports have no data."
         )
         body = Markup(
-            "<p>The build of <strong>{path}</strong> failed ({trigger}):</p>"
-            "<p><code>{error}</code></p><p>{serving} Automatic rebuilds retry with back-off; "
+            "<p>The build of <strong>{path}</strong> failed ({trigger}).</p>"
+            "{error}<p>{serving} Automatic rebuilds retry with back-off; "
             "scheduled and manual builds always run. You will get one mail when it recovers.</p>"
-        ).format(path=dm.path, trigger=triggered_by, error=error, serving=serving)
+        ).format(
+            path=dm.path,
+            trigger=triggered_by,
+            error=notify_service.error_html(dm, error),
+            serving=serving,
+        )
         if _mail(dm, f"[STRATA] {dm.path}: build failing", body):
             dm.mark_alerted("failure_alerted_at", _now())
     except Exception:  # noqa: BLE001
@@ -139,6 +146,8 @@ def build_succeeded(dm_id: int, failures: int) -> None:
 def sweep_stale(now: datetime | None = None) -> list[str]:
     """Mail each datamodule whose data is older than its stale_alert_seconds (once
     until its next success). Returns the paths alerted."""
+    from strata.services import notify_service
+
     now = now or datetime.now(UTC)
     alerted: list[str] = []
     for dm in Datamodule.get_all():
@@ -157,7 +166,7 @@ def sweep_stale(now: datetime | None = None) -> list[str]:
             since=_when(live.build_ended_at) if live else "it was created (never built)",
             hours=hours,
             s="" if hours == 1 else "s",
-            error=Markup("<p>Last build error: <code>{}</code></p>").format(dm.last_build_error)
+            error=notify_service.error_html(dm, dm.last_build_error, "Last build error: ")
             if dm.last_build_error
             else "",
         )

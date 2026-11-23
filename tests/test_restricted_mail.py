@@ -86,3 +86,102 @@ def test_recipients_that_cannot_be_checked_say_so(strata: Strata, mail: list[Any
         "the recipients could not be checked against its viewers" in msg
         for _cat, msg in strata.flashes()
     )
+
+
+# ---------------------------------------------------------------------------
+# Error texts: a failed gate check's error lists its first rows, and DuckDB quotes
+# the values it cannot convert, so mail about a restricted datamodule quotes no
+# error either (it says the error is in Strata).
+# ---------------------------------------------------------------------------
+
+NOT_QUOTED = "not quoted here, as who may read test/sales is restricted: open Strata to read it"
+GATE_SAMPLE = "South, B, 250.5"  # the row the gate below finds
+
+
+def _failing_gate(strata: Strata, viewers: str | None, ttl: str = "") -> str:
+    """A datamodule built once, then given a gate check that finds a row: its next
+    automatic build fails with that row in the error."""
+    dm_uuid = strata.new_datamodule(ttl=ttl)
+    strata.build(dm_uuid)
+    assert strata.set_access(dm_uuid, owners=None, viewers=viewers).status_code == 302
+    strata.new_report(
+        dm_uuid,
+        body="SELECT * FROM sales WHERE revenue > 200",
+        name="Big",
+        macro="big",
+        check="error",
+        gate=True,
+    )
+    return dm_uuid
+
+
+def _scheduled_build_and_stale_sweep(strata: Strata, dm_uuid: str) -> None:
+    from tests.test_alerts import _age_live_version, _alerts_form, _scheduled_build, _sweep
+
+    assert _alerts_form(strata, dm_uuid, "", "1").status_code == 302  # stale after 1 hour
+    _scheduled_build(strata, dm_uuid)  # fails on the gate: "build failing"
+    _age_live_version(strata, dm_uuid, 2)
+    assert _sweep(strata) == ["test/sales"]  # "data is stale", with the last build error
+
+
+def test_restricted_alerts_do_not_quote_the_build_error(strata: Strata, mail: list[Any]) -> None:
+    dm_uuid = _failing_gate(strata, viewers="@brs-finance")
+    _scheduled_build_and_stale_sweep(strata, dm_uuid)
+    failing, stale = mail
+    assert failing.subject == "[STRATA] test/sales: build failing"
+    assert stale.subject == "[STRATA] test/sales: data is stale"
+    for sent in (failing, stale):
+        assert GATE_SAMPLE not in sent.html and "found 1 row" not in sent.html
+    assert f"Error: {NOT_QUOTED}." in failing.html
+    assert f"Last build error: {NOT_QUOTED}." in stale.html
+    # Strata itself still shows the error to the datamodule's owners.
+    page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
+    assert GATE_SAMPLE in page
+
+
+def test_open_alerts_quote_the_build_error(strata: Strata, mail: list[Any]) -> None:
+    dm_uuid = _failing_gate(strata, viewers=None)
+    _scheduled_build_and_stale_sweep(strata, dm_uuid)
+    failing, stale = mail
+    assert GATE_SAMPLE in failing.html and GATE_SAMPLE in stale.html
+    assert "not quoted here" not in failing.html + stale.html
+
+
+def test_a_restricted_run_on_old_data_says_the_refresh_failed_without_why(
+    strata: Strata, mail: list[Any]
+) -> None:
+    dm_uuid = _failing_gate(strata, viewers="@brs-finance", ttl="0")  # always stale
+    rpt = strata.new_report(dm_uuid, name="All", macro="all_sales")
+    assert _schedule(strata, rpt, "jsmith").status_code == 302
+    _fire(strata)  # the run refreshes first: the gate fails it, the run uses the old data
+    alert, sent = mail
+    assert alert.subject == "[STRATA] test/sales: build failing"
+    first_line = sent.html.split("</p>")[0]
+    assert f"refresh failed: {NOT_QUOTED}" in first_line
+    assert GATE_SAMPLE not in alert.html + sent.html
+
+
+def test_a_restricted_failed_run_does_not_quote_its_error(strata: Strata, mail: list[Any]) -> None:
+    dm_uuid = strata.new_datamodule()
+    rpt = strata.new_report(
+        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast", macro="as_int"
+    )
+    strata.build(dm_uuid)
+    assert strata.set_access(dm_uuid, owners=None, viewers="@brs-finance").status_code == 302
+    _schedule(strata, rpt, "jsmith")
+    _fire(strata)
+    [sent] = mail
+    assert sent.subject == "[FAILED] Cast — the scheduled run failed"
+    assert "North" not in sent.html and f"Error: {NOT_QUOTED}." in sent.html
+
+
+def test_an_open_failed_run_quotes_its_error(strata: Strata, mail: list[Any]) -> None:
+    dm_uuid = strata.new_datamodule()
+    rpt = strata.new_report(
+        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast", macro="as_int"
+    )
+    strata.build(dm_uuid)
+    _schedule(strata, rpt, "jsmith")
+    _fire(strata)
+    [sent] = mail
+    assert "North" in sent.html and "not quoted here" not in sent.html

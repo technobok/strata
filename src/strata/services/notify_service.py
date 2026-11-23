@@ -12,7 +12,8 @@ addresses. A name that cannot be resolved (unknown, disabled, no email) is
 skipped and noted on the run.
 
 The mail carries the count, "data as of" (with any refresh problem on the same
-line), the first rows inline, and a link to the saved run: no attachment. Mail
+line), the first rows inline, and a link to the saved run: no attachment. Mail about
+a restricted datamodule carries neither rows nor error texts (``error_html``). Mail
 goes through Outbox; tests replace the sender with ``app.config["NOTIFY_SINK"]``
 (a callable taking a ``Mail``).
 """
@@ -49,6 +50,45 @@ class Mail:
 
 class MailNotConfigured(RuntimeError):
     pass
+
+
+# ---------------------------------------------------------------------------
+# What mail may quote
+# ---------------------------------------------------------------------------
+
+
+def quotes_errors(dm: Datamodule) -> bool:
+    """Whether mail about ``dm`` may quote an error text.
+
+    An error can be data: a failed gate check's error lists its first rows, and
+    DuckDB quotes the values it cannot convert. Mail bodies sit in Outbox's shared
+    database, so mail about a restricted datamodule (viewers not everyone) quotes no
+    error, as it carries no rows (user decision 2026-11-23)."""
+    from strata.services import access
+
+    return not access.is_restricted(dm)
+
+
+def _not_quoted(dm: Datamodule) -> str:
+    return f"not quoted here, as who may read {dm.path} is restricted: open Strata to read it"
+
+
+def error_html(dm: Datamodule, error: str, lead: str = "Error: ") -> Markup:
+    """One paragraph giving an error in mail about ``dm``: the text itself, or for a
+    restricted datamodule only that it is in Strata."""
+    if quotes_errors(dm):
+        return Markup("<p>{}<code>{}</code></p>").format(lead, error)
+    return Markup("<p>{}{}.</p>").format(lead, _not_quoted(dm))
+
+
+def data_note_text(dm: Datamodule, note: str) -> str:
+    """A run's ``data_note`` for its mail: a failed refresh keeps its words but, for a
+    restricted datamodule, not its error."""
+    from strata.services.run_service import REFRESH_FAILED
+
+    if note.startswith(REFRESH_FAILED) and not quotes_errors(dm):
+        return f"{REFRESH_FAILED}{_not_quoted(dm)}"
+    return note
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +277,7 @@ def build_run_mail(
     timezone = _schedule_timezone(schedule)
     first = f"Data as of {_local(run.data_as_of, timezone)}"
     if run.data_note:
-        first += f"; {run.data_note}"
+        first += f"; {data_note_text(dm, run.data_note)}"
     from strata.services import access
 
     if access.is_restricted(dm):
@@ -286,10 +326,10 @@ def build_failure_mail(
     html = Markup(
         '<div style="font-family:sans-serif;font-size:14px;">'
         "<p>The scheduled run of <strong>{name}</strong> failed, so its recipients were not "
-        "mailed.</p><p><code>{error}</code></p>{link}{footer}</div>"
+        "mailed.</p>{error}{link}{footer}</div>"
     ).format(
         name=report.name,
-        error=run.error or "unknown error",
+        error=error_html(dm, run.error or "unknown error"),
         link=Markup('<p><a href="{}">Open the run</a></p>').format(link) if link else "",
         footer=_footer(report, dm, schedule, run),
     )

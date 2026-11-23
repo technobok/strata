@@ -128,7 +128,8 @@ the same exception mails again until it is fixed.
 - a subject such as `[WARNING] Negative stock — 7 rows` (a plain report has no
   severity);
 - a first line with how old the data is, and why if it may be out of date, e.g.
-  "Data as of Fri 21 Nov 2026 06:45 NZDT; refresh failed: …";
+  "Data as of Fri 21 Nov 2026 06:45 NZDT; refresh failed: …" (for a restricted
+  datamodule, without the error);
 - the first 20 rows as a table, unless the datamodule is restricted (its viewers
   are not everyone): then only the count, and the rows stay in Strata (see
   [Access](access.md#mail-from-a-restricted-datamodule));
