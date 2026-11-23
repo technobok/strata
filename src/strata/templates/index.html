@@ -1,24 +1,42 @@
 {% extends "base.html" %}
 
-{% block title %}Strata - Reporting System{% endblock %}
+{% block title %}Reports — Strata{% endblock %}
 
 {% block content %}
+{% if g.user %}
+<header style="display:flex; justify-content:space-between; align-items:center;">
+    <hgroup>
+        <h1>Reports</h1>
+        <p>Every report you can open, by datamodule</p>
+    </hgroup>
+    {% if is_writer() %}<a href="{{ url_for('datamodules.new') }}" role="button" class="outline">New Datamodule</a>{% endif %}
+</header>
+
+{% for dm, reports, checks in groups %}
+<section class="report-group">
+    <h2>{{ dm.path }}
+        {% if dm.access_lock %}<span class="severity severity-error" title="It serves nothing until its owners fix who may read it">locked</span>{% endif %}
+        {% if can_own(dm) %}<small><a href="{{ url_for('datamodules.edit', uuid=dm.uuid) }}">datamodule</a></small>{% endif %}
+    </h2>
+    {% if dm.description %}<p>{{ dm.description }}</p>{% endif %}
+    <ul>
+        {% for r in reports %}
+        <li>
+            <a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a>
+            {% set c = checks.get(r.id) %}{% if c %}<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>{% endif %}
+            {% if r.description %}<small> — {{ r.description }}</small>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% else %}
+<p>There are no reports you can open yet. A datamodule's owners can add you to its viewers.</p>
+{% endfor %}
+{% else %}
 <hgroup>
     <h1>Strata</h1>
     <p>Reporting system</p>
 </hgroup>
-
-{% if g.user %}
-<div class="grid">
-    <article>
-        <header><strong>Datamodules</strong></header>
-        <p>Build versioned DuckDB databases from a script and serve reports over them.</p>
-        <footer>
-            <a href="{{ url_for('datamodules.index') }}" role="button">View Datamodules</a>
-        </footer>
-    </article>
-</div>
-{% else %}
-<p>Please <a href="{{ url_for('auth.login') }}">log in</a> to access datamodules.</p>
+<p>Please <a href="{{ url_for('auth.login') }}">log in</a> to see your reports.</p>
 {% endif %}
 {% endblock %}

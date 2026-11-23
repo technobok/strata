@@ -175,12 +175,19 @@ def _build_app(app: Flask) -> Flask:
     from strata.services import access
 
     app.jinja_env.globals.update(
-        can_own=access.can_own, can_view=access.can_view, is_writer=access.is_writer
+        can_own=access.can_own,
+        can_view=access.can_view,
+        is_writer=access.is_writer,
+        shows_datamodules=access.shows_datamodules,
     )
 
     @app.route("/")
     def index() -> str:
-        return render_template("index.html")
+        """Home: every report the signed-in user can open (the viewers' way in)."""
+        from flask import g
+
+        groups = access.readable_reports() if g.get("user") is not None else []
+        return render_template("index.html", groups=groups)
 
     return app
 

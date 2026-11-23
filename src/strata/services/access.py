@@ -144,6 +144,32 @@ def can_view(dm: Datamodule) -> bool:
     return can_own(dm) or matches(g.get("user"), viewers_of(dm))
 
 
+def shows_datamodules() -> bool:
+    """Should the nav offer the datamodules list: writers and admins, and anyone who
+    owns a datamodule (an owner need not be a writer). Read once per request."""
+    if "strata_shows_datamodules" not in g:
+        g.strata_shows_datamodules = g.get("user") is not None and (
+            is_writer() or any(can_own(dm) for dm in Datamodule.get_all())
+        )
+    return bool(g.strata_shows_datamodules)
+
+
+def readable_reports() -> list[tuple[Datamodule, list[Any], dict[int, Any]]]:
+    """(datamodule, its reports, report_id -> check) for each datamodule the user can
+    view that has reports, by path."""
+    from strata.models.report import Report
+    from strata.models.report_check import ReportCheck
+
+    groups: list[tuple[Datamodule, list[Any], dict[int, Any]]] = []
+    for dm in Datamodule.get_all():
+        if not can_view(dm):
+            continue
+        reports = Report.get_for_datamodule(dm.id)
+        if reports:
+            groups.append((dm, reports, ReportCheck.for_datamodule(dm.id)))
+    return groups
+
+
 def may_use(connection: Connection) -> bool:
     """May the signed-in user bind ``connection`` to a datamodule they own?"""
     return is_admin() or matches(g.get("user"), connection.users or [])

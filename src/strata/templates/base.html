@@ -30,9 +30,9 @@
             </button>
             <ul id="nav-menu" class="nav-menu">
                 {% if g.user %}
-                <li><a href="{{ url_for('datamodules.index') }}">Datamodules</a></li>
+                <li><a href="{{ url_for('index') }}">Reports</a></li>
+                {% if shows_datamodules() %}<li><a href="{{ url_for('datamodules.index') }}">Datamodules</a></li>{% endif %}
                 <li><a href="{{ url_for('checks.index') }}">Checks</a></li>
-                <li><a href="{{ url_for('tags.index') }}">Tags</a></li>
                 {% if g.strata_is_admin %}<li><a href="{{ url_for('admin.index') }}">Admin</a></li>{% endif %}
                 <li><a href="{{ url_for('help.index') }}">Help</a></li>
                 <li><a href="{{ whoami_url() }}" title="Your account">{{ g.user.username }}</a></li>

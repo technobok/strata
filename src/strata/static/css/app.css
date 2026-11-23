@@ -768,6 +768,20 @@ tr.check-flagged td {
 .health-stale { color: #9a6700; }
 .health-never-built { color: #888; }
 
+/* Reports page (home): one section per datamodule */
+.report-group h2 {
+    font-size: 1.15rem;
+    margin-bottom: 0.25rem;
+}
+.report-group h2 small {
+    font-size: 0.75rem;
+    font-weight: normal;
+    margin-left: 0.5rem;
+}
+.report-group ul {
+    margin-bottom: 1.25rem;
+}
+
 /* ------------------------------------------------------------ narrow screens */
 /* The nav pattern shared with the sibling apps (outbox, gatekeeper, ...). The
    brand never gives way: the menu does, behind a hamburger, below the width
