@@ -55,13 +55,17 @@ def _excel_key(strata: Strata, report: str) -> ApiKey | None:
 def test_opening_the_box_makes_the_reports_key_once(strata: Strata) -> None:
     _dm, report, _other = _setup(strata)
     assert _excel_key(strata, report) is None  # nobody opened the box yet
-    first = _links(_box(strata, report, headers=VIEWER))
+    box = _box(strata, report, headers=VIEWER)
+    first = _links(box)
     assert set(first) == {
-        "Parquet (keeps column types)",
-        "CSV",
         "Excel workbook (.xlsx)",
+        "CSV",
         "JSON",
+        "Parquet (for Power BI and other tools; Excel cannot open it from a link)",
     }
+    # xlsx is the default: Excel's From Web opens it as a table, and not Parquet
+    shown = box.split('<code class="excel-url', 1)[1].split("</code>", 1)[0]
+    assert f"/r/{report}.xlsx?key=" in shown
     again = _links(_box(strata, report))  # someone else, later: the same key
     assert again == first
 
@@ -207,3 +211,11 @@ def test_a_racing_second_open_gets_the_same_key(
     with strata.app.app_context():
         assert ApiKey.ensure_excel_link(first.report_id or 0, "someone").id == first.id
         assert len([k for k in ApiKey.get_all() if k.excel_link]) == 1
+
+
+def test_an_admin_keys_links_are_xlsx(strata: Strata) -> None:
+    """The datamodule page's links for a new key open in Excel's From Web (not Parquet)."""
+    dm_uuid, report, _other = _setup(strata)
+    token = strata.new_api_key(dm_uuid)
+    page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
+    assert f"/r/{report}.xlsx?key={token}" in page and ".parquet?key=" not in page

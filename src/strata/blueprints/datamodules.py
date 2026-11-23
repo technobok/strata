@@ -359,7 +359,7 @@ def edit(uuid: str) -> str | Response:
                     url_for(
                         "reports.serve",
                         report_uuid=r.uuid,
-                        ext="parquet",
+                        ext="xlsx",
                         key=reveal["token"],
                         _external=True,
                     ),

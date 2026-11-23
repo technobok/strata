@@ -307,11 +307,14 @@ def _serve_url(report: Report, ext: str, pairs: list[tuple[str, str]]) -> str:
 # "Use in Excel": the report's Excel link for the current view
 # ---------------------------------------------------------------------------
 
+# The first is the box's default. Excel's From Web opens xlsx, CSV and JSON as a
+# table, but not Parquet: Power Query reads Parquet only from local files and Azure
+# storage (tried 2026-11-23: a .parquet link loads as an unopened file).
 EXCEL_FORMATS = (
-    ("parquet", "Parquet (keeps column types)"),
-    ("csv", "CSV"),
     ("xlsx", "Excel workbook (.xlsx)"),
+    ("csv", "CSV"),
     ("json", "JSON"),
+    ("parquet", "Parquet (for Power BI and other tools; Excel cannot open it from a link)"),
 )
 
 

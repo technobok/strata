@@ -53,21 +53,24 @@ with `company=BRS` fixed always gets BRS rows, whatever the URL says.
 
 1. Copy the report's URL with the key: from the report's **Use in Excel** box, or from
    an admin key's reveal box. It looks like
-   `https://<server>/strata/r/<report id>.parquet?key=<token>`.
+   `https://<server>/strata/r/<report id>.xlsx?key=<token>`.
 2. In Excel: **Data → Get Data → From Other Sources → From Web**, and paste the URL.
 3. When Excel asks how to connect, choose **Anonymous** (the key is the credential).
    Excel remembers that choice per person, so a colleague refreshing your workbook for
    the first time may be asked too.
 4. Load the table. **Refresh** fetches the current data again.
 
-Parquet is the default because it keeps column types (dates stay dates). Swap the
-extension for `.csv`, `.json` or `.xlsx` if needed.
+Use **`.xlsx`** (the box's default): From Web opens it as a table, with dates and
+numbers already typed. `.csv` and `.json` open too, but Excel guesses the column types.
+Excel cannot use a **`.parquet`** link: its Parquet support reads only local files and
+Azure storage, so the link loads as an unopened file. Parquet is for Power BI and
+other tools (Python, DuckDB).
 
 Arguments, filters, sort and search all work with a key. Add them to the URL as on
 any report (see [Report URLs](urls.md)):
 
 ```
-…/r/<report id>.parquet?key=<token>&from_date=2026-01-01&region__in=North,South
+…/r/<report id>.xlsx?key=<token>&from_date=2026-01-01&region__in=North,South
 ```
 
 Excel waits about 100 seconds for a response. When a report's data is stale, Strata
