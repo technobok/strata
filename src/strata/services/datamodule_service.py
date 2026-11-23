@@ -43,7 +43,7 @@ from strata.services.connection_service import attach_into
 log = logging.getLogger(__name__)
 
 # source('name') references in build scripts -> the on-disk path of an uploaded
-# file. Best-effort raw-text match (like template_service.find_refs).
+# file. Best-effort raw-text match.
 _SOURCE_RE = re.compile(r"source\(\s*(['\"])(.*?)\1\s*\)")
 
 # ---------------------------------------------------------------------------
@@ -401,6 +401,31 @@ def _resolve_connections(dm: Datamodule) -> list[tuple[str, Connection]]:
     return attachments
 
 
+# DuckDB's words when a script's odbc_query() has no usable connection handle.
+_ODBC_NULL_HANDLE = "ODBC connection must be not NULL"
+_ODBC_NOT_LOADED = 'name "odbc_query" is not in the catalog'
+
+
+def _connection_hint(error: str, attachments: list[tuple[str, Connection]]) -> str | None:
+    """What to add to a build error DuckDB words poorly: an odbc_query() whose
+    getvariable() names no bound ODBC connection, or odbc_query() in a datamodule
+    with no ODBC connection bound at all (DuckDB then suggests loading the
+    extension, which the sandbox does not allow)."""
+    if _ODBC_NULL_HANDLE not in error and _ODBC_NOT_LOADED not in error:
+        return None
+    names = [name for name, crow in attachments if crow.driver == "odbc"]
+    if not names:
+        return (
+            "This datamodule has no ODBC connection bound. Bind one under Connections on "
+            "its page; the script then reads it as odbc_query(getvariable('<local name>'), '...')."
+        )
+    handles = ", ".join(f"getvariable('{name}')" for name in names)
+    return (
+        "getvariable() found no ODBC connection under that name. This datamodule's ODBC "
+        f"connections: {handles}. A connection is read by the local name it is bound under."
+    )
+
+
 def build_datamodule(
     dm: Datamodule,
     triggered_by: str,
@@ -489,6 +514,9 @@ def _build_leased(
                     f"build exceeded its time limit of {deadline.seconds}s "
                     "(the build.timeout_seconds setting)"
                 ) from exc
+            hint = _connection_hint(str(exc), conn_attachments)
+            if hint:
+                raise RuntimeError(f"{exc}\n{hint}") from exc
             raise
         finally:
             deadline.cancel()

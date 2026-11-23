@@ -55,7 +55,9 @@ upstream script.
 
 An admin registers external databases under **Admin → Connections**. A datamodule
 **binds** a connection under a local name (the **Connections** section of its page),
-and the build can then read from it:
+and its build script then reads it **by that name**; the page shows how, next to each
+binding. A connection that is not bound to the datamodule does not exist for its
+build, and reports never read connections (they read the built data):
 
 - **SQLite and PostgreSQL** are attached as a database named after the local name,
   so tables are `name.schema.table`:
@@ -64,13 +66,14 @@ and the build can then read from it:
   CREATE TABLE orders AS SELECT * FROM warehouse.public.orders;
   ```
 
-- **ODBC** (SQL Server through FreeTDS) gives the script a connection handle in the
-  variable `conn_<name>`. Pass the remote query as text; it runs on the server, and
-  only its result comes back:
+- **ODBC** (SQL Server through FreeTDS) gives the script a connection handle in a
+  variable named after the local name: bound as `navi`, it is `getvariable('navi')`.
+  Pass the remote query as text; it runs on the server, and only its result comes
+  back:
 
   ```sql
   CREATE TABLE orders AS
-  SELECT * FROM odbc_query(getvariable('conn_navi'),
+  SELECT * FROM odbc_query(getvariable('navi'),
                            'SELECT OrderID, CustID, Total FROM dbo.Orders');
   ```
 
@@ -89,7 +92,7 @@ CREATE TABLE stock AS
 {% for c in rows('companies', "SELECT shortname, companynamesql FROM companies ORDER BY shortname") %}
 {% if not loop.first %}UNION ALL{% endif %}
 SELECT {{ c.shortname | sqlstr }} AS company, *
-FROM odbc_query(getvariable('conn_navi'),
+FROM odbc_query(getvariable('navi'),
                 {{ ("SELECT ItemNo, Qty FROM " ~ c.companynamesql ~ ".dbo.Stock") | sqlstr }})
 {% endfor %}
 ```

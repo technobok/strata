@@ -71,15 +71,13 @@ class DriverSpec:
     label: str
     param_schema: list[ParamField]
     extensions: list[str]
-    # Per-driver "make this connection usable under <alias>" function.
-    # For ATTACH-able drivers (sqlite, postgres) this runs an ATTACH and the
-    # report SQL queries `<alias>.<schema>.<table>`. For ODBC the function
-    # creates a session variable `conn_<alias>` holding the odbc_connect()
-    # handle; the report SQL queries via the q('alias', '...') Jinja helper.
+    # Per-driver "make this connection usable under <alias>" function: the
+    # build script reads every connection by its local name. ATTACH-able drivers
+    # (sqlite, postgres) attach a database named <alias>; ODBC sets a session
+    # variable <alias> holding the odbc_connect() handle.
     attach: Callable[[duckdb.DuckDBPyConnection, str, dict], None]
-    # True when the driver requires the q() helper instead of a plain
-    # `<alias>.table` reference. Used for documentation / future UI hints.
-    needs_q_helper: bool = False
+    # How a build script reads it, shown beside each binding ({name} = alias).
+    usage: str
     probe_sql: str = "SELECT 1"
 
 
@@ -101,16 +99,16 @@ def _postgres_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) 
 
 
 def _odbc_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> None:
-    """Create a SET VARIABLE conn_<alias> holding the odbc_connect() handle.
+    """Create a SET VARIABLE <alias> holding the odbc_connect() handle.
 
     DuckDB's core odbc_scanner extension is a query-function extension, not a
     storage extension — there's no `ATTACH ... TYPE odbc_scanner`. Instead,
     you connect once and pass the handle to odbc_query() per SELECT. We stash
-    the handle in a session variable so build scripts can reach it via
-    `odbc_query(getvariable('conn_<alias>'), '...')`.
+    the handle in a session variable named after the local name, so build
+    scripts reach it as `odbc_query(getvariable('<alias>'), '...')`.
     """
     cs = str(params["connection_string"]).replace("'", "''")
-    conn.execute(f"SET VARIABLE conn_{alias} = odbc_connect('{cs}')")
+    conn.execute(f"SET VARIABLE {alias} = odbc_connect('{cs}')")
 
 
 DRIVERS: dict[str, DriverSpec] = {
@@ -125,6 +123,7 @@ DRIVERS: dict[str, DriverSpec] = {
         ],
         extensions=[],
         attach=_sqlite_attach,
+        usage="{name}.<table>",
     ),
     "postgres": DriverSpec(
         label="PostgreSQL",
@@ -137,6 +136,7 @@ DRIVERS: dict[str, DriverSpec] = {
         ],
         extensions=["postgres"],
         attach=_postgres_attach,
+        usage="{name}.<schema>.<table>",
     ),
     "odbc": DriverSpec(
         label="ODBC (any driver — typically FreeTDS for SQL Server)",
@@ -156,7 +156,7 @@ DRIVERS: dict[str, DriverSpec] = {
         # community/odbc_scanner which 404s.
         extensions=["odbc_scanner"],
         attach=_odbc_attach,
-        needs_q_helper=True,
+        usage="odbc_query(getvariable('{name}'), '<SQL Server query>')",
     ),
 }
 
@@ -176,12 +176,18 @@ def _install_load(conn: duckdb.DuckDBPyConnection, ext: str) -> None:
     conn.execute(f"LOAD {name}")
 
 
+def usage(driver: str, name: str) -> str:
+    """How a build script reads a connection bound under ``name``."""
+    spec = DRIVERS.get(driver)
+    return spec.usage.format(name=name) if spec else name
+
+
 def attach_into(conn: duckdb.DuckDBPyConnection, alias: str, driver: str, params: dict) -> None:
     """Load required extensions and bind the source under `alias` on conn.
 
-    For ATTACH-able drivers (sqlite, postgres) the alias is a DuckDB schema.
-    For ODBC the alias is the suffix of a session variable (`conn_<alias>`)
-    holding the odbc_connect() handle.
+    For ATTACH-able drivers (sqlite, postgres) the alias is a DuckDB database.
+    For ODBC it is the name of a session variable holding the odbc_connect()
+    handle.
     """
     spec = DRIVERS[driver]
     for ext in spec.extensions:

@@ -237,11 +237,11 @@ For SQL-native logins (no domain prefix), drop the NTLM fields:
 Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
-The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Bind the connection to a datamodule with a local name, then query it in the build script:
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Bind the connection to a datamodule with a local name (here `navi`), then query it in the build script; the local name is the connection handle:
 
 ```sql
 CREATE TABLE orders AS
-SELECT * FROM odbc_query(getvariable('conn_navi'),
+SELECT * FROM odbc_query(getvariable('navi'),
                          'SELECT OrderID, CustID, Total FROM dbo.Orders');
 ```
 

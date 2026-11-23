@@ -38,7 +38,7 @@ from strata.models.report_check import SEVERITIES, ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.source_file import SourceFile
 from strata.models.worker_process import WorkerProcess
-from strata.services import build_queue, datamodule_service, duck, run_service
+from strata.services import build_queue, connection_service, datamodule_service, duck, run_service
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
@@ -298,6 +298,12 @@ def edit(uuid: str) -> str | Response:
     dep_names = {d.depends_on_id: Datamodule.get_by_id(d.depends_on_id) for d in deps}
     conns = DatamoduleConnection.get_for_datamodule(dm.id)
     conn_names = {c.connection_id: Connection.get_by_id(c.connection_id) for c in conns}
+    # How the build script reads each binding: by its local name, per driver.
+    conn_usage = {
+        c.id: connection_service.usage(crow.driver, c.local_name)
+        for c in conns
+        if (crow := conn_names[c.connection_id]) is not None
+    }
     reports = Report.get_for_datamodule(dm.id)
 
     # One-time API-token reveal: create/rotate stashed the plaintext in the
@@ -345,6 +351,7 @@ def edit(uuid: str) -> str | Response:
         dep_names=dep_names,
         connections=conns,
         conn_names=conn_names,
+        conn_usage=conn_usage,
         all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id],
         all_connections=Connection.get_all(),
         jobs=jobs,

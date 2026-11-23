@@ -8,7 +8,7 @@ can repeat a statement per company:
     {% for c in rows('companies', "SELECT code, db FROM companies ORDER BY code") %}
     {% if not loop.first %}UNION ALL{% endif %}
     SELECT {{ c.code | sqlstr }} AS company, *
-    FROM odbc_query(getvariable('conn_navi'), {{ ("SELECT * FROM " ~ c.db ~ ".dbo.Stock") | sqlstr }})
+    FROM odbc_query(getvariable('navi'), {{ ("SELECT * FROM " ~ c.db ~ ".dbo.Stock") | sqlstr }})
     {% endfor %}
 
 - ``rows(local_name, sql)``: the rows (as dicts) of one SELECT on a

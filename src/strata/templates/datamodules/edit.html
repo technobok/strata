@@ -154,15 +154,16 @@
 
 <hr>
 <h2>Connections{{ help_link('build-scripts', 'connections') }}</h2>
-<p><small>Bind an external connection; query it as <code>local_name.table</code> (SQLite/Postgres).</small></p>
+<p><small>Bind an external connection under a local name: the build script reads it by that name, as shown.</small></p>
 {% if connections %}
 <table>
-    <thead><tr><th>Local name</th><th>Connection</th><th></th></tr></thead>
+    <thead><tr><th>Local name</th><th>Connection</th><th>In the build script</th><th></th></tr></thead>
     <tbody>
         {% for c in connections %}
         <tr>
             <td><code>{{ c.local_name }}</code></td>
             <td>{{ conn_names[c.connection_id].name if conn_names[c.connection_id] else '(deleted)' }}</td>
+            <td>{% if c.id in conn_usage %}<code>{{ conn_usage[c.id] }}</code>{% endif %}</td>
             <td>
                 <form method="post" action="{{ url_for('datamodules.connection_delete', uuid=datamodule.uuid, link_id=c.id) }}">
                     <button type="submit" class="outline secondary small">Remove</button>
