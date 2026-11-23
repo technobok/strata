@@ -30,6 +30,7 @@ from typing import Any
 from flask import current_app, g
 
 from strata.config import live_list, live_str
+from strata.models.connection import Connection
 from strata.models.datamodule import Datamodule
 
 EVERYONE = "*"
@@ -143,6 +144,11 @@ def can_view(dm: Datamodule) -> bool:
     return can_own(dm) or matches(g.get("user"), viewers_of(dm))
 
 
+def may_use(connection: Connection) -> bool:
+    """May the signed-in user bind ``connection`` to a datamodule they own?"""
+    return is_admin() or matches(g.get("user"), connection.users or [])
+
+
 def datamodule_for(view_args: dict[str, Any]) -> Datamodule | None:
     """The datamodule a URL is about: by its own uuid, or a report's, a schedule's or
     an API key's. None when the thing named does not exist."""
@@ -249,3 +255,47 @@ class Directory:
             if not found:
                 unknown.append(principal)
         return unknown
+
+
+# ---------------------------------------------------------------------------
+# A datamodule's inputs: its owners must be allowed every one
+# ---------------------------------------------------------------------------
+
+
+class AccessError(RuntimeError):
+    """A datamodule's owners are not allowed one of its inputs (or that could not be
+    checked): it must not build."""
+
+
+def _names(people: list[str]) -> str:
+    return ", ".join(describe(p) for p in people)
+
+
+def input_problems(dm: Datamodule, owners: list[str], directory: Directory) -> list[str]:
+    """Why ``owners`` may not own ``dm``'s inputs, one line each: an owner who may not
+    use a bound connection. Raises DirectoryUnavailable when that cannot be told."""
+    from strata.models.datamodule_connection import DatamoduleConnection
+
+    problems: list[str] = []
+    for binding in DatamoduleConnection.get_for_datamodule(dm.id):
+        crow = Connection.get_by_id(binding.connection_id)
+        if crow is None:
+            continue  # the build reports a deleted connection itself
+        missing = directory.missing(owners, crow.users or [])
+        if missing:
+            problems.append(
+                f"{_names(missing)} may not use the connection '{crow.name}' "
+                f"(bound as {binding.local_name})"
+            )
+    return problems
+
+
+def check_build(dm: Datamodule) -> None:
+    """Raise AccessError unless every owner of ``dm`` may use each of its inputs. Run at
+    every build: group membership changes in Gatekeeper, out of Strata's sight."""
+    try:
+        problems = input_problems(dm, owners_of(dm), Directory())
+    except DirectoryUnavailable as exc:
+        raise AccessError(f"access could not be checked: {exc}") from exc
+    if problems:
+        raise AccessError("; ".join(problems))

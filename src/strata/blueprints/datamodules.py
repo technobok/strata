@@ -285,7 +285,7 @@ def edit(uuid: str) -> str | Response:
         alerts, alerts_error = _parse_alerts()
         lists, access_error = _parse_access()
         if lists is not None and access_error is None:
-            access_error = _stays_owner(lists[0])
+            access_error = _stays_owner(lists[0]) or _inputs_allow(dm, lists[0])
 
         existing = Datamodule.get_by_path(path)
         if not path:
@@ -384,7 +384,7 @@ def edit(uuid: str) -> str | Response:
         conn_usage=conn_usage,
         # Only what the user may read: a picker must not show (say) payroll's path.
         all_datamodules=[d for d in Datamodule.get_all() if d.id != dm.id and access.can_view(d)],
-        all_connections=Connection.get_all(),
+        all_connections=[c for c in Connection.get_all() if access.may_use(c)],
         jobs=jobs,
         run_uuids=ReportRun.uuids_for([j.run_id for j in jobs if j.run_id is not None]),
         schedules=_schedule_rows(dm),
@@ -466,6 +466,17 @@ def _stays_owner(owners: list[str] | None) -> str | None:
     return (
         "Access: you would no longer be an owner. Keep yourself, or a group you are in, in Owners."
     )
+
+
+def _inputs_allow(dm: Datamodule, owners: list[str] | None) -> str | None:
+    """Why these owners may not own ``dm``: one of them may not use a bound connection."""
+    try:
+        problems = access.input_problems(
+            dm, owners if owners is not None else access.default_owners(), access.Directory()
+        )
+    except access.DirectoryUnavailable as exc:
+        return f"Access: the owners could not be checked: {exc}."
+    return f"Access: {'; '.join(problems)}." if problems else None
 
 
 def _access_context(dm: Datamodule | None) -> dict[str, object]:
@@ -942,10 +953,16 @@ def connection_add(uuid: str) -> Response:
     local_name = request.form.get("local_name", "").strip()
     crow = Connection.get_by_id(connection_id) if connection_id else None
 
+    problems = _owners_may_use(dm, crow) if crow is not None and access.may_use(crow) else []
     if not local_name or not ALIAS_RE.match(local_name):
         flash("Local name must be a letter/underscore identifier.", "error")
-    elif crow is None:
-        flash("Choose a connection.", "error")
+    elif crow is None or not access.may_use(crow):
+        flash("Choose a connection.", "error")  # the same words: nothing is confirmed
+    elif problems:
+        flash(
+            f'Not bound: {problems[0]}. An admin can add them to the connection\'s "May use" list.',
+            "error",
+        )
     else:
         try:
             DatamoduleConnection.create(dm.id, crow.id, local_name)
@@ -953,6 +970,18 @@ def connection_add(uuid: str) -> Response:
         except Exception as exc:  # UNIQUE(datamodule_id, local_name)
             flash(f"Could not bind connection: {exc}", "error")
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+def _owners_may_use(dm: Datamodule, crow: Connection) -> list[str]:
+    """Why ``dm``'s owners may not use ``crow`` (one line), or []."""
+    try:
+        missing = access.Directory().missing(access.owners_of(dm), crow.users or [])
+    except access.DirectoryUnavailable as exc:
+        return [f"access could not be checked: {exc}"]
+    if not missing:
+        return []
+    names = ", ".join(access.describe(p) for p in missing)
+    return [f"{names} (owners of this datamodule) may not use the connection '{crow.name}'"]
 
 
 @bp.route("/<uuid>/connections/<int:link_id>/delete", methods=["POST"])

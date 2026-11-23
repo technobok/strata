@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid as uuid_lib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -23,10 +24,12 @@ class Connection:
     created_at: str
     modified_at: str
     params: dict = field(default_factory=dict)
+    # Who may use it in a build (AC3): principals; None = the Strata admins only.
+    users: list[str] | None = None
 
     _COLUMNS = (
         "id, uuid, name, driver, params_encrypted, description, "
-        "created_by, modified_by, created_at, modified_at"
+        "created_by, modified_by, created_at, modified_at, users_json"
     )
 
     @staticmethod
@@ -42,6 +45,7 @@ class Connection:
             modified_by=str(row[7]),
             created_at=str(row[8]),
             modified_at=str(row[9]),
+            users=json.loads(row[10]) if row[10] is not None else None,
         )
 
     @staticmethod
@@ -81,6 +85,7 @@ class Connection:
         params: dict,
         created_by: str,
         description: str = "",
+        users: list[str] | None = None,
     ) -> Connection:
         now = datetime.now(UTC).isoformat()
         conn_uuid = str(uuid_lib.uuid4())
@@ -89,8 +94,8 @@ class Connection:
         with transaction() as cursor:
             cursor.execute(
                 "INSERT INTO connection (uuid, name, driver, params_encrypted, description, "
-                "created_by, modified_by, created_at, modified_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "created_by, modified_by, created_at, modified_at, users_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conn_uuid,
                     name.strip(),
@@ -101,6 +106,7 @@ class Connection:
                     created_by,
                     now,
                     now,
+                    json.dumps(users) if users else None,
                 ),
             )
             row = cursor.execute("SELECT last_insert_rowid()").fetchone()
@@ -117,7 +123,10 @@ class Connection:
             modified_by=created_by,
             created_at=now,
             modified_at=now,
+            users=users or None,
         )
+
+    _UNSET: object = object()
 
     def update(
         self,
@@ -126,7 +135,9 @@ class Connection:
         driver: str | None = None,
         params: dict | None = None,
         description: str | None = None,
+        users: object = _UNSET,
     ) -> bool:
+        """``users``: a list (empty = the admins only), or leave it out to keep it."""
         updates: list[str] = []
         sql_params: list[Any] = []
 
@@ -142,6 +153,10 @@ class Connection:
         if description is not None:
             updates.append("description = ?")
             sql_params.append(description.strip())
+        if users is not Connection._UNSET:
+            assert users is None or isinstance(users, list)
+            updates.append("users_json = ?")
+            sql_params.append(json.dumps(users) if users else None)
 
         if not updates:
             return False
@@ -167,6 +182,8 @@ class Connection:
             self.params = params
         if description is not None:
             self.description = description.strip()
+        if users is not Connection._UNSET:
+            self.users = list(users) if users else None  # type: ignore[call-overload]
         self.modified_by = modified_by
         self.modified_at = now
         return True

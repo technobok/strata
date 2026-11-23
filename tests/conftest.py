@@ -289,10 +289,17 @@ class FakeGatekeeper:
 
 
 @pytest.fixture
-def mail(strata: Strata) -> list[Any]:
+def gatekeeper(strata: Strata) -> FakeGatekeeper:
+    """A Gatekeeper that knows FakeGatekeeper's users and groups (add more to them)."""
+    gk = FakeGatekeeper()
+    strata.app.config["GATEKEEPER_CLIENT"] = gk
+    return gk
+
+
+@pytest.fixture
+def mail(strata: Strata, gatekeeper: FakeGatekeeper) -> list[Any]:
     """Mail the app sends, instead of Outbox; and a Gatekeeper to resolve names."""
     sent: list[Any] = []
     strata.app.config["NOTIFY_SINK"] = sent.append
-    strata.app.config["GATEKEEPER_CLIENT"] = FakeGatekeeper()
     strata.set_config({"server.public_url": PUBLIC_URL})
     return sent

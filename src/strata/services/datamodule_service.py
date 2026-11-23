@@ -37,7 +37,7 @@ from strata.models.datamodule_connection import DatamoduleConnection
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.dependency import Dependency
 from strata.models.source_file import SourceFile
-from strata.services import duck, script_template
+from strata.services import access, duck, script_template
 from strata.services.connection_service import attach_into
 
 log = logging.getLogger(__name__)
@@ -497,6 +497,8 @@ def _build_leased(
     start = time.monotonic()
 
     try:
+        # Its owners must be allowed every input, before any is read or rebuilt.
+        access.check_build(dm)
         # Resolve build inputs (may rebuild dependencies) before opening the file.
         dep_attachments = _resolve_dependencies(dm, chain, run)
         conn_attachments = _resolve_connections(dm)

@@ -20,6 +20,7 @@
             <th>Name</th>
             <th>Driver</th>
             <th>Description</th>
+            <th>May use</th>
             <th>Modified</th>
             <th>Actions</th>
         </tr>
@@ -30,6 +31,7 @@
             <td><strong>{{ c.name }}</strong></td>
             <td>{{ drivers[c.driver].label if c.driver in drivers else c.driver }}</td>
             <td>{{ c.description }}</td>
+            <td><small>{{ (c.users or ['admins only']) | join(', ') }}</small></td>
             <td><small>{{ c.modified_at | localdate }}</small></td>
             <td>
                 <form method="post" action="{{ url_for('connections.test', uuid=c.uuid) }}" style="display:inline">

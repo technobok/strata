@@ -21,8 +21,16 @@ class _Recorder:
         self.sql.append(sql)
 
 
-def _new_connection(strata: Strata, name: str, driver: str, **params: str) -> None:
-    data = {"name": name, "driver": driver, **{f"param_{k}": v for k, v in params.items()}}
+def _new_connection(
+    strata: Strata, name: str, driver: str, may_use: str = "@strata-writers", **params: str
+) -> None:
+    """A connection the writers may use (the owners of a datamodule on the defaults)."""
+    data = {
+        "name": name,
+        "driver": driver,
+        "may_use": may_use,
+        **{f"param_{k}": v for k, v in params.items()},
+    }
     resp = strata.client.post("/admin/connections/new", data=data)
     assert resp.status_code == 302, strata.flashes()
 

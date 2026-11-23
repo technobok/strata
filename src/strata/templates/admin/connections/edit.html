@@ -24,6 +24,10 @@
     <label for="description">Description</label>
     <textarea id="description" name="description" rows="2">{{ form_values.get('description') or (connection.description if connection else '') }}</textarea>
 
+    <label for="may_use">May use: one per line, a username, an <code>@group</code>, or <code>*</code> for everyone signed in. They may bind it to a datamodule they own; every owner of a datamodule bound to it must be listed. Blank = the Strata admins only.</label>
+    <textarea id="may_use" name="may_use" rows="2" placeholder="(the Strata admins only)">{{ form_values.get('may_use') or ((connection.users or []) | join('\n') if connection else '') }}</textarea>
+    <p><small>This decides who may <em>author</em> against the connection in Strata. What it can read is decided by its own database login: give sensitive data (payroll) its own connection with its own login.</small></p>
+
     <fieldset>
         <legend>Driver parameters</legend>
         {% for field in drivers[selected_driver].param_schema %}

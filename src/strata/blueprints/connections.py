@@ -14,6 +14,8 @@ from werkzeug.wrappers import Response
 
 from strata.blueprints.auth import admin_required
 from strata.models.connection import Connection
+from strata.models.datamodule import Datamodule
+from strata.services import access
 from strata.services.connection_service import DRIVERS, test_connection
 from strata.services.template_service import ALIAS_RE
 
@@ -34,6 +36,50 @@ def _form_params(driver: str, existing: dict | None = None) -> dict:
                 raw = field.default
         params[field.name] = raw
     return params
+
+
+def _parse_users() -> tuple[list[str], str | None]:
+    """The "May use" list (empty = the admins only), or why it is refused."""
+    users = access.principal_lines(request.form.get("may_use", ""))
+    problem = access.check_principals(users)
+    if problem:
+        return [], f"May use: {problem}"
+    try:
+        unknown = access.Directory().unknown(users)
+    except access.DirectoryUnavailable as exc:
+        return [], f"May use: the names could not be checked: {exc}."
+    if unknown:
+        return [], f"May use: Gatekeeper has no user or group {', '.join(unknown)}."
+    return users, None
+
+
+def _warn_bound(connection: Connection) -> None:
+    """Say which datamodules bound to ``connection`` have owners not on its list: their
+    next build fails (the list is the admins' to set; this is not a refusal)."""
+    from strata.db import get_db
+
+    rows = get_db().execute(
+        "SELECT DISTINCT datamodule_id FROM datamodule_connection WHERE connection_id = ?",
+        (connection.id,),
+    )
+    affected: list[str] = []
+    for (dm_id,) in rows.fetchall():
+        assert isinstance(dm_id, int)
+        dm = Datamodule.get_by_id(dm_id)
+        if dm is None:
+            continue
+        try:
+            missing = access.Directory().missing(access.owners_of(dm), connection.users or [])
+        except access.DirectoryUnavailable:
+            missing = ["(could not be checked)"]
+        if missing:
+            affected.append(f"{dm.path} ({', '.join(access.describe(p) for p in missing)})")
+    if affected:
+        flash(
+            "These datamodules have owners who may not use this connection, so their next "
+            f"build fails: {'; '.join(affected)}.",
+            "error",
+        )
 
 
 @bp.route("/")
@@ -69,6 +115,8 @@ def new() -> str | Response:
             flash(f"Unknown driver: {driver}", "error")
         elif Connection.get_by_name(name) is not None:
             flash(f"Connection '{name}' already exists.", "error")
+        elif (users_error := _parse_users()[1]) is not None:
+            flash(users_error, "error")
         else:
             params = _form_params(driver)
             Connection.create(
@@ -77,6 +125,7 @@ def new() -> str | Response:
                 params=params,
                 created_by=g.user.username,
                 description=description,
+                users=_parse_users()[0],
             )
             flash(f"Connection '{name}' created.", "success")
             return redirect(url_for("connections.index"))
@@ -116,6 +165,8 @@ def edit(uuid: str) -> str | Response:
             )
         elif driver not in DRIVERS:
             flash(f"Unknown driver: {driver}", "error")
+        elif (users_error := _parse_users()[1]) is not None:
+            flash(users_error, "error")
         else:
             params = _form_params(driver, existing=connection.params)
             connection.update(
@@ -124,8 +175,10 @@ def edit(uuid: str) -> str | Response:
                 driver=driver,
                 params=params,
                 description=description,
+                users=_parse_users()[0],
             )
             flash(f"Connection '{name}' updated.", "success")
+            _warn_bound(connection)
             return redirect(url_for("connections.index"))
 
     return render_template(
