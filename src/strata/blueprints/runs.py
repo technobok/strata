@@ -12,7 +12,7 @@ from flask import Blueprint, Response, g, redirect, render_template, request, ur
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response as WerkzeugResponse
 
-from strata.blueprints.auth import admin_required, login_required
+from strata.blueprints.auth import login_required, owner_required
 from strata.blueprints.reports import build_ui
 from strata.db import get_db
 from strata.models.datamodule import Datamodule
@@ -48,7 +48,7 @@ def _arg_pairs(args: dict[str, list[str]]) -> list[tuple[str, str]]:
 
 
 @bp.route("/reports/<report_uuid>/run", methods=["POST"])
-@admin_required
+@owner_required
 def run_now(report_uuid: str) -> WerkzeugResponse:
     """Run the report now with the posted argument values (else the defaults) and
     open the saved run. Follows the serve path: it never builds in the web app."""

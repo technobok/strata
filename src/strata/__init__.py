@@ -172,6 +172,12 @@ def _build_app(app: Flask) -> Flask:
     app.register_blueprint(diag.bp)
     app.jinja_env.globals["help_link"] = help.help_link
 
+    from strata.services import access
+
+    app.jinja_env.globals.update(
+        can_own=access.can_own, can_view=access.can_view, is_writer=access.is_writer
+    )
+
     @app.route("/")
     def index() -> str:
         return render_template("index.html")

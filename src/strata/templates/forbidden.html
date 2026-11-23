@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Not allowed — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Not allowed</h1>
+    <p>{{ message }}</p>
+</hgroup>
+<p><a href="{{ url_for('index') }}">Home</a></p>
+{% endblock %}

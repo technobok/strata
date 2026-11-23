@@ -266,12 +266,12 @@ def test_timezones_come_from_the_setting(strata: Strata) -> None:
     assert '<option value="Europe/London" selected>' in page  # the first is the default
 
 
-def test_schedules_need_an_admin(strata: Strata) -> None:
+def test_schedules_need_an_owner(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
     resp = strata.client.post(
         f"/datamodules/{dm_uuid}/schedules/new", data=BUSINESS_HOURS, headers={"X-User": "viewer"}
     )
-    assert resp.status_code == 302 and _schedules(strata, dm_uuid) == []
+    assert resp.status_code == 403 and _schedules(strata, dm_uuid) == []
 
 
 # -- the worker's tick -------------------------------------------------------------

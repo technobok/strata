@@ -56,11 +56,11 @@ def test_a_jinja_version_shows_the_text_that_ran(strata: Strata) -> None:
     assert "has changed since" not in page and "is the same" not in page
 
 
-def test_only_this_datamodules_versions_and_only_for_admins(strata: Strata) -> None:
+def test_only_this_datamodules_versions_and_only_for_owners(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
     strata.build(dm_uuid)
     other = strata.new_datamodule(path="test/other")
     [version] = strata.versions(dm_uuid)
     assert _page(strata, other, version.uuid)[0] == 404
     assert _page(strata, dm_uuid, "0" * 32)[0] == 404
-    assert _page(strata, dm_uuid, version.uuid, **{"X-User": "viewer"})[0] == 302
+    assert _page(strata, dm_uuid, version.uuid, **{"X-User": "viewer"})[0] == 403

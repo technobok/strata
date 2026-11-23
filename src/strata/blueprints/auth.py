@@ -2,10 +2,11 @@
 
 import functools
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     g,
@@ -14,6 +15,7 @@ from flask import (
     request,
     url_for,
 )
+from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.wrappers import Response
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -62,6 +64,52 @@ def admin_required(view: Callable[..., Any]) -> Callable[..., Any]:
         return view(*args, **kwargs)
 
     return wrapped_view
+
+
+def forbid(message: str) -> NoReturn:
+    """Answer 403 with ``message`` (rendered by the app's 403 handler)."""
+    abort(403, description=message)
+
+
+def owner_required(view: Callable[..., Any]) -> Callable[..., Any]:
+    """The owners of the datamodule the URL names (by ``uuid``, or a report's,
+    schedule's or key's uuid) and the admins; anyone else signed in gets 403."""
+
+    @functools.wraps(view)
+    def wrapped_view(*args: Any, **kwargs: Any) -> Any:
+        from strata.services import access
+
+        if g.get("user") is None:
+            return redirect(url_for("auth.login", next=request.url))
+        dm = access.datamodule_for(kwargs)
+        if dm is None:
+            raise NotFound()
+        if not access.can_own(dm):
+            forbid("Only this datamodule's owners and the Strata admins can do that.")
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
+def writer_required(view: Callable[..., Any]) -> Callable[..., Any]:
+    """Writers (``auth.writer_group``) and admins; anyone else signed in gets 403."""
+
+    @functools.wraps(view)
+    def wrapped_view(*args: Any, **kwargs: Any) -> Any:
+        from strata.services import access
+
+        if g.get("user") is None:
+            return redirect(url_for("auth.login", next=request.url))
+        if not access.is_writer():
+            forbid("Only writers and the Strata admins can create datamodules.")
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
+@bp.app_errorhandler(403)
+def _forbidden(exc: HTTPException) -> tuple[str, int]:
+    return render_template("forbidden.html", message=exc.description), 403
 
 
 @bp.route("/login")

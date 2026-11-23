@@ -47,6 +47,10 @@ class Datamodule:
     stale_alert_seconds: int | None = None
     failure_alerted_at: str | None = None
     stale_alerted_at: str | None = None
+    # Access (AC1): principal lists; None = the access.default_* settings.
+    owners: list[str] | None = None
+    viewers: list[str] | None = None
+    access_lock: str | None = None  # why it serves nothing (AC4); None = not locked
 
     _COLUMNS = (
         "id, uuid, path, description, build_script, ttl_seconds, valid_until, "
@@ -54,7 +58,7 @@ class Datamodule:
         "live_version_id, build_status, build_token, build_lease_until, last_build_error, "
         "created_by, modified_by, created_at, modified_at, build_queue, "
         "consecutive_failures, retry_after, alert_recipients, stale_alert_seconds, "
-        "failure_alerted_at, stale_alerted_at"
+        "failure_alerted_at, stale_alerted_at, owners_json, viewers_json, access_lock"
     )
 
     @staticmethod
@@ -87,6 +91,9 @@ class Datamodule:
             stale_alert_seconds=int(row[24]) if row[24] is not None else None,
             failure_alerted_at=str(row[25]) if row[25] is not None else None,
             stale_alerted_at=str(row[26]) if row[26] is not None else None,
+            owners=json.loads(row[27]) if row[27] is not None else None,
+            viewers=json.loads(row[28]) if row[28] is not None else None,
+            access_lock=str(row[29]) if row[29] is not None else None,
         )
 
     @staticmethod
@@ -126,6 +133,8 @@ class Datamodule:
         description: str = "",
         build_script: str = "",
         ttl_seconds: int | None = None,
+        owners: list[str] | None = None,
+        viewers: list[str] | None = None,
     ) -> Datamodule:
         now = datetime.now(UTC).isoformat()
         dm_uuid = str(uuid_lib.uuid4())
@@ -133,8 +142,9 @@ class Datamodule:
         with transaction() as cursor:
             cursor.execute(
                 "INSERT INTO datamodule (uuid, path, description, build_script, ttl_seconds, "
-                "build_status, created_by, modified_by, created_at, modified_at) "
-                "VALUES (?, ?, ?, ?, ?, 'never', ?, ?, ?, ?)",
+                "build_status, created_by, modified_by, created_at, modified_at, "
+                "owners_json, viewers_json) "
+                "VALUES (?, ?, ?, ?, ?, 'never', ?, ?, ?, ?, ?, ?)",
                 (
                     dm_uuid,
                     path.strip(),
@@ -145,6 +155,8 @@ class Datamodule:
                     created_by,
                     now,
                     now,
+                    json.dumps(owners) if owners is not None else None,
+                    json.dumps(viewers) if viewers is not None else None,
                 ),
             )
             row = cursor.execute("SELECT last_insert_rowid()").fetchone()
@@ -219,6 +231,24 @@ class Datamodule:
                 "stale_alerted_at = NULL WHERE id = ?",
                 (json.dumps(recipients) if recipients else None, stale_alert_seconds, self.id),
             )
+
+    def set_access(
+        self, owners: list[str] | None, viewers: list[str] | None, modified_by: str
+    ) -> None:
+        """Who owns and who views it; None = follow the access.default_* settings."""
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE datamodule SET owners_json = ?, viewers_json = ?, modified_by = ?, "
+                "modified_at = ? WHERE id = ?",
+                (
+                    json.dumps(owners) if owners is not None else None,
+                    json.dumps(viewers) if viewers is not None else None,
+                    modified_by,
+                    datetime.now(UTC).isoformat(),
+                    self.id,
+                ),
+            )
+        self.owners, self.viewers = owners, viewers
 
     def mark_alerted(self, column: str, when: str | None) -> None:
         """Record (or clear, ``when=None``) an alert: failure_alerted_at / stale_alerted_at."""

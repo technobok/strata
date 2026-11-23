@@ -133,3 +133,28 @@ def test_0008_keeps_admin_keys_and_their_access_log(tmp_path, monkeypatch):
         "SELECT api_key_id, status FROM api_key_access_log ORDER BY id"
     ).fetchall() == [(1, 200), (1, 403)]
     conn.close()
+
+
+def test_0009_pins_existing_datamodules_to_the_admins(tmp_path, monkeypatch):
+    """Datamodules made before access control keep their owners (the admins only)
+    and their audience (everyone): adding writers later must not make them owners."""
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 8])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 't/x', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.close()
+
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    assert conn.execute(
+        "SELECT owners_json, viewers_json, access_lock FROM datamodule"
+    ).fetchall() == [("[]", None, None)]
+    conn.close()

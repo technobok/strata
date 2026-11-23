@@ -261,7 +261,7 @@ def test_empty_and_failed_runs(strata: Strata) -> None:
     ).get_data(as_text=True)
 
 
-def test_runs_need_a_login_and_run_now_needs_an_admin(strata: Strata) -> None:
+def test_runs_need_a_login_and_run_now_needs_an_owner(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
     rpt = strata.new_report(dm_uuid)
     strata.build(dm_uuid)
@@ -269,7 +269,7 @@ def test_runs_need_a_login_and_run_now_needs_an_admin(strata: Strata) -> None:
     assert strata.client.get(f"/runs/{run.uuid}", headers={"X-Anon": "1"}).status_code == 302
     assert strata.client.get(f"/runs/{run.uuid}", headers={"X-User": "viewer"}).status_code == 200
     resp = strata.client.post(f"/reports/{rpt}/run", headers={"X-User": "viewer"})
-    assert resp.status_code == 302 and "/runs/" not in resp.headers["Location"]
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------

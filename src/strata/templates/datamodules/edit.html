@@ -62,6 +62,27 @@
         {% if datamodule.stale_alerted_at %}<p><small>The stale alert was mailed {{ datamodule.stale_alerted_at | localdatetime }}; the next successful build re-arms it.</small></p>{% endif %}
     </fieldset>
     {% endif %}
+    <fieldset class="access">
+        <legend>Access</legend>
+        <input type="hidden" name="access_present" value="1">
+        <div class="grid">
+            <div>
+                <label>Owners: one per line, a username or an <code>@group</code>. They edit this datamodule, its reports, schedules, keys and access.
+                    <textarea name="owners" rows="3" placeholder="(none: the Strata admins only)">{{ owners_text }}</textarea>
+                </label>
+                <label><input type="checkbox" name="owners_default" value="1" {% if owners_default %}checked{% endif %}>
+                    Use the default owners ({{ default_owners | join(', ') }})</label>
+            </div>
+            <div>
+                <label>Viewers: one per line, a username, an <code>@group</code>, or <code>*</code> for everyone signed in. They open its reports and runs; owners view too.
+                    <textarea name="viewers" rows="3" placeholder="(none: the owners only)">{{ viewers_text }}</textarea>
+                </label>
+                <label><input type="checkbox" name="viewers_default" value="1" {% if viewers_default %}checked{% endif %}>
+                    Use the default viewers ({% for v in default_viewers %}{{ 'everyone signed in' if v == '*' else v }}{% if not loop.last %}, {% endif %}{% endfor %})</label>
+            </div>
+        </div>
+        <p><small>The Strata admins can do everything on every datamodule. A ticked box follows the setting as it changes.</small></p>
+    </fieldset>
     <label>Build script (DuckDB SQL){{ help_link('build-scripts') }}
         <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"
                   placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>

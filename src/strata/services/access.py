@@ -30,6 +30,7 @@ from typing import Any
 from flask import current_app, g
 
 from strata.config import live_list, live_str
+from strata.models.datamodule import Datamodule
 
 EVERYONE = "*"
 
@@ -115,6 +116,59 @@ def is_writer() -> bool:
     """Admins and members of ``auth.writer_group``: they may create datamodules."""
     user = g.get("user")
     return user is not None and (is_admin() or user.in_group(writer_group()))
+
+
+# ---------------------------------------------------------------------------
+# A datamodule's lists, and the signed-in user's place in them
+# ---------------------------------------------------------------------------
+
+
+def owners_of(dm: Datamodule) -> list[str]:
+    """The owners in force: the datamodule's own list, else the default owners."""
+    return dm.owners if dm.owners is not None else default_owners()
+
+
+def viewers_of(dm: Datamodule) -> list[str]:
+    """The viewers in force (owners view too, and are not repeated here)."""
+    return dm.viewers if dm.viewers is not None else default_viewers()
+
+
+def can_own(dm: Datamodule) -> bool:
+    """May the signed-in user edit ``dm`` (script, reports, schedules, keys, access)?"""
+    return is_admin() or matches(g.get("user"), owners_of(dm))
+
+
+def can_view(dm: Datamodule) -> bool:
+    """May the signed-in user open ``dm``'s reports and runs?"""
+    return can_own(dm) or matches(g.get("user"), viewers_of(dm))
+
+
+def datamodule_for(view_args: dict[str, Any]) -> Datamodule | None:
+    """The datamodule a URL is about: by its own uuid, or a report's, a schedule's or
+    an API key's. None when the thing named does not exist."""
+    from strata.models.api_key import ApiKey
+    from strata.models.report import Report
+    from strata.models.schedule import Schedule
+
+    if "uuid" in view_args:
+        return Datamodule.get_by_uuid(str(view_args["uuid"]))
+    dm_id: int | None = None
+    if "report_uuid" in view_args:
+        report = Report.get_by_uuid(str(view_args["report_uuid"]))
+        dm_id = report.datamodule_id if report else None
+    elif "schedule_uuid" in view_args:
+        schedule = Schedule.get_by_uuid(str(view_args["schedule_uuid"]))
+        dm_id = schedule.datamodule_id if schedule else None
+    elif "key_uuid" in view_args:
+        key = ApiKey.get_by_uuid(str(view_args["key_uuid"]))
+        if key is not None and key.datamodule_id is not None:
+            dm_id = key.datamodule_id
+        elif key is not None and key.report_id is not None:
+            report = Report.get_by_id(key.report_id)
+            dm_id = report.datamodule_id if report else None
+    else:
+        raise LookupError(f"no datamodule in the URL arguments {sorted(view_args)}")
+    return Datamodule.get_by_id(dm_id) if dm_id is not None else None
 
 
 # ---------------------------------------------------------------------------

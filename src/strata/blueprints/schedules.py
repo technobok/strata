@@ -14,7 +14,7 @@ from flask import Blueprint, flash, g, redirect, render_template, request, url_f
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
-from strata.blueprints.auth import admin_required
+from strata.blueprints.auth import login_required, owner_required
 from strata.models.datamodule import Datamodule
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
@@ -218,7 +218,7 @@ def _submit(dm: Datamodule, schedule: Schedule | None, report: Report | None) ->
 
 
 @bp.route("/<uuid>/schedules/new", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def new(uuid: str) -> str | Response:
     dm = _datamodule_or_404(uuid)
     if request.method == "POST":
@@ -227,7 +227,7 @@ def new(uuid: str) -> str | Response:
 
 
 @bp.route("/reports/<report_uuid>/schedules/new", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def report_new(report_uuid: str) -> str | Response:
     report = Report.get_by_uuid(report_uuid)
     dm = Datamodule.get_by_id(report.datamodule_id) if report else None
@@ -239,7 +239,7 @@ def report_new(report_uuid: str) -> str | Response:
 
 
 @bp.route("/schedules/<schedule_uuid>/edit", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def edit(schedule_uuid: str) -> str | Response:
     schedule, dm, report = _schedule_or_404(schedule_uuid)
     if request.method == "POST":
@@ -248,7 +248,7 @@ def edit(schedule_uuid: str) -> str | Response:
 
 
 @bp.route("/schedules/<schedule_uuid>/toggle", methods=["POST"])
-@admin_required
+@owner_required
 def toggle(schedule_uuid: str) -> Response:
     schedule, dm, report = _schedule_or_404(schedule_uuid)
     enabling = not schedule.enabled
@@ -261,7 +261,7 @@ def toggle(schedule_uuid: str) -> Response:
 
 
 @bp.route("/schedules/<schedule_uuid>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def delete(schedule_uuid: str) -> Response:
     schedule, dm, report = _schedule_or_404(schedule_uuid)
     schedule.delete()
@@ -270,7 +270,7 @@ def delete(schedule_uuid: str) -> Response:
 
 
 @bp.route("/schedules/preview", methods=["POST"])
-@admin_required
+@login_required
 def preview() -> str:
     """HTMX: the next runs the form as filled in would produce, or why it is invalid."""
     _, kind, timezone, fields, _ = _form()

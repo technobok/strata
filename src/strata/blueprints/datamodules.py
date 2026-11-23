@@ -1,7 +1,8 @@
 """Datamodules blueprint — author datamodules, build them, define query reports.
 
-Authoring is admin-gated: authors are IT only, so there is no author/runner split.
-The public serve path for running a report lives in blueprints/reports.py.
+Each datamodule's owners (and the admins) edit it: every route here that names a
+datamodule, report, schedule or key is ``owner_required``. Writers create
+datamodules. The serve path for running a report lives in blueprints/reports.py.
 """
 
 import json
@@ -24,7 +25,7 @@ from flask import (
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
-from strata.blueprints.auth import admin_required
+from strata.blueprints.auth import login_required, owner_required, writer_required
 from strata.models.api_key import ApiKey
 from strata.models.build_job import BuildJob
 from strata.models.connection import Connection
@@ -39,6 +40,7 @@ from strata.models.report_run import ReportRun
 from strata.models.source_file import SourceFile
 from strata.models.worker_process import WorkerProcess
 from strata.services import (
+    access,
     build_queue,
     connection_service,
     datamodule_service,
@@ -218,19 +220,23 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
 
 
 @bp.route("/")
-@admin_required
+@login_required
 def index() -> str:
-    return render_template("datamodules/index.html", datamodules=Datamodule.get_all())
+    """The datamodules the user may edit (an admin: all of them)."""
+    owned = [dm for dm in Datamodule.get_all() if access.can_own(dm)]
+    return render_template("datamodules/index.html", datamodules=owned)
 
 
 @bp.route("/new", methods=["GET", "POST"])
-@admin_required
+@writer_required
 def new() -> str | Response:
     if request.method == "POST":
         path = request.form.get("path", "").strip()
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
         ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
+        lists, access_error = _parse_access()
+        owners, viewers = lists if lists is not None else (None, None)
 
         if not path:
             flash("Path is required.", "error")
@@ -238,6 +244,8 @@ def new() -> str | Response:
             flash(f"A datamodule with path '{path}' already exists.", "error")
         elif ttl_error:
             flash(ttl_error, "error")
+        elif access_error or (access_error := _stays_owner(owners)):
+            flash(access_error, "error")
         else:
             dm = Datamodule.create(
                 path=path,
@@ -245,15 +253,23 @@ def new() -> str | Response:
                 description=description,
                 build_script=build_script,
                 ttl_seconds=ttl,
+                owners=owners,
+                viewers=viewers,
             )
             flash("Datamodule created. Build it to produce a live version.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
-    return render_template("datamodules/edit.html", datamodule=None, reports=[], versions=[])
+    return render_template(
+        "datamodules/edit.html",
+        datamodule=None,
+        reports=[],
+        versions=[],
+        **_access_context(None),
+    )
 
 
 @bp.route("/<uuid>/edit", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def edit(uuid: str) -> str | Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -267,6 +283,9 @@ def edit(uuid: str) -> str | Response:
         retention_kind, retention_count, retention_age, retention_error = _parse_retention()
         build_queue_name = request.form.get("build_queue", "").strip() or None
         alerts, alerts_error = _parse_alerts()
+        lists, access_error = _parse_access()
+        if lists is not None and access_error is None:
+            access_error = _stays_owner(lists[0])
 
         existing = Datamodule.get_by_path(path)
         if not path:
@@ -281,6 +300,8 @@ def edit(uuid: str) -> str | Response:
             flash("Worker queue: lowercase letters, digits, '-' and '_' only.", "error")
         elif alerts_error:
             flash(alerts_error, "error")
+        elif access_error:
+            flash(access_error, "error")
         else:
             dm.update(
                 modified_by=g.user.username,
@@ -298,6 +319,8 @@ def edit(uuid: str) -> str | Response:
                 dm.stale_alert_seconds,
             ):
                 dm.set_alerts(*alerts)
+            if lists is not None and lists != (dm.owners, dm.viewers):
+                dm.set_access(*lists, modified_by=g.user.username)
             flash("Datamodule saved.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
@@ -365,6 +388,7 @@ def edit(uuid: str) -> str | Response:
         run_uuids=ReportRun.uuids_for([j.run_id for j in jobs if j.run_id is not None]),
         schedules=_schedule_rows(dm),
         **_status_context(dm),
+        **_access_context(dm),
     )
 
 
@@ -404,6 +428,57 @@ def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | N
     return (recipients or None, round(hours * 3600) if hours else None), None
 
 
+def _parse_access() -> tuple[tuple[list[str] | None, list[str] | None] | None, str | None]:
+    """((owners, viewers), error) from the Access fieldset; a list is None when its
+    "use the default" box is ticked. (None, None) when the form has no Access
+    fieldset, so a partial post (e.g. strata.set_script) leaves access alone."""
+    if request.form.get("access_present") != "1":
+        return None, None
+    owners, viewers = (
+        None
+        if request.form.get(f"{name}_default") == "1"
+        else access.principal_lines(request.form.get(name, ""))
+        for name in ("owners", "viewers")
+    )
+    named = (owners or []) + (viewers or [])
+    problem = access.check_principals(named)
+    if problem:
+        return None, f"Access: {problem}"
+    if owners and access.EVERYONE in owners:
+        return None, "Access: owners are people or groups; * (everyone signed in) can only view."
+    try:
+        unknown = access.Directory().unknown(named)
+    except access.DirectoryUnavailable as exc:
+        return None, f"Access: the names could not be checked: {exc}."
+    if unknown:
+        return None, f"Access: Gatekeeper has no user or group {', '.join(unknown)}."
+    return (owners, viewers), None
+
+
+def _stays_owner(owners: list[str] | None) -> str | None:
+    """Why the signed-in user may not save these owners: they would lock themselves
+    out. Admins may (they own everything anyway)."""
+    if access.is_admin() or access.matches(
+        g.user, owners if owners is not None else access.default_owners()
+    ):
+        return None
+    return (
+        "Access: you would no longer be an owner. Keep yourself, or a group you are in, in Owners."
+    )
+
+
+def _access_context(dm: Datamodule | None) -> dict[str, object]:
+    """The Access fieldset: each list, or the default it follows."""
+    return {
+        "default_owners": access.default_owners(),
+        "default_viewers": access.default_viewers(),
+        "owners_default": dm is None or dm.owners is None,
+        "viewers_default": dm is None or dm.viewers is None,
+        "owners_text": "\n".join(dm.owners or []) if dm is not None else "",
+        "viewers_text": "\n".join(dm.viewers or []) if dm is not None else "",
+    }
+
+
 def _status_context(dm: Datamodule) -> dict[str, object]:
     """The build-status line: active jobs, and whether any worker is alive to run them."""
     return {
@@ -413,7 +488,7 @@ def _status_context(dm: Datamodule) -> dict[str, object]:
 
 
 @bp.route("/<uuid>/preview-script", methods=["POST"])
-@admin_required
+@owner_required
 def preview_script(uuid: str) -> str:
     """HTMX: the posted build script rendered as a template, against the live
     versions of the datamodule's dependencies (nothing is built)."""
@@ -442,7 +517,7 @@ def preview_script(uuid: str) -> str:
 
 
 @bp.route("/<uuid>/status")
-@admin_required
+@owner_required
 def status(uuid: str) -> str | Response:
     """HTMX-polled status line; reloads the page once the active build finishes."""
     dm = Datamodule.get_by_uuid(uuid)
@@ -458,7 +533,7 @@ def status(uuid: str) -> str | Response:
 
 
 @bp.route("/<uuid>/versions/<version_uuid>/script")
-@admin_required
+@owner_required
 def version_script(uuid: str, version_uuid: str) -> str:
     """The build script a version was built from (its snapshot, as it ran)."""
     dm = Datamodule.get_by_uuid(uuid)
@@ -483,7 +558,7 @@ def version_script(uuid: str, version_uuid: str) -> str:
 
 
 @bp.route("/<uuid>/build", methods=["POST"])
-@admin_required
+@owner_required
 def build(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -502,7 +577,7 @@ def build(uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def delete(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -519,7 +594,7 @@ def delete(uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/reports/new", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def report_new(uuid: str) -> str | Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -547,7 +622,7 @@ def report_new(uuid: str) -> str | Response:
 
 
 @bp.route("/reports/<report_uuid>/edit", methods=["GET", "POST"])
-@admin_required
+@owner_required
 def report_edit(report_uuid: str) -> str | Response:
     report = Report.get_by_uuid(report_uuid)
     if report is None:
@@ -579,7 +654,7 @@ def report_edit(report_uuid: str) -> str | Response:
 
 
 @bp.route("/reports/<report_uuid>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def report_delete(report_uuid: str) -> Response:
     report = Report.get_by_uuid(report_uuid)
     if report is None:
@@ -686,7 +761,7 @@ def _apikey_redirect(dm: Datamodule | None) -> Response:
 
 
 @bp.route("/<uuid>/apikeys", methods=["POST"])
-@admin_required
+@owner_required
 def apikey_create(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -739,7 +814,7 @@ def apikey_create(uuid: str) -> Response:
 
 
 @bp.route("/apikeys/<key_uuid>/rotate", methods=["POST"])
-@admin_required
+@owner_required
 def apikey_rotate(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
@@ -750,7 +825,7 @@ def apikey_rotate(key_uuid: str) -> Response:
 
 
 @bp.route("/apikeys/<key_uuid>/toggle", methods=["POST"])
-@admin_required
+@owner_required
 def apikey_toggle(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
@@ -760,7 +835,7 @@ def apikey_toggle(key_uuid: str) -> Response:
 
 
 @bp.route("/apikeys/<key_uuid>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def apikey_delete(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)  # resolve before delete (needs the report row)
@@ -770,7 +845,7 @@ def apikey_delete(key_uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/sources", methods=["POST"])
-@admin_required
+@owner_required
 def source_upload(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -786,7 +861,7 @@ def source_upload(uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/sources/<int:source_id>/download")
-@admin_required
+@owner_required
 def source_download(uuid: str, source_id: int) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -801,7 +876,7 @@ def source_download(uuid: str, source_id: int) -> Response:
 
 
 @bp.route("/<uuid>/sources/<int:source_id>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def source_delete(uuid: str, source_id: int) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -815,7 +890,7 @@ def source_delete(uuid: str, source_id: int) -> Response:
 
 
 @bp.route("/<uuid>/dependencies", methods=["POST"])
-@admin_required
+@owner_required
 def dependency_add(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -842,7 +917,7 @@ def dependency_add(uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/dependencies/<int:dep_id>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def dependency_delete(uuid: str, dep_id: int) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -856,7 +931,7 @@ def dependency_delete(uuid: str, dep_id: int) -> Response:
 
 
 @bp.route("/<uuid>/connections", methods=["POST"])
-@admin_required
+@owner_required
 def connection_add(uuid: str) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
@@ -879,7 +954,7 @@ def connection_add(uuid: str) -> Response:
 
 
 @bp.route("/<uuid>/connections/<int:link_id>/delete", methods=["POST"])
-@admin_required
+@owner_required
 def connection_delete(uuid: str, link_id: int) -> Response:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
