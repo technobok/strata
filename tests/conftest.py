@@ -230,6 +230,7 @@ class FakeGatekeeper:
             "bob": GkUser("bob", "bob@example.com", enabled=False),
             "carol": GkUser("carol", ""),
             "root": GkUser("root", "root@example.com"),
+            "asiap\\jdoe": GkUser("asiap\\jdoe", "jdoe@example.com"),
         }
         self.groups = {"brs-finance": ["alice", "bob", "carol", "jsmith"], ADMIN_GROUP: ["root"]}
 

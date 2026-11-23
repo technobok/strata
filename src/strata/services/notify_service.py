@@ -96,7 +96,8 @@ def send(mail: Mail) -> str:
 # ---------------------------------------------------------------------------
 
 # A recipient line: an @group, an email address, or a Gatekeeper username.
-RECIPIENT_RE = re.compile(r"^(@[\w.\- ]+|[^@\s]+@[^@\s]+\.[^@\s]+|[\w.\-]+)$")
+# A username may carry its domain: Gatekeeper's look like asiap\pawe.
+RECIPIENT_RE = re.compile(r"^(@[\w.\- ]+|[^@\s]+@[^@\s]+\.[^@\s]+|(?:[\w.\-]+\\)?[\w.\-]+)$")
 
 
 def recipient_lines(text: str) -> list[str]:

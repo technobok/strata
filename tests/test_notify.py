@@ -156,6 +156,15 @@ def test_a_bad_recipient_line_is_refused(strata: Strata, mail: list[Any]) -> Non
     )
 
 
+def test_a_domain_username_is_a_recipient(strata: Strata, mail: list[Any]) -> None:
+    """Gatekeeper's usernames carry their domain (asiap\\pawe)."""
+    dm_uuid = strata.new_datamodule()
+    rpt = strata.new_report(dm_uuid)
+    assert _schedule(strata, rpt, "asiap\\jdoe").status_code == 302
+    _fire(strata)
+    assert [m.to for m in mail] == [["jdoe@example.com"]]
+
+
 def test_a_failed_refresh_still_mails_on_the_last_good_data(
     strata: Strata, mail: list[Any]
 ) -> None:
