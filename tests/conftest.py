@@ -6,13 +6,16 @@ test_config). Gatekeeper is not configured, so a before_request hook injects the
 user instead:
 
 - default: an admin (member of ``strata-admins``)
-- ``X-User: viewer`` header: a logged-in user who is not an admin
+- ``X-User: <name>`` header: a signed-in user who is not an admin, in the groups
+  listed in ``X-Groups: a,b`` (none if absent); ``as_user(name, *groups)`` builds
+  both. ``X-User: viewer`` is the plain non-admin most tests use.
 - ``X-Anon: 1`` header: no user at all (the API-key / anonymous path)
 """
 
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -42,6 +45,11 @@ class FakeUser:
         return name in self.groups
 
 
+def as_user(name: str, *groups: str) -> dict[str, str]:
+    """Request headers that sign in as ``name``, a non-admin in ``groups``."""
+    return {"X-User": name, "X-Groups": ",".join(groups)}
+
+
 @pytest.fixture
 def app(tmp_path, monkeypatch) -> Iterator[Flask]:
     db_path = tmp_path / "strata.sqlite3"
@@ -60,8 +68,10 @@ def app(tmp_path, monkeypatch) -> Iterator[Flask]:
     def _inject_user() -> None:
         if request.headers.get("X-Anon"):
             return
-        if request.headers.get("X-User") == "viewer":
-            g.user = FakeUser(username="viewer", fullname="Viewer", groups=frozenset())
+        name = request.headers.get("X-User")
+        if name:
+            groups = frozenset(x for x in request.headers.get("X-Groups", "").split(",") if x)
+            g.user = FakeUser(username=name, fullname=name.title(), groups=groups)
         else:
             g.user = FakeUser()
 
@@ -239,6 +249,16 @@ class FakeGatekeeper:
 
     def get_group_members(self, name: str) -> list[str]:
         return self.groups.get(name, [])
+
+    def get_group(self, name: str) -> SimpleNamespace | None:
+        return SimpleNamespace(name=name) if name in self.groups else None
+
+    def get_user_groups(self, username: str) -> list[str]:
+        return sorted(
+            group
+            for group, members in self.groups.items()
+            if username.lower() in (m.lower() for m in members)
+        )
 
     def get_login_url(self) -> str | None:
         return "https://reports.example.com/gatekeeper/auth/login"

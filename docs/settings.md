@@ -67,6 +67,18 @@ strata-admin config set build.memory_limit 6GB    # prints when it applies
 |---|---|---|
 | `diag.auth_probe` | off | Turns on `/diag/auth-probe.json`, which answers anyone (no login) with what their request carried: for testing how Excel gets through the sign-in in front of Strata (see [Testing Excel's sign-in](api-keys.md#testing-excels-sign-in-the-auth-probe)). Turn it off after the test. |
 
+## Access — apply immediately
+
+Who may open and edit a datamodule is set on its page. These settings are the lists a
+datamodule follows until it has lists of its own. A list holds usernames (as Gatekeeper
+has them, e.g. `asiap\jsmith`), `@groups`, and `*` for everyone signed in.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `auth.writer_group` | `strata-writers` | The Gatekeeper group whose members may create datamodules. Admins may too. |
+| `access.default_owners` | — | Owners of a datamodule with no owners list of its own; blank = the writers group (`@` + `auth.writer_group`). Owners edit the datamodule, its reports, schedules and access. |
+| `access.default_viewers` | `*` | Viewers of a datamodule with no viewers list of its own; `*` = everyone signed in. Viewers open its reports and runs. |
+
 ## Schedules and the worker
 
 | Setting | Default | Takes effect | Meaning |

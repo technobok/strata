@@ -118,6 +118,30 @@ REGISTRY: list[ConfigEntry] = [
         "Gatekeeper group whose members get strata admin access",
         applies=Applies.APP,
     ),
+    ConfigEntry(
+        "auth.writer_group",
+        ConfigType.STRING,
+        "strata-writers",
+        "Gatekeeper group whose members may create datamodules (admins may too)",
+        applies=Applies.LIVE,
+    ),
+    # -- access (who may open and edit each datamodule) --
+    ConfigEntry(
+        "access.default_owners",
+        ConfigType.STRING_LIST,
+        [],
+        "Owners of a datamodule with no owners list of its own: usernames and @groups, "
+        "comma-separated; blank = the writers group (auth.writer_group)",
+        applies=Applies.LIVE,
+    ),
+    ConfigEntry(
+        "access.default_viewers",
+        ConfigType.STRING_LIST,
+        ["*"],
+        "Viewers of a datamodule with no viewers list of its own: usernames, @groups, "
+        "or * for everyone signed in, comma-separated",
+        applies=Applies.LIVE,
+    ),
     # -- gatekeeper --
     ConfigEntry("gatekeeper.db_path", ConfigType.STRING, "", "Path to Gatekeeper SQLite database"),
     ConfigEntry("gatekeeper.url", ConfigType.STRING, "", "Gatekeeper HTTP API base URL"),
