@@ -400,6 +400,30 @@ footer small {
     }
 }
 
+/* The read audit */
+.read-filters > label {
+    white-space: nowrap;
+}
+
+.inline-form.read-filters > input[type="date"] {
+    flex: 0 1 11rem;
+}
+
+.read-kind {
+    font-size: 0.75rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-code-background-color);
+}
+
+tr.read-refused td {
+    background: rgba(220, 60, 60, 0.08);
+}
+
+table.reads td code {
+    overflow-wrap: anywhere;
+}
+
 /* Results table */
 .results-container {
     overflow-x: auto;

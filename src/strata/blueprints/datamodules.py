@@ -9,6 +9,7 @@ import json
 import re
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from flask import (
     Blueprint,
@@ -24,6 +25,7 @@ from flask import (
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response
 
+from strata.blueprints import reads as reads_page
 from strata.blueprints.auth import login_required, owner_required, writer_required
 from strata.models.api_key import ApiKey
 from strata.models.build_job import BuildJob
@@ -44,6 +46,7 @@ from strata.services import (
     connection_service,
     datamodule_service,
     duck,
+    read_audit,
     run_service,
     script_template,
 )
@@ -526,6 +529,7 @@ def preview_script(uuid: str) -> str:
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
         raise NotFound()
+    read_audit.note("preview", dm)  # rows() reads the dependencies' data
     script = request.form.get("build_script", "")
     rendered, error = None, None
     if not script_template.is_template(script):
@@ -588,6 +592,7 @@ def version_script(uuid: str, version_uuid: str) -> str:
     version = DatamoduleVersion.get_for_datamodule(dm.id, version_uuid)
     if version is None:
         raise NotFound()
+    read_audit.note("script", dm, version=version)  # a rendered script can hold rows
     # A Jinja version's snapshot is its rendered text, so it cannot be compared
     # with the current template: say nothing rather than "changed".
     same_as_current = (
@@ -897,7 +902,32 @@ def source_download(uuid: str, source_id: int) -> Response:
     path = datamodule_service.source_disk_path(dm.uuid, sf.stored_name)
     if not path.exists():
         raise NotFound()
+    read_audit.note("source", dm, query=f"file={sf.filename}"[:200])
     return send_file(str(path), as_attachment=True, download_name=sf.filename)
+
+
+@bp.route("/<uuid>/reads")
+@owner_required
+def reads(uuid: str) -> str:
+    """The read audit of this datamodule: who read its reports, runs, keys and files."""
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+
+    def url(csv: bool = False, **query: Any) -> str:
+        endpoint = "datamodules.reads_csv" if csv else "datamodules.reads"
+        return url_for(endpoint, uuid=dm.uuid, **query)
+
+    return reads_page.render(dm, url)
+
+
+@bp.route("/<uuid>/reads.csv")
+@owner_required
+def reads_csv(uuid: str) -> Response:
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    return reads_page.csv_response(dm, f"reads-{dm.path.replace('/', '-')}.csv")
 
 
 @bp.route("/<uuid>/sources/<int:source_id>/delete", methods=["POST"])

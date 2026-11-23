@@ -272,6 +272,15 @@ REGISTRY: list[ConfigEntry] = [
         "sweep and strata-admin reconcile delete older ones",
         applies=Applies.LIVE,
     ),
+    # -- read audit --
+    ConfigEntry(
+        "audit.retention_days",
+        ConfigType.INT,
+        365,
+        "Days a row of the read audit (who read which report, run or key) is kept; the "
+        "worker's sweep and strata-admin reconcile delete older ones. 0 = keep them all",
+        applies=Applies.LIVE,
+    ),
     # -- diagnostics --
     ConfigEntry(
         "diag.auth_probe",

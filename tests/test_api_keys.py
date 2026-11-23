@@ -182,7 +182,7 @@ def test_disabled_key_is_403(strata: Strata, dm: tuple[str, str]) -> None:
     assert strata.client.get(f"/r/{rpt}.csv?key={token}", headers=ANON).status_code == 403
 
 
-def test_keyed_requests_are_access_logged(strata: Strata, dm: tuple[str, str]) -> None:
+def test_keyed_requests_are_in_the_read_audit(strata: Strata, dm: tuple[str, str]) -> None:
     dm_uuid, rpt = dm
     token = strata.new_api_key(dm_uuid)
     strata.client.get(f"/r/{rpt}.csv?key={token}", headers=ANON)
@@ -190,6 +190,8 @@ def test_keyed_requests_are_access_logged(strata: Strata, dm: tuple[str, str]) -
         from strata.db import get_db
 
         rows = (
-            get_db().execute("SELECT status, format, row_count FROM api_key_access_log").fetchall()
+            get_db()
+            .execute("SELECT kind, status, format, row_count, token_prefix FROM read_log")
+            .fetchall()
         )
-    assert rows == [(200, "csv", 2)]  # region defaults to North: A and C
+    assert rows == [("data", 200, "csv", 2, token[:8])]  # region defaults to North: A and C

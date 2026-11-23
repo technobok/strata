@@ -172,6 +172,10 @@ def _build_app(app: Flask) -> Flask:
     app.register_blueprint(diag.bp)
     app.jinja_env.globals["help_link"] = help.help_link
 
+    from strata.services import read_audit
+
+    read_audit.init_app(app)
+
     from strata.services import access
 
     app.jinja_env.globals.update(

@@ -18,7 +18,8 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - **Access per datamodule** — owners (edit) and viewers (read) per datamodule, as users, `@groups` or `*`, with live defaults; admins and writers (`strata-writers`, may create datamodules) instance-wide; connections have a "may use" list; each owner of a dependant must be able to read its parents, checked at every build, and a datamodule whose owners lost access is **locked** (serves nothing, keys included) until fixed; a home page lists every report you can open
 - **Jinja build scripts** — loop over a dependency's rows (e.g. one `UNION ALL` branch per company) with `rows()`, `sqlstr`, `ident`
 - **Retention + reconcile** — per-datamodule keep-newest-N or age-window pruning after each build, plus `strata-admin reconcile` to sweep orphaned files
-- **API keys for Excel/PowerQuery** — named, revocable, sha256-hashed bearer tokens (`?key=…`) with per-key fixed/whitelisted arguments and an access log; each datamodule has one Excel link, copied from any of its reports' "Use in Excel" box, and every key's per-report links stay on the datamodule page
+- **Read audit** — every read of a report, run, Excel key or source file, by a person or a key, refusals included; browsable and downloadable (CSV) by admins and by each datamodule's owners; kept `audit.retention_days` (365)
+- **API keys for Excel/PowerQuery** — named, revocable, sha256-hashed bearer tokens (`?key=…`) with per-key fixed/whitelisted arguments, every request in the read audit; each datamodule has one Excel link, copied from any of its reports' "Use in Excel" box, and every key's per-report links stay on the datamodule page
 - **HTMX results table** — sortable headers, search box, removable filter chips, pager, and export links without page reloads
 - **CodeMirror SQL editors** — build scripts, report macros, and the admin SQL console (vendored, theme-aware)
 - **Dark/light mode** — PicoCSS with theme toggle

@@ -286,5 +286,6 @@ def reconcile_command(dry_run: bool) -> None:
         f"{len(rep.stale_tmp)} stale tmp, {len(rep.orphan_files)} orphan file(s), "
         f"{len(rep.stale_scratch)} stale export/spill, {len(rep.stuck_builds)} stuck build(s), "
         f"{len(rep.expired_runs)} expired run(s), {len(rep.orphan_snapshots)} orphan snapshot(s), "
+        f"{rep.expired_reads} expired read-audit row(s), "
         f"{len(rep.warnings)} warning(s)" + (" (dry-run: no changes made)" if dry_run else "")
     )

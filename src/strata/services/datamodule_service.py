@@ -807,6 +807,7 @@ class ReconcileReport:
     stale_scratch: list[str] = field(default_factory=list)  # DATA_ROOT/_exports + _tmp
     expired_runs: list[str] = field(default_factory=list)  # older than runs.retention_days
     orphan_snapshots: list[str] = field(default_factory=list)  # runs/ files with no run row
+    expired_reads: int = 0  # read-audit rows older than audit.retention_days
     warnings: list[str] = field(default_factory=list)
 
 
@@ -819,7 +820,7 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
     a missing file is only ever WARNED about. Prune runs first so its unlinked
     files never double-count as orphans.
     """
-    from strata.services import run_service
+    from strata.services import read_audit, run_service
 
     report = ReconcileReport(dry_run=dry_run)
     dms = Datamodule.get_all()
@@ -827,6 +828,7 @@ def reconcile(dry_run: bool = False) -> ReconcileReport:
 
     report.stuck_builds = reap_dead_builds(dry_run=dry_run)
     report.expired_runs = run_service.prune_runs(dry_run=dry_run)
+    report.expired_reads = read_audit.prune(dry_run=dry_run)
     for dm in dms:
         if dry_run:
             for v in prune_candidates(dm):

@@ -26,7 +26,7 @@ from the <strong>Use in Excel</strong> box of any of its reports, by its owners 
             <td>{{ 'enabled' if key.enabled else 'disabled' }}{% if key.expires_at %}<br><small>expires {{ key.expires_at|localdate }}</small>{% endif %}</td>
             <td>{{ key.created_by }}<br><small>{{ key.created_at|localdatetime }}</small></td>
             <td>{{ key.last_used_at|localdatetime if key.last_used_at else '' }}</td>
-            <td>{{ key.use_count }}</td>
+            <td>{{ key.use_count }}<br><small><a href="{{ url_for('admin.reads', key=key.id) }}">reads</a></small></td>
         </tr>
         {% endfor %}
     </tbody>

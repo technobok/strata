@@ -61,6 +61,12 @@ strata-admin config set build.memory_limit 6GB    # prints when it applies
 | `outbox.api_key` | — | The key for `outbox.url`. |
 | `runs.retention_days` | `30` | Days a report or check run, with its saved rows, is kept (see [Checks and runs](checks.md#how-long-runs-are-kept)). The worker's sweep and `strata-admin reconcile` delete older ones. |
 
+## Read audit — apply immediately
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `audit.retention_days` | `365` | Days a row of the [read audit](audit.md) is kept. The worker's sweep and `strata-admin reconcile` delete older ones. `0` keeps them all. |
+
 ## Diagnostics — apply immediately
 
 | Setting | Default | Meaning |

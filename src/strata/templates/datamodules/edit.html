@@ -118,6 +118,7 @@
         <button type="submit" class="outline" title="Rebuild every dependency (all the way down, each once), then this datamodule">Build with all dependencies</button>
     </form>
     {% endif %}
+    <a href="{{ url_for('datamodules.reads', uuid=datamodule.uuid) }}" role="button" class="outline" title="Who read its reports, runs, keys and files">Reads</a>
     {{ post_button(url_for('datamodules.delete', uuid=datamodule.uuid), 'Delete', 'outline secondary', confirm='Delete this datamodule and all its versions?') }}
 </div>
 
@@ -246,7 +247,7 @@ via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of 
             <td>{{ 'yes' if k.enabled else 'no' }}</td>
             <td>{{ k.expires_at|localdate }}</td>
             <td>{{ k.last_used_at|localdatetime }}</td>
-            <td>{{ k.use_count }}</td>
+            <td>{{ k.use_count }}<br><small><a href="{{ url_for('datamodules.reads', uuid=datamodule.uuid, key=k.id) }}">reads</a></small></td>
             <td><div class="actions">
                 {{ post_button(url_for('datamodules.apikey_rotate', key_uuid=k.uuid), 'Rotate', confirm='Rotate this key? Workbooks using the old token will stop working.') }}
                 {{ post_button(url_for('datamodules.apikey_toggle', key_uuid=k.uuid), 'Disable' if k.enabled else 'Enable') }}

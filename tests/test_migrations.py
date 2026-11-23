@@ -123,7 +123,7 @@ def test_0008_keeps_admin_keys_and_their_access_log(tmp_path, monkeypatch):
     )
     conn.close()
 
-    monkeypatch.setattr(db, "_migration_files", every)
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 12])
     db.init_db_at(path)
     conn = apsw.Connection(path)
     assert conn.execute(
@@ -189,4 +189,80 @@ def test_0012_drops_the_unused_report_columns(tmp_path, monkeypatch):
     assert conn.execute("SELECT uuid, name, macro_name, body_sql FROM report").fetchall() == [
         ("r1", "Sales", "sales", "SELECT 1")
     ]
+    conn.close()
+
+
+def test_0013_moves_the_key_access_log_into_the_read_audit(tmp_path, monkeypatch):
+    """The old api_key_access_log rows become read_log rows (kind 'data'), with the
+    key's, report's and datamodule's names; the old table goes."""
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 12])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 'finance/payroll', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO report (uuid, datamodule_id, name, macro_name, kind, body_sql, "
+        "created_by, modified_by, created_at, modified_at) "
+        "VALUES ('r1', 1, 'Salaries', 'pay', 'query', 'SELECT 1', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
+        "datamodule_id, created_by, created_at, use_count) "
+        "VALUES ('k1', 'h1', 'abcd1234', 'payroll sheet', 'datamodule', 1, 'jo', ?, 2)",
+        (now,),
+    )
+    conn.execute(
+        "INSERT INTO api_key_access_log (api_key_id, report_id, accessed_at, remote_addr, "
+        "format, row_count, bytes_sent, duration_ms, status) "
+        "VALUES (1, 1, ?, '10.0.0.5', 'xlsx', 12, 3400, 15, 200), "
+        "(1, NULL, ?, '10.0.0.5', 'csv', NULL, NULL, NULL, 403)",
+        (now, now),
+    )
+    conn.close()
+
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    assert conn.execute(
+        "SELECT kind, api_key_id, key_name, token_prefix, datamodule_id, datamodule_path, "
+        "report_name, format, status, row_count, bytes_sent, remote_addr FROM read_log ORDER BY id"
+    ).fetchall() == [
+        (
+            "data",
+            1,
+            "payroll sheet",
+            "abcd1234",
+            1,
+            "finance/payroll",
+            "Salaries",
+            "xlsx",
+            200,
+            12,
+            3400,
+            "10.0.0.5",
+        ),
+        (
+            "data",
+            1,
+            "payroll sheet",
+            "abcd1234",
+            1,
+            "finance/payroll",
+            None,
+            "csv",
+            403,
+            None,
+            None,
+            "10.0.0.5",
+        ),
+    ]
+    tables = {name for (name,) in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+    assert "api_key_access_log" not in tables
     conn.close()

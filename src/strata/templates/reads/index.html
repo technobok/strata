@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Reads{% if fixed %} of {{ fixed.path }}{% endif %} — Strata{% endblock %}
+
+{% block content %}
+<div class="section-header">
+    <hgroup>
+        <h1>Reads{% if fixed %} of {{ fixed.path }}{% endif %}{{ help_link('audit') }}</h1>
+        <p>Who read which report, run, key or file, newest first{% if fixed %} — <a href="{{ url_for('datamodules.edit', uuid=fixed.uuid) }}">back to {{ fixed.path }}</a>{% endif %}</p>
+    </hgroup>
+    <a href="{{ csv_url }}" role="button" class="outline small">Download CSV</a>
+</div>
+
+{% for problem in problems %}<article class="error-box">{{ problem }}</article>{% endfor %}
+
+<form method="get" action="{{ action }}" class="inline-form read-filters">
+    {% if not fixed %}
+    <select name="dm" aria-label="Datamodule">
+        <option value="">every datamodule</option>
+        {% for id, path in datamodules %}<option value="{{ id }}" {% if filters.datamodule_id == id %}selected{% endif %}>{{ path }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    {% if reports %}
+    <select name="report" aria-label="Report">
+        <option value="">every report</option>
+        {% for id, name in reports %}<option value="{{ id }}" {% if filters.report_id == id %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <input type="text" name="user" value="{{ filters.username or '' }}" placeholder="person (username)" aria-label="Person">
+    <select name="kind" aria-label="Kind">
+        <option value="">every kind</option>
+        {% for k in kinds %}<option value="{{ k }}" {% if filters.kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}
+    </select>
+    <input type="date" name="from" value="{{ filters.since or '' }}" aria-label="From (UTC)" title="From (UTC)">
+    <input type="date" name="to" value="{{ filters.until or '' }}" aria-label="To (UTC)" title="To, inclusive (UTC)">
+    <label><input type="checkbox" name="refused" value="1" {% if filters.refused %}checked{% endif %}> refused only</label>
+    {% if key_filter is not none %}<input type="hidden" name="key" value="{{ key_filter }}">{% endif %}
+    <button type="submit" class="outline">Filter</button>
+</form>
+{% if key_filter is not none %}
+<p class="filter-chips"><a class="chip" href="{{ without_key }}" title="Show every key and person">key: {{ key.name if key else key_filter }}{% if key %} ({{ key.token_prefix }}…){% endif %} <span aria-hidden="true">&#x2715;</span></a></p>
+{% endif %}
+
+{% if rows %}
+<div class="table-scroll">
+<table class="reads">
+    <thead><tr><th>When</th><th>Who</th><th>Read</th><th>Rows</th><th>Status</th><th>From</th></tr></thead>
+    <tbody>
+        {% for row, who in rows %}
+        <tr{% if row.refused %} class="read-refused"{% endif %}>
+            <td>{{ row.at|localdatetime }}</td>
+            <td>{{ who }}</td>
+            <td><span class="read-kind">{{ row.kind }}</span>
+                {% if not fixed and row.datamodule_path %}{{ row.datamodule_path }}{% endif %}{% if row.report_name %}{% if not fixed and row.datamodule_path %}: {% endif %}{{ row.report_name }}{% endif %}{% if row.run_uuid %} · run <code>{{ row.run_uuid[:8] }}</code>{% endif %}{% if row.version_uuid and row.kind != 'run' and row.kind != 'run-data' %} · version <code>{{ row.version_uuid[:8] }}</code>{% endif %}
+                {% if row.format and row.format != 'html' or row.query %}<br><small>{% if row.format and row.format != 'html' %}{{ row.format }}{% endif %}{% if row.query %} <code>{{ row.query }}</code>{% endif %}</small>{% endif %}</td>
+            <td>{{ row.row_count if row.row_count is not none else '' }}{% if row.bytes_sent %}<br><small>{{ row.bytes_sent }} bytes</small>{% endif %}</td>
+            <td>{{ row.status }}{% if row.duration_ms is not none %}<br><small>{{ row.duration_ms|duration }}</small>{% endif %}</td>
+            <td><span title="{{ row.user_agent or '' }}">{{ row.remote_addr or '' }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+<nav class="pager">
+    {% if newest %}<a href="{{ newest }}">&lsaquo; Newest</a>{% endif %}
+    {% if older %}<a href="{{ older }}">Older &rsaquo;</a>{% endif %}
+</nav>
+{% else %}
+<p>No reads{% if problems or filters.kind or filters.username or filters.refused or filters.since or filters.until or filters.report_id or key_filter is not none %} match this filter{% endif %}.</p>
+{% endif %}
+{% endblock %}

@@ -133,7 +133,7 @@ class Worker:
         """Clean up after processes that died mid-build."""
         from strata.models.build_job import BuildJob
         from strata.models.worker_process import STALE_SECONDS, WorkerProcess
-        from strata.services import alert_service, datamodule_service, run_service
+        from strata.services import alert_service, datamodule_service, read_audit, run_service
 
         with self.app.app_context():
             alive = [w.id for w in WorkerProcess.alive()]
@@ -142,11 +142,14 @@ class Worker:
             dead = datamodule_service.reap_dead_builds()
             WorkerProcess.forget_stale()
             expired_runs = run_service.prune_runs()
+            expired_reads = read_audit.prune()
             stale = alert_service.sweep_stale()
         if orphans or dead:
             log.warning("swept %d orphaned job(s) and %d dead build(s)", orphans, len(dead))
         if expired_runs:
             log.info("removed %d expired run(s)", len(expired_runs))
+        if expired_reads:
+            log.info("removed %d read-audit row(s) past audit.retention_days", expired_reads)
         if stale:
             log.warning("stale-data alert sent for %s", ", ".join(stale))
 

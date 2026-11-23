@@ -20,18 +20,27 @@ from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
-from strata.services import access, query_filter, report_service, run_service, stream_service
+from strata.services import (
+    access,
+    query_filter,
+    read_audit,
+    report_service,
+    run_service,
+    stream_service,
+)
 from strata.services.query_filter import FilterError
 
 bp = Blueprint("runs", __name__)
 
 
-def _load(run_uuid: UUID) -> tuple[ReportRun, Report, Datamodule]:
+def _load(run_uuid: UUID, kind: str, fmt: str = "html") -> tuple[ReportRun, Report, Datamodule]:
     run = ReportRun.get_by_uuid(str(run_uuid))
     report = Report.get_by_id(run.report_id) if run else None
     dm = Datamodule.get_by_id(report.datamodule_id) if report else None
     if run is None or report is None or dm is None:
         raise NotFound()
+    # The read audit records this request from here on, refusals included.
+    read_audit.note(kind, dm, report, run=run, format=fmt[:16])
     if not access.can_view(dm):
         forbid("You are not one of this report's viewers; its owners can add you.")
     if dm.access_lock:
@@ -77,7 +86,7 @@ def run_now(report_uuid: str) -> WerkzeugResponse:
 @bp.route("/runs/<uuid:run_uuid>")
 @login_required
 def view(run_uuid: UUID) -> str:
-    run, report, dm = _load(run_uuid)
+    run, report, dm = _load(run_uuid, "run")
     pairs = list(request.args.items(multi=True))
     result = None
     arg_error = None
@@ -87,6 +96,7 @@ def view(run_uuid: UUID) -> str:
         _args, spec = query_filter.parse_params(pairs, set())
         if run.snapshot_path:
             result = run_service.snapshot_table(run, dm.uuid, spec)
+            read_audit.update(row_count=result.row_count)
     except FilterError as exc:
         arg_error = str(exc)
     schedule_name = None
@@ -119,7 +129,7 @@ def view(run_uuid: UUID) -> str:
 @bp.route("/runs/<uuid:run_uuid>.<ext>")
 @login_required
 def download(run_uuid: UUID, ext: str) -> Response:
-    run, report, dm = _load(run_uuid)
+    run, report, dm = _load(run_uuid, "run-data", ext)
     if ext not in stream_service.STREAM_FORMATS:
         return Response(f"Unsupported format '{ext}'", status=400)
     try:

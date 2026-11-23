@@ -6,12 +6,12 @@ is TTL-stale. Query params: declared args by name, ``field__op=value`` filters,
 ``q`` substring search, ``sort=-a,b`` and ``page=N`` — all validated against
 the macro's real output columns (services/query_filter). Auth: a session user,
 or for data formats an API key via ``?key=<token>`` (hashed lookup, scope +
-expiry checked, access-logged; html always requires a session). Authoring
+expiry checked; html always requires a session). Every request that names a
+report is recorded by the read audit (services/read_audit). Authoring
 lives in blueprints/datamodules.py.
 """
 
 import logging
-import time
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode
@@ -24,7 +24,6 @@ from werkzeug.wrappers import Response as WerkzeugResponse
 
 from strata.blueprints.auth import forbid, login_required
 from strata.models.api_key import ApiKey, hash_token
-from strata.models.api_key_access_log import ApiKeyAccessLog
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
@@ -34,6 +33,7 @@ from strata.services import (
     build_queue,
     datamodule_service,
     query_filter,
+    read_audit,
     report_service,
     stream_service,
 )
@@ -59,6 +59,8 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if resolved is None:
         raise NotFound()
     report, dm = resolved
+    # The read audit records this request from here on, refusals included.
+    read_audit.note("page" if ext == "html" else "data", dm, report, format=ext[:16])
 
     if ext not in _SUPPORTED:
         return FlaskResponse(f"Unsupported format '{ext}'", status=400)
@@ -97,8 +99,10 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         if current is None or current.access_lock:
             return _locked(current or dm, ext)
         if served.version is None:
-            return _not_built_yet(report, dm, served, ext, api_key)
+            return _not_built_yet(report, dm, served, ext)
     version = pinned if pinned is not None else (served.version if served else None)
+    if version is not None:
+        read_audit.update(version=version)
 
     args = ReportArg.get_for_report(report.id)
     arg_names = {a.name for a in args}
@@ -107,9 +111,6 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if ext != "html":
         if version_error is not None or version is None:
             return FlaskResponse(version_error or "no servable version", status=400)
-        started = time.perf_counter()
-        resp: FlaskResponse | None = None
-        error_text = ""
         try:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
             if api_key is not None:
@@ -117,12 +118,10 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
             resp = report_service.stream(report, dm, arg_values, spec, ext, version)
             _freshness_headers(resp, version, served)
         except (ArgError, FilterError, duckdb.Error) as exc:
-            error_text = str(exc)
+            return FlaskResponse(str(exc), status=400)
         if api_key is not None:
-            _log_key_access(api_key, report, ext, 200 if resp is not None else 400, started, resp)
-            if resp is not None:
-                api_key.record_use()
-        return resp if resp is not None else FlaskResponse(error_text, status=400)
+            api_key.record_use()
+        return resp
 
     options = report_service.arg_options_map(report, dm, args)
 
@@ -137,6 +136,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
             if request.args or not any(a.required for a in args):
                 result = report_service.run_table(report, dm, arg_values, spec, version)
+                read_audit.update(row_count=result.row_count)
         except (ArgError, FilterError) as exc:
             arg_error = str(exc)
 
@@ -189,7 +189,6 @@ def _not_built_yet(
     dm: Datamodule,
     served: build_queue.Served,
     ext: str,
-    api_key: ApiKey | None,
 ) -> FlaskResponse | str:
     """Nothing has ever been built: a self-refreshing page, or 503 for data."""
     if ext == "html":
@@ -200,10 +199,7 @@ def _not_built_yet(
         if served.failure
         else "The data for this report is still being built; retry shortly."
     )
-    resp = FlaskResponse(message, status=503, headers={"Retry-After": "30"})
-    if api_key is not None:
-        _log_key_access(api_key, report, ext, 503, None, None)
-    return resp
+    return FlaskResponse(message, status=503, headers={"Retry-After": "30"})
 
 
 def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskResponse | None]:
@@ -211,19 +207,21 @@ def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskRes
 
     (key, None) on success; (None, 401/403 response) otherwise. The 403 text is
     uniform — it never reveals whether the token, expiry, or scope failed — but
-    a matched key row gets a status-403 access-log entry.
+    the read audit records the key it matched, or the prefix of a token that
+    matched none.
     """
     token = request.args.get("key", "")
     if not token:
         return None, FlaskResponse("authentication required", status=401)
     key = ApiKey.get_by_token_hash(hash_token(token))
     if key is None:
+        read_audit.update(token_prefix=token[:8])
         return None, FlaskResponse("invalid API key", status=403)
+    read_audit.update(key=key)
     in_scope = (key.scope_type == "report" and key.report_id == report.id) or (
         key.scope_type == "datamodule" and key.datamodule_id == report.datamodule_id
     )
     if not key.is_valid() or not in_scope:
-        _log_key_access(key, report, ext, 403, None, None)
         return None, FlaskResponse("invalid API key", status=403)
     return key, None
 
@@ -243,40 +241,6 @@ def _apply_key_args(key: ApiKey, arg_values: dict[str, list[str]]) -> dict[str, 
         values = value if isinstance(value, list) else [value]
         arg_values[name] = [str(v) for v in values]
     return arg_values
-
-
-def _log_key_access(
-    key: ApiKey,
-    report: Report,
-    ext: str,
-    status: int,
-    started: float | None,
-    resp: FlaskResponse | None,
-) -> None:
-    """Best-effort access-log row; a write failure never breaks serving."""
-    duration_ms = int((time.perf_counter() - started) * 1000) if started is not None else None
-    bytes_sent = None
-    row_count = None
-    if resp is not None:
-        content_length = resp.headers.get("Content-Length")
-        if content_length and content_length.isdigit():
-            bytes_sent = int(content_length)
-        rows = resp.headers.get("X-Row-Count")
-        if rows and rows.isdigit():
-            row_count = int(rows)
-    try:
-        ApiKeyAccessLog.record(
-            api_key_id=key.id,
-            report_id=report.id,
-            remote_addr=request.remote_addr,
-            fmt=ext,
-            row_count=row_count,
-            bytes_sent=bytes_sent,
-            duration_ms=duration_ms,
-            status=status,
-        )
-    except Exception:
-        log.exception("api_key access-log write failed")
 
 
 def _resolve_pinned(dm: Datamodule) -> tuple[DatamoduleVersion | None, str | None]:
@@ -362,11 +326,14 @@ def excel_box(report_uuid: str) -> str:
     if resolved is None:
         raise NotFound()
     report, dm = resolved
+    read_audit.note("excel-key", dm, report)  # a key is shown to this person
     if not access.can_view(dm):
         forbid(NOT_A_VIEWER)
     if dm.access_lock:
         forbid(access.LOCKED)
-    return _excel_box(report, dm, ApiKey.ensure_excel_link(dm.id, g.user.username))
+    key = ApiKey.ensure_excel_link(dm.id, g.user.username)
+    read_audit.update(key=key)
+    return _excel_box(report, dm, key)
 
 
 @bp.route("/r/<report_uuid>/excel/replace", methods=["POST"])
@@ -378,6 +345,7 @@ def excel_replace(report_uuid: str) -> str | FlaskResponse:
     if resolved is None:
         raise NotFound()
     report, dm = resolved
+    read_audit.note("excel-key", dm, report)  # the new key is shown to this person
     if not access.can_own(dm):
         return FlaskResponse(
             "Only the owners of this report's datamodule and the Strata admins can replace "
@@ -386,6 +354,7 @@ def excel_replace(report_uuid: str) -> str | FlaskResponse:
         )
     key = ApiKey.ensure_excel_link(dm.id, g.user.username)
     key.rotate()
+    read_audit.update(key=key)
     return _excel_box(report, dm, key, replaced=True)
 
 

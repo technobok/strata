@@ -96,9 +96,11 @@ previous data, so a refresh does not time out (see
 - **Disable** stops a key without deleting it; **enable** turns it back on.
 - **Delete** removes it.
 
-Every request made with a key, Excel link or admin, is logged: format, rows, bytes,
-time taken, status and the caller's address. The key's use count and last-used time are on the datamodule
-page.
+Every request made with a key, Excel link or admin, is in the [read audit](audit.md):
+the format, the arguments, rows, bytes, time taken, status, the caller's address and
+program, and refusals too (a wrong, disabled or expired key). The key's use count and
+last-used time are on the datamodule page; the **reads** link under them lists that
+key's requests.
 
 A wrong, disabled or expired token, or one for another datamodule, gets HTTP 403. A data request with
 no login and no key gets 401.

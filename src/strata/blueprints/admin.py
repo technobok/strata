@@ -2,6 +2,7 @@
 
 import logging
 import os
+from typing import Any
 
 import apsw
 import apsw.ext
@@ -15,6 +16,7 @@ from flask import (
 )
 from werkzeug.wrappers import Response
 
+from strata.blueprints import reads as reads_page
 from strata.blueprints.auth import admin_required
 from strata.config import (
     BOOTSTRAP_ONLY,
@@ -88,6 +90,23 @@ def keys() -> str:
         dm = Datamodule.get_by_id(dm_id) if dm_id is not None else None
         rows.append({"key": key, "datamodule": dm, "report": report})
     return render_template("admin/keys.html", rows=rows)
+
+
+@bp.route("/reads")
+@admin_required
+def reads() -> str:
+    """The read audit: every read of every datamodule, newest first."""
+
+    def url(csv: bool = False, **query: Any) -> str:
+        return url_for("admin.reads_csv" if csv else "admin.reads", **query)
+
+    return reads_page.render(None, url)
+
+
+@bp.route("/reads.csv")
+@admin_required
+def reads_csv() -> Response:
+    return reads_page.csv_response(None, "reads.csv")
 
 
 @bp.route("/config", methods=["GET", "POST"])
