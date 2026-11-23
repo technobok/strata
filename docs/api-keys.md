@@ -50,7 +50,8 @@ without affecting anyone else. A key reads **every report of the datamodule**. C
 | Caller-suppliable args | The argument names a URL may set, comma-separated. Blank means every argument that is not fixed. |
 
 Each key's links (one per report, `.xlsx`) stay in the API keys table, under its
-token prefix, with copy buttons: its owners can copy them again at any time. Strata
+token prefix: one **Copy: <report>** button per report (hover to see the link). Its
+owners can copy them again at any time. Strata
 looks a key up by a hash of its token and keeps the token itself encrypted, like the
 Excel link. Keys made before 2026-11-23 kept only the hash: **rotate** one once to see
 its links. Keys made before then for one report keep reading only that report.

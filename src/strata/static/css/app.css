@@ -85,6 +85,17 @@ td :is(button, [role="button"]) {
     white-space: nowrap;
 }
 
+/* An API key's per-report Copy buttons, named after their reports: a long name
+   wraps rather than widening the keys table. */
+.key-links {
+    margin-top: 0.25rem;
+}
+
+.key-links button {
+    white-space: normal;
+    text-align: left;
+}
+
 /* A form on one row: inputs share the room, the button keeps its label's width. */
 .inline-form {
     display: flex;

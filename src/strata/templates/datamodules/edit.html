@@ -238,9 +238,10 @@ via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of 
         {% for k in api_keys %}
         <tr>
             <td>{{ k.name }}</td>
-            <td>{% if k.id in key_links %}<details class="key-links"><summary><code>{{ k.token_prefix }}…</code></summary>
-                {% for name, url in key_links[k.id] %}<div class="token-line"><small>{{ name }}</small> <code class="wrap-anywhere">{{ url }}</code> <button type="button" class="outline small" data-copy="{{ url }}">Copy</button></div>{% endfor %}
-                </details>{% else %}<code>{{ k.token_prefix }}…</code><br><small>Made before keys kept their token: Rotate to see its links.</small>{% endif %}</td>
+            <td><code>{{ k.token_prefix }}…</code>
+                {% if k.id in key_links %}<div class="actions column key-links">
+                    {% for name, url in key_links[k.id] %}<button type="button" class="outline small" data-copy="{{ url }}" title="{{ url }}">Copy: {{ name }}</button>{% endfor %}
+                </div>{% else %}<br><small>Made before keys kept their token: Rotate to see its links.</small>{% endif %}</td>
             <td>{% if k.scope_type == 'report' %}report: <code>{{ report_by_id[k.report_id].macro_name if k.report_id in report_by_id else '(deleted)' }}</code>{% if k.old_report_link %}<br><small>disabled when the Excel link is replaced</small>{% endif %}{% else %}every report{% endif %}</td>
             <td>{{ 'yes' if k.enabled else 'no' }}</td>
             <td>{{ k.expires_at|localdate }}</td>

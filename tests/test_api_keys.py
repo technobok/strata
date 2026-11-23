@@ -123,8 +123,10 @@ def test_a_keys_links_stay_on_its_datamodule_page(strata: Strata, dm: tuple[str,
     dm_uuid, rpt = dm
     token = strata.new_api_key(dm_uuid, name="finance workbook")
     link = f"http://localhost/r/{rpt}.xlsx?key={token}"
-    assert link in _page(strata, dm_uuid)
-    assert link in _page(strata, dm_uuid)  # not once: every time
+    copy = f'data-copy="{link}" title="{link}">Copy: Sales</button>'
+    assert copy in _page(strata, dm_uuid)
+    assert copy in _page(strata, dm_uuid)  # not once: every time
+    assert "<details" not in _page(strata, dm_uuid).split('id="api-keys"')[1].split("</table>")[0]
     assert "Scope" not in _page(strata, dm_uuid)  # the form offers no scope
 
 
