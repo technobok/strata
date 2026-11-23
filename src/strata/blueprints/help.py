@@ -37,6 +37,7 @@ PAGES: dict[str, str] = {
     "api-keys": "API keys and Excel",
     "freshness": "Freshness and builds",
     "schedules": "Schedules",
+    "access": "Access",
     "settings": "Settings (admin)",
 }
 

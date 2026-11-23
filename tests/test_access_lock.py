@@ -108,7 +108,8 @@ def test_a_locked_datamodule_serves_nothing_to_anyone(
     assert strata.client.post(f"/r/{rpt}/build", headers=VIEWER).status_code == 403
     # Its page stays open to its owners and the admins, to fix it.
     page = strata.client.get(f"/datamodules/{child}/edit", headers=ALICE).get_data(as_text=True)
-    assert "<strong>Locked:</strong>" in page and "alice may not read" in page.replace("&#39;", "'")
+    assert 'class="error-box access-lock"' in page
+    assert "alice may not read" in page.replace("&#39;", "'")
 
 
 def test_fixing_access_and_a_successful_build_unlock_it(

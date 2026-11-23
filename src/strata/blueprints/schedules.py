@@ -19,7 +19,7 @@ from strata.models.datamodule import Datamodule
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.models.schedule import Schedule
-from strata.services import notify_service, report_service, schedule_service
+from strata.services import access, notify_service, report_service, schedule_service
 from strata.services.schedule_service import Definition, ScheduleError
 
 bp = Blueprint("schedules", __name__, url_prefix="/datamodules")
@@ -107,6 +107,10 @@ def _render(
         days=schedule_service.DAYS,
         day_names=schedule_service.DAY_NAMES,
         timezones=schedule_service.configured_timezones(),
+        outside=access.recipients_outside(dm, values.get("recipients") or [])
+        if report is not None
+        else None,
+        restricted=access.is_restricted(dm),
     )
 
 
@@ -133,8 +137,11 @@ def _values_from(schedule: Schedule | None) -> dict[str, Any]:
     }
 
 
-def schedule_rows(schedules: list[Schedule]) -> list[dict[str, object]]:
-    """Schedules for a list on a page, described and in their own timezone."""
+def schedule_rows(
+    schedules: list[Schedule], dm: Datamodule | None = None
+) -> list[dict[str, object]]:
+    """Schedules for a list on a page, described and in their own timezone. With ``dm``
+    (a report's schedules), recipients outside its viewers are noted."""
     rows: list[dict[str, object]] = []
     for schedule in schedules:
         definition = Definition.from_json(schedule.schedule_definition)
@@ -145,6 +152,9 @@ def schedule_rows(schedules: list[Schedule]) -> list[dict[str, object]]:
                 "timezone": definition.timezone,
                 "next_run": local_time(schedule.next_run_at, definition.timezone),
                 "last_run": local_time(schedule.last_run_at, definition.timezone),
+                "outside": access.recipients_outside(dm, schedule.recipients)
+                if dm is not None and schedule.report_id is not None
+                else None,
             }
         )
     return rows
@@ -214,6 +224,8 @@ def _submit(dm: Datamodule, schedule: Schedule | None, report: Report | None) ->
         values.update(fields=fields, recipients=recipients, params=params)
         return _render(dm, schedule, values, report)
     flash(f"Schedule '{name}' {'saved' if schedule else 'created'}.", "success")
+    if report is not None and (outside := access.recipients_outside(dm, recipients)):
+        flash(f"Mail goes to them anyway, but some cannot open the run: {outside}.", "error")
     return _back(dm, report)
 
 

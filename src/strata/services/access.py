@@ -353,3 +353,41 @@ def check_build(dm: Datamodule) -> None:
 
 
 LOCKED = "This datamodule is locked: it serves nothing until its owners fix who may read it."
+
+
+# ---------------------------------------------------------------------------
+# Mail from a datamodule
+# ---------------------------------------------------------------------------
+
+
+def is_restricted(dm: Datamodule) -> bool:
+    """Not everyone signed in may view it: its run mail carries no rows."""
+    return EVERYONE not in viewers_of(dm)
+
+
+def recipients_outside(dm: Datamodule, entries: list[str]) -> str | None:
+    """Which mail recipients are not among ``dm``'s owners or viewers, as one line
+    (they still get the mail, but cannot open the run it links to); None when all are.
+    Email addresses cannot be matched to a viewer."""
+    audience = owners_of(dm) + viewers_of(dm)
+    if EVERYONE in audience or not entries:
+        return None
+    directory = Directory()
+    outside: list[str] = []
+    emails: list[str] = []
+    try:
+        for entry in entries:
+            if "@" in entry and not entry.startswith("@"):
+                emails.append(entry)
+                continue
+            missing = directory.missing([entry], audience)
+            if missing:
+                outside.append(f"{entry} ({_names(missing)})" if entry.startswith("@") else entry)
+    except DirectoryUnavailable as exc:
+        return f"the recipients could not be checked against its viewers: {exc}"
+    parts = []
+    if outside:
+        parts.append(f"not viewers of {dm.path}: {', '.join(outside)}")
+    if emails:
+        parts.append(f"email addresses Strata cannot match to a viewer: {', '.join(emails)}")
+    return "; ".join(parts) or None

@@ -118,7 +118,7 @@ says who was skipped and why.
 | A **check** that finds rows | to the schedule's recipients, every time |
 | A **check** that finds no rows | none |
 | A plain **report** | to the schedule's recipients, every time, even with no rows |
-| A run whose **query failed** | to the Strata admins only, with the error |
+| A run whose **query failed**, or whose datamodule is locked | to the datamodule's alert list only, with the error (no rows) |
 
 A check mails on **every** run that finds rows, not only when something changed:
 the same exception mails again until it is fixed.
@@ -129,7 +129,9 @@ the same exception mails again until it is fixed.
   severity);
 - a first line with how old the data is, and why if it may be out of date, e.g.
   "Data as of Fri 21 Nov 2026 06:45 NZDT; refresh failed: …";
-- the first 20 rows as a table;
+- the first 20 rows as a table, unless the datamodule is restricted (its viewers
+  are not everyone): then only the count, and the rows stay in Strata (see
+  [Access](access.md#mail-from-a-restricted-datamodule));
 - a link to the saved run, with every row, sorting and downloads. The link needs
   the `server.public_url` setting.
 

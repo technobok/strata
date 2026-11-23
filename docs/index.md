@@ -68,7 +68,9 @@ hears about it. See [Freshness and builds](freshness.md#alerts).
 
 ## Who does what
 
-- **Authors** (Strata admins) write build scripts and reports in SQL.
-- **Readers** open reports in the browser or refresh them in Excel.
-- **Admins** also manage connections, settings and API keys. See
-  [Settings](settings.md).
+- **Owners** of a datamodule write its build script and reports in SQL. **Writers**
+  (the `strata-writers` group) create datamodules and own what they create.
+- **Viewers** of a datamodule open its reports in the browser or refresh them in
+  Excel. The home page lists every report you can open.
+- **Admins** can do everything, and also manage connections and settings. See
+  [Access](access.md) and [Settings](settings.md).

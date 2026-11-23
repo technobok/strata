@@ -10,7 +10,7 @@
 
 {% if datamodule and datamodule.access_lock %}
 <article class="error-box access-lock">
-    <strong>Locked:</strong> this datamodule serves nothing (pages, runs, data links, Excel links) until its access is fixed and a build succeeds.
+    <strong>Locked{{ help_link('access', 'locks') }}:</strong> this datamodule serves nothing (pages, runs, data links, Excel links) until its access is fixed and a build succeeds.
     <br>{{ datamodule.access_lock }}
 </article>
 {% endif %}
@@ -70,7 +70,7 @@
     </fieldset>
     {% endif %}
     <fieldset class="access">
-        <legend>Access</legend>
+        <legend>Access{{ help_link('access', 'owners-and-viewers') }}</legend>
         <input type="hidden" name="access_present" value="1">
         <div class="grid">
             <div>

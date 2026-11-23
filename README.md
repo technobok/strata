@@ -13,14 +13,14 @@ A reporting system built around **datamodules**: persistent, versioned DuckDB da
 - **Multi-format serving** — `/r/<uuid>.html|parquet|csv|json|xlsx`, all streamed with constant memory and exact `Content-Length`
 - **Version pinning** — `?version=<version_uuid>` serves any retained historical snapshot (never triggers a rebuild)
 - **Checks** — any report can be a check (severity info/warning/error); a **gate** check runs inside every build and keeps bad data from going live; `/checks` lists them, flagged first
-- **Scheduled runs + mail** — reports and checks have schedules of their own, each with its own recipients (Gatekeeper users, `@groups`, emails) and arguments; every run is saved (Parquet, 30 days) and mailed through Outbox with the first 20 rows and a link; a check with no rows sends nothing
-- **Alerts** — per-datamodule alert lists hear "build failing", "recovered" and "data is stale"
+- **Scheduled runs + mail** — reports and checks have schedules of their own, each with its own recipients (Gatekeeper users, `@groups`, emails) and arguments; every run is saved (Parquet, 30 days) and mailed through Outbox with the first 20 rows and a link (only the count and the link when the datamodule's viewers are restricted); a check with no rows sends nothing
+- **Alerts** — per-datamodule alert lists hear "build failing", "recovered", "data is stale" and "locked"
+- **Access per datamodule** — owners (edit) and viewers (read) per datamodule, as users, `@groups` or `*`, with live defaults; admins and writers (`strata-writers`, may create datamodules) instance-wide; connections have a "may use" list; each owner of a dependant must be able to read its parents, checked at every build, and a datamodule whose owners lost access is **locked** (serves nothing, keys included) until fixed; a home page lists every report you can open
 - **Jinja build scripts** — loop over a dependency's rows (e.g. one `UNION ALL` branch per company) with `rows()`, `sqlstr`, `ident`
 - **Retention + reconcile** — per-datamodule keep-newest-N or age-window pruning after each build, plus `strata-admin reconcile` to sweep orphaned files
 - **API keys for Excel/PowerQuery** — named, revocable, sha256-hashed bearer tokens (`?key=…`) with per-key fixed/whitelisted arguments and an access log; the full PowerQuery URL is generated for copy/paste when a key is created
 - **HTMX results table** — sortable headers, search box, removable filter chips, pager, and export links without page reloads
 - **CodeMirror SQL editors** — build scripts, report macros, and the admin SQL console (vendored, theme-aware)
-- **Tag system** — 32-colour palette for organising datamodules
 - **Dark/light mode** — PicoCSS with theme toggle
 - **Admin panel** — system stats, configuration editor (live settings apply without a restart), read-only SQL console with schema sidebar, and external-connection manager
 - **In-app help** — `docs/*.md` rendered at `/help`, with a contextual **?** next to each editor
@@ -49,6 +49,7 @@ How to write build scripts and reports, the URL grammar, API keys for Excel, fre
 | [API keys and Excel](docs/api-keys.md) | Keys, fixed args, PowerQuery |
 | [Freshness and builds](docs/freshness.md) | TTL, the stale-read wait, back-off, the worker, retention |
 | [Schedules](docs/schedules.md) | The schedule kinds and custom RRULEs |
+| [Access](docs/access.md) | Admins, writers, owners and viewers; connections' "may use"; the dependency rule and locks; restricted mail; a payroll recipe |
 | [Settings (admin)](docs/settings.md) | Every setting and when a change applies |
 
 The original design rationale is in [`docs/design/future-direction.md`](docs/design/future-direction.md); the plan of record is [`ROADMAP.md`](ROADMAP.md).

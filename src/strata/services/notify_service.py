@@ -238,12 +238,23 @@ def build_run_mail(
     first = f"Data as of {_local(run.data_as_of, timezone)}"
     if run.data_note:
         first += f"; {run.data_note}"
-    columns, rows = _first_rows(run, dm)
-    shown = (
-        f"The first {len(rows)} of {_rows_word(count)}:"
-        if count > len(rows)
-        else f"{_rows_word(count)}:"
-    )
+    from strata.services import access
+
+    if access.is_restricted(dm):
+        # Mail bodies sit in Outbox's shared database: rows of restricted data stay in
+        # Strata, behind its viewers list (user decision 2026-11-23).
+        columns, rows = [], []
+        shown = (
+            f"{_rows_word(count)}. Who may read {dm.path} is restricted, so the rows are "
+            "not in this mail: open the run in Strata."
+        )
+    else:
+        columns, rows = _first_rows(run, dm)
+        shown = (
+            f"The first {len(rows)} of {_rows_word(count)}:"
+            if count > len(rows)
+            else f"{_rows_word(count)}:"
+        )
     link = run_link(run)
     days = live_int("runs.retention_days")
     if link:

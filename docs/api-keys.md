@@ -4,7 +4,7 @@ Excel and PowerQuery cannot log in through single sign-on. An **API key** lets t
 fetch a report's **data** (Parquet, CSV, JSON or XLSX) without a login. A key never
 opens the HTML page. There are two kinds:
 
-- each report's **Excel link**: anyone who can open the report copies it from the
+- each report's **Excel link**: anyone who can view the report copies it from the
   report page, and it reads that report only;
 - **admin keys**, made on a datamodule page for one datamodule or one report, with
   fixed arguments if needed: for another program, or a workbook that must always get
@@ -23,9 +23,11 @@ Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel
 - A workbook refreshes from wherever Excel reaches the server directly. Behind a
   sign-in Excel cannot pass, such as Microsoft's in front of the server from outside
   the office, it does not refresh.
-- **Replace this report's key** (in the box, for admins and the report's owner) cuts
-  off every workbook on the report at once: each needs the new link. That is the
-  answer to a workbook that reached the wrong people.
+- **Replace this report's key** (in the box, for its datamodule's owners and the
+  admins) cuts off every workbook on the report at once: each needs the new link.
+  That is the answer to a workbook that reached the wrong people, or to someone
+  leaving the report's viewers (see [Access](access.md#excel-links-and-keys)).
+- A **locked** datamodule stops every key on it (see [Access](access.md#locks)).
 - Admins see every key, with its last use, under **Admin → API keys**.
 
 ## Admin keys

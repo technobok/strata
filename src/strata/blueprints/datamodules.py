@@ -403,11 +403,11 @@ def _schedule_rows(dm: Datamodule) -> list[dict[str, object]]:
     return schedule_rows(Schedule.for_datamodule(dm.id))
 
 
-def _report_schedule_rows(report: Report) -> list[dict[str, object]]:
+def _report_schedule_rows(report: Report, dm: Datamodule) -> list[dict[str, object]]:
     from strata.blueprints.schedules import schedule_rows
     from strata.models.schedule import Schedule
 
-    return schedule_rows(Schedule.for_report(report.id))
+    return schedule_rows(Schedule.for_report(report.id), dm)
 
 
 def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | None]:
@@ -703,7 +703,7 @@ def report_edit(report_uuid: str) -> str | Response:
         check=ReportCheck.get(report.id) if report else None,
         severities=SEVERITIES,
         runs=ReportRun.recent_for_report(report.id) if report else [],
-        schedules=_report_schedule_rows(report) if report else [],
+        schedules=_report_schedule_rows(report, dm) if report else [],
     )
 
 
