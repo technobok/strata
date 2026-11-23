@@ -9,7 +9,7 @@
 </hgroup>
 
 {% if datamodule and datamodule.last_build_error %}
-<article class="flash flash-error">Last build error: {{ datamodule.last_build_error }}</article>
+<article class="error-box">Last build error: {{ datamodule.last_build_error }}</article>
 {% endif %}
 
 <form method="post"

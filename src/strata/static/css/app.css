@@ -69,6 +69,17 @@ table td {
     color: white;
 }
 
+/* An error that stays on the page (a build error, a query error). .flash is for
+   flash messages only: app.js removes every .flash 5 seconds after the page loads. */
+.error-box {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-del-color);
+    color: white;
+    white-space: pre-wrap;
+}
+
 .flash-success {
     background: var(--pico-ins-color);
     color: white;

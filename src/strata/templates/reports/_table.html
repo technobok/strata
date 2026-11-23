@@ -1,8 +1,8 @@
 {% if arg_error %}
-<article class="flash flash-error">{{ arg_error }}</article>
+<article class="error-box">{{ arg_error }}</article>
 {% endif %}
 {% if result and result.error %}
-<article class="flash flash-error">{{ result.error }}</article>
+<article class="error-box">{{ result.error }}</article>
 {% endif %}
 
 {% if ui and (result or ui.chips) %}
