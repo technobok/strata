@@ -78,9 +78,9 @@ def index() -> str:
 @bp.route("/keys")
 @admin_required
 def keys() -> str:
-    """Every API key: each report's Excel link and the keys made on datamodule
+    """Every API key: each datamodule's Excel link and the keys made on datamodule
     pages, with what each reads, who made it and its use. Keys are managed on
-    their datamodule's page; an Excel link is replaced from its report's box."""
+    their datamodule's page; an Excel link is replaced from a report's box."""
     rows = []
     for key in ApiKey.get_all():
         report = Report.get_by_id(key.report_id) if key.report_id is not None else None

@@ -1,6 +1,7 @@
-<p><small>This link reads <strong>this report only</strong>, in the view you are looking at
-(its arguments, filters, sort and search). Anyone with a workbook built from it can
-refresh it, wherever Excel reaches this server directly.{{ help_link('api-keys', 'each-reports-excel-link') }}</small></p>
+<p><small>This link opens this report in the view you are looking at (its arguments,
+filters, sort and search). Its key is the Excel key of <strong>{{ datamodule.path }}</strong>:
+the same for every report on it. Anyone with a workbook built from it can refresh it,
+wherever Excel reaches this server directly.{{ help_link('api-keys', 'excel-links') }}</small></p>
 <label>Format
     <select class="excel-format">
         {% for label, url in links %}<option value="{{ url }}">{{ label }}</option>{% endfor %}
@@ -16,10 +17,10 @@ refresh it, wherever Excel reaches this server directly.{{ help_link('api-keys',
     <li>Choose <strong>Anonymous</strong>, then <strong>Connect</strong>.</li>
 </ol>
 {% if replaced %}
-<p class="excel-replaced"><strong>Replaced.</strong> Workbooks with the old link stop refreshing: give them this one.</p>
+<p class="excel-replaced"><strong>Replaced.</strong> Workbooks with the old key stop refreshing, on every report of {{ datamodule.path }}: give them the new links.</p>
 {% endif %}
 {% if can_replace %}
 <button type="button" class="outline secondary small"
         hx-post="{{ replace_url }}" hx-target="closest .excel-body" hx-swap="innerHTML"
-        hx-confirm="Replace this report's Excel key? Every workbook on this report stops refreshing until it gets the new link.">Replace this report's key</button>
+        hx-confirm="Replace the Excel key of {{ datamodule.path }}? Every workbook on any of its reports stops refreshing until it gets a new link.">Replace the datamodule's Excel key</button>
 {% endif %}

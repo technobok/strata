@@ -1,18 +1,22 @@
-"""Each report's Excel link (X3/X4): the report page's "Use in Excel" box shows a
-link for the current view carrying the report's key, made the first time anyone
-opens the box. The key reads that report only, belongs to the report (not a
-person), and only an admin or the report's owner can replace it.
+"""Excel links (X3/X4; one per datamodule since 2026-11-23): a report page's "Use in
+Excel" box shows a link for the current view carrying its DATAMODULE's Excel key,
+made the first time anyone opens a box on it. The key reads every report on the
+datamodule and nothing else, belongs to the datamodule (not a person), and only its
+owners and the admins replace it. Reports' old per-report keys keep working until
+the datamodule's key is replaced.
 """
 
 import hashlib
 import html
 import re
+import secrets
+import uuid
 from urllib.parse import parse_qsl, urlsplit
 
 import apsw
 import pytest
 
-from strata.models.api_key import ApiKey
+from strata.models.api_key import ApiKey, hash_token
 from strata.models.report import Report
 from tests.conftest import Strata
 
@@ -46,14 +50,15 @@ def _local(url: str) -> str:
 
 
 def _excel_key(strata: Strata, report: str) -> ApiKey | None:
+    """The Excel link of the report's datamodule."""
     with strata.app.app_context():
         rpt = Report.get_by_uuid(report)
         assert rpt is not None
-        return ApiKey.get_excel_link(rpt.id)
+        return ApiKey.get_excel_link(rpt.datamodule_id)
 
 
-def test_opening_the_box_makes_the_reports_key_once(strata: Strata) -> None:
-    _dm, report, _other = _setup(strata)
+def test_opening_a_box_makes_the_datamodules_key_once(strata: Strata) -> None:
+    _dm, report, other = _setup(strata)
     assert _excel_key(strata, report) is None  # nobody opened the box yet
     box = _box(strata, report, headers=VIEWER)
     first = _links(box)
@@ -68,21 +73,29 @@ def test_opening_the_box_makes_the_reports_key_once(strata: Strata) -> None:
     assert f"/r/{report}.xlsx?key=" in shown
     again = _links(_box(strata, report))  # someone else, later: the same key
     assert again == first
+    token = dict(parse_qsl(urlsplit(first["CSV"]).query))["key"]
+    other_csv = _links(_box(strata, other))["CSV"]  # another report: the same key
+    assert dict(parse_qsl(urlsplit(other_csv).query))["key"] == token
 
     key = _excel_key(strata, report)
-    assert key is not None and key.excel_link and key.scope_type == "report"
+    assert key is not None and key.excel_link and not key.old_report_link
+    assert key.scope_type == "datamodule" and key.report_id is None
     assert key.created_by == "viewer" and key.name == "Excel link"
-    token = dict(parse_qsl(urlsplit(first["CSV"]).query))["key"]
     assert key.token_hash == hashlib.sha256(token.encode()).hexdigest()
     assert key.token_encrypted and token not in key.token_encrypted
     with strata.app.app_context():
         rpt = Report.get_by_uuid(report)
         assert rpt is not None
-        assert ApiKey.ensure_excel_link(rpt.id, "someone").id == key.id  # never a second
+        assert ApiKey.ensure_excel_link(rpt.datamodule_id, "someone").id == key.id  # one
 
 
-def test_the_link_reads_this_report_only_in_this_view(strata: Strata) -> None:
+def test_the_link_opens_this_view_and_its_key_reads_only_its_datamodule(
+    strata: Strata,
+) -> None:
     _dm, report, other = _setup(strata)
+    elsewhere_dm = strata.new_datamodule(path="test/elsewhere")
+    strata.build(elsewhere_dm)
+    elsewhere = strata.new_report(elsewhere_dm)
     csv = _links(_box(strata, report, "?region=North&sort=-revenue"))["CSV"]
     assert urlsplit(csv).scheme == "http" and urlsplit(csv).path == f"/r/{report}.csv"
     resp = strata.client.get(_local(csv), headers=ANON)
@@ -90,7 +103,8 @@ def test_the_link_reads_this_report_only_in_this_view(strata: Strata) -> None:
     body = resp.get_data(as_text=True).splitlines()
     assert len(body) == 3 and body[1].startswith("North,A,100")  # filtered, sorted
     token = dict(parse_qsl(urlsplit(csv).query))["key"]
-    assert strata.client.get(f"/r/{other}.csv?key={token}", headers=ANON).status_code == 403
+    assert strata.client.get(f"/r/{other}.csv?key={token}", headers=ANON).status_code == 200
+    assert strata.client.get(f"/r/{elsewhere}.csv?key={token}", headers=ANON).status_code == 403
 
 
 def test_the_link_never_pins_a_page_or_version(strata: Strata) -> None:
@@ -121,27 +135,29 @@ def test_the_box_needs_a_login(strata: Strata) -> None:
 
 
 def test_only_the_datamodules_owners_replace_the_key(strata: Strata) -> None:
-    _dm, report, _other = _setup(strata)
+    _dm, report, other = _setup(strata)
     viewer_box = _box(strata, report, headers=VIEWER)
-    assert "Replace this report's key" not in viewer_box
+    assert "Replace the datamodule's Excel key" not in viewer_box
     old = _local(_links(viewer_box)["CSV"])
     resp = strata.client.post(f"/r/{report}/excel/replace", headers=VIEWER)
     assert resp.status_code == 403
     assert strata.client.get(old, headers=ANON).status_code == 200  # unchanged
 
+    other_old = _local(_links(_box(strata, other))["CSV"])
     admin_box = _box(strata, report)
-    assert "Replace this report's key" in admin_box
+    assert "Replace the datamodule's Excel key" in admin_box
     replaced = strata.client.post(f"/r/{report}/excel/replace?region=North")
     assert replaced.status_code == 200
     replaced_box = html.unescape(replaced.get_data(as_text=True))
     assert "Replaced." in replaced_box and "region=North" in replaced_box
     new = _local(_links(replaced_box)["CSV"])
     assert strata.client.get(old, headers=ANON).status_code == 403
+    assert strata.client.get(other_old, headers=ANON).status_code == 403  # every report
     assert strata.client.get(new, headers=ANON).status_code == 200
 
     # who made the report no longer matters: its datamodule's owners replace
     strata.set_access(_dm, owners="viewer")
-    assert "Replace this report's key" in _box(strata, report, headers=VIEWER)
+    assert "Replace the datamodule's Excel key" in _box(strata, report, headers=VIEWER)
     assert strata.client.post(f"/r/{report}/excel/replace", headers=VIEWER).status_code == 200
 
 
@@ -162,39 +178,39 @@ def test_admins_see_every_key(strata: Strata) -> None:
     _box(strata, report, headers=VIEWER)
     page = strata.client.get("/admin/keys").get_data(as_text=True)
     assert "shared workbook" in page and "Excel link" in page
-    assert "test/sales</a>: Sales" in page and "(every report)" in page
+    assert page.count("test/sales</a> (every report)") == 2
     assert strata.client.get("/admin/keys", headers=VIEWER).status_code == 302
 
 
 @pytest.mark.parametrize(
-    ("scope", "encrypted", "on_report"),
+    ("scope", "encrypted", "on_datamodule"),
     [
-        ("datamodule", "x", False),  # an Excel link is report-scoped
-        ("report", None, True),  # and keeps its token encrypted
+        ("report", "x", False),  # a datamodule's Excel link is datamodule-scoped
+        ("datamodule", None, True),  # and keeps its token encrypted
+        ("datamodule", "x", False),  # and names its datamodule
     ],
 )
 def test_the_schema_holds_an_excel_link_to_its_shape(
-    strata: Strata, scope: str, encrypted: str | None, on_report: bool
+    strata: Strata, scope: str, encrypted: str | None, on_datamodule: bool
 ) -> None:
-    _dm, report, _other = _setup(strata)  # a real report: only the CHECK may refuse
+    dm_uuid, _report, _other = _setup(strata)  # a real datamodule: only the CHECK refuses
     with strata.app.app_context():
         from strata.db import get_db
 
-        rpt = Report.get_by_uuid(report)
-        assert rpt is not None
+        dm = strata.datamodule(dm_uuid)
         with pytest.raises(apsw.ConstraintError, match="CHECK"):
             get_db().execute(
                 "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
-                "report_id, created_by, created_at, token_encrypted, excel_link) "
-                "VALUES ('u', 'h', 'p', 'n', ?, ?, 'jo', 'now', ?, 1)",
-                (scope, rpt.id if on_report else None, encrypted),
+                "datamodule_id, created_by, created_at, token_encrypted, "
+                "datamodule_excel_link) VALUES ('u', 'h', 'p', 'n', ?, ?, 'jo', 'now', ?, 1)",
+                (scope, dm.id if on_datamodule else None, encrypted),
             )
 
 
 def test_a_racing_second_open_gets_the_same_key(
     strata: Strata, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two people open the box at once: both find no key; the one-per-report index
+    """Two people open a box at once: both find no key; the one-per-datamodule index
     turns the second insert into a read of the first key."""
     _dm, report, _other = _setup(strata)
     _box(strata, report)
@@ -203,13 +219,13 @@ def test_a_racing_second_open_gets_the_same_key(
     real = ApiKey.get_excel_link
     seen: list[int] = []
 
-    def read_before_the_first_commit(report_id: int) -> ApiKey | None:
-        seen.append(report_id)
-        return None if len(seen) == 1 else real(report_id)
+    def read_before_the_first_commit(datamodule_id: int) -> ApiKey | None:
+        seen.append(datamodule_id)
+        return None if len(seen) == 1 else real(datamodule_id)
 
     monkeypatch.setattr(ApiKey, "get_excel_link", staticmethod(read_before_the_first_commit))
     with strata.app.app_context():
-        assert ApiKey.ensure_excel_link(first.report_id or 0, "someone").id == first.id
+        assert ApiKey.ensure_excel_link(first.datamodule_id or 0, "someone").id == first.id
         assert len([k for k in ApiKey.get_all() if k.excel_link]) == 1
 
 
@@ -219,3 +235,83 @@ def test_an_admin_keys_links_are_xlsx(strata: Strata) -> None:
     token = strata.new_api_key(dm_uuid)
     page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
     assert f"/r/{report}.xlsx?key={token}" in page and ".parquet?key=" not in page
+
+
+def _old_report_link(strata: Strata, report: str) -> str:
+    """A report's Excel link as made before 2026-11-23 (one per report)."""
+    from strata.crypto import encrypt_text
+    from strata.db import get_db
+
+    token = secrets.token_urlsafe(32)
+    with strata.app.app_context():
+        rpt = Report.get_by_uuid(report)
+        assert rpt is not None
+        get_db().execute(
+            "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, report_id, "
+            "created_by, created_at, token_encrypted, excel_link) "
+            "VALUES (?, ?, ?, 'Excel link (one report, before 2026-11-23)', 'report', ?, "
+            "'jo', 'now', ?, 1)",
+            (str(uuid.uuid4()), hash_token(token), token[:8], rpt.id, encrypt_text(token)),
+        )
+    return token
+
+
+def test_an_old_report_link_works_until_the_datamodules_key_is_replaced(
+    strata: Strata,
+) -> None:
+    _dm, report, other = _setup(strata)
+    old = _old_report_link(strata, report)
+    assert strata.client.get(f"/r/{report}.csv?key={old}", headers=ANON).status_code == 200
+    box = _box(strata, report)
+    assert old not in box  # the box shows the datamodule's key, not the old one
+    assert strata.client.get(f"/r/{other}.csv?key={old}", headers=ANON).status_code == 403
+    assert strata.client.post(f"/r/{report}/excel/replace").status_code == 200
+    assert strata.client.get(f"/r/{report}.csv?key={old}", headers=ANON).status_code == 403
+
+
+def test_rotating_the_datamodules_key_on_its_page_disables_old_links_too(
+    strata: Strata,
+) -> None:
+    _dm, report, _other = _setup(strata)
+    old = _old_report_link(strata, report)
+    _box(strata, report)
+    key = _excel_key(strata, report)
+    assert key is not None
+    assert strata.client.post(f"/datamodules/apikeys/{key.uuid}/rotate").status_code == 302
+    assert strata.client.get(f"/r/{report}.csv?key={old}", headers=ANON).status_code == 403
+
+
+def test_0011_keeps_old_report_links_and_names_them(tmp_path, monkeypatch) -> None:
+    from strata import db
+
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 10])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 't/x', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO report (uuid, datamodule_id, name, macro_name, kind, created_by, "
+        "modified_by, created_at, modified_at) VALUES ('r1', 1, 'R', 'r', 'query', 'jo', "
+        "'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, report_id, "
+        "created_by, created_at, token_encrypted, excel_link) "
+        "VALUES ('k1', 'h1', 'p1', 'Excel link', 'report', 1, 'jo', ?, 'enc', 1)",
+        (now,),
+    )
+    conn.close()
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    assert conn.execute(
+        "SELECT name, scope_type, enabled, excel_link, datamodule_excel_link FROM api_key"
+    ).fetchall() == [("Excel link (one report, before 2026-11-23)", "report", 1, 1, 0)]
+    conn.close()

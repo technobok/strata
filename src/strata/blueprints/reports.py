@@ -343,6 +343,7 @@ def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = Fal
     ]
     return render_template(
         "reports/_excel.html",
+        datamodule=dm,
         links=links,
         replaced=replaced,
         # Replacing breaks every workbook on the report: its datamodule's owners only.
@@ -355,8 +356,8 @@ def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = Fal
 @bp.route("/r/<report_uuid>/excel")
 @login_required
 def excel_box(report_uuid: str) -> str:
-    """HTMX: the report's Excel link for the view in the query string, made the
-    first time anyone opens the box."""
+    """HTMX: the report's Excel link for the view in the query string. Its key is the
+    datamodule's Excel link, made the first time anyone opens a box on it."""
     resolved = report_service.resolve(report_uuid)
     if resolved is None:
         raise NotFound()
@@ -365,14 +366,14 @@ def excel_box(report_uuid: str) -> str:
         forbid(NOT_A_VIEWER)
     if dm.access_lock:
         forbid(access.LOCKED)
-    return _excel_box(report, dm, ApiKey.ensure_excel_link(report.id, g.user.username))
+    return _excel_box(report, dm, ApiKey.ensure_excel_link(dm.id, g.user.username))
 
 
 @bp.route("/r/<report_uuid>/excel/replace", methods=["POST"])
 @login_required
 def excel_replace(report_uuid: str) -> str | FlaskResponse:
-    """HTMX: a new token for the report's Excel link; workbooks with the old one
-    stop refreshing."""
+    """HTMX: a new token for the datamodule's Excel link; every workbook on any of
+    its reports (old per-report links too) stops refreshing."""
     resolved = report_service.resolve(report_uuid)
     if resolved is None:
         raise NotFound()
@@ -383,7 +384,7 @@ def excel_replace(report_uuid: str) -> str | FlaskResponse:
             "its key.",
             status=403,
         )
-    key = ApiKey.ensure_excel_link(report.id, g.user.username)
+    key = ApiKey.ensure_excel_link(dm.id, g.user.username)
     key.rotate()
     return _excel_box(report, dm, key, replaced=True)
 

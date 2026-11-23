@@ -101,11 +101,13 @@ it. It is not locked itself: its owners did not lose access to anything.
 
 ## Excel links and keys
 
-A report's Excel link (see [API keys and Excel](api-keys.md)) works for whoever
-holds it. That is what it is for, and Strata cannot tell who is using it. When
-someone should lose access, an owner **replaces** the report's key on its "Use in
-Excel" box, and every workbook with the old link stops refreshing. Only a
-datamodule's owners and the admins replace its keys. A lock stops every key.
+A datamodule's Excel link (see [API keys and Excel](api-keys.md)) works for
+whoever holds it. That is what it is for, and Strata cannot tell who is using it.
+When someone should lose access, an owner **replaces** the datamodule's Excel key
+from the "Use in Excel" box of any of its reports, and every workbook on any of its
+reports stops refreshing. One key per datamodule, like its access, so leaving its
+viewers takes one replacement. Only a datamodule's owners and the admins replace its
+keys. A lock stops every key.
 
 ## Mail from a restricted datamodule
 

@@ -5,11 +5,11 @@
 {% block content %}
 <hgroup>
     <h1>API keys{{ help_link('api-keys') }}</h1>
-    <p>Every key: each report's Excel link, and the keys made on datamodule pages.</p>
+    <p>Every key: each datamodule's Excel link, and the keys made on datamodule pages.</p>
 </hgroup>
 
-<p><small>Keys are managed on their datamodule's page. A report's Excel link is replaced
-from the report's <strong>Use in Excel</strong> box, by an admin or the report's owner.</small></p>
+<p><small>Keys are managed on their datamodule's page. A datamodule's Excel link is replaced
+from the <strong>Use in Excel</strong> box of any of its reports, by its owners or an admin.</small></p>
 
 {% if rows %}
 <table>

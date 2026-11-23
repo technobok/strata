@@ -63,9 +63,9 @@ def test_an_excel_link_works_for_whoever_holds_it(strata: Strata) -> None:
 def test_the_excel_box_is_for_viewers_and_replace_for_owners(strata: Strata) -> None:
     _dm, rpt = _restricted(strata)
     assert strata.client.get(f"/r/{rpt}/excel", headers=OUTSIDER).status_code == 403
-    assert "Replace this report's key" not in _box(strata, rpt, headers=VIEWER)
+    assert "Replace the datamodule's Excel key" not in _box(strata, rpt, headers=VIEWER)
     assert strata.client.post(f"/r/{rpt}/excel/replace", headers=VIEWER).status_code == 403
-    assert "Replace this report's key" in _box(strata, rpt, headers=OWNER)
+    assert "Replace the datamodule's Excel key" in _box(strata, rpt, headers=OWNER)
     assert strata.client.post(f"/r/{rpt}/excel/replace", headers=OWNER).status_code == 200
 
 

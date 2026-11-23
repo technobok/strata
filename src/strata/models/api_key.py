@@ -9,12 +9,16 @@ A key grants Gatekeeper-bypass access to a report's data formats via
   ``fixed_args_json`` values always win over caller-supplied args, and
   ``parameterised_args_json``, when set, whitelists the arg names a caller may
   supply.
-- **a report's Excel link** (``excel_link``, scope 'report', one per report):
-  made the first time someone opens the report's "Use in Excel" box, copied from
-  there by anyone who can open the report, and replaced only by an admin or the
-  report's owner. Its token is also stored Fernet-encrypted (``token_encrypted``)
-  so the box can show it again. It belongs to the report, not to a person: a
-  workbook built from it keeps refreshing when the person who made it leaves.
+- **a datamodule's Excel link** (``excel_link``, column ``datamodule_excel_link``,
+  scope 'datamodule', one per datamodule; migration 0011): made the first time
+  someone opens the "Use in Excel" box of any of its reports, copied from there by
+  anyone who can view them, and replaced only by its owners and the admins. Its
+  token is also stored Fernet-encrypted (``token_encrypted``) so the box can show
+  it again. It belongs to the datamodule, not to a person: a workbook built from it
+  keeps refreshing when the person who made it leaves.
+- **a report's old Excel link** (``old_report_link``, column ``excel_link``, scope
+  'report'): one per report, from before 2026-11-23. They keep working, are no
+  longer shown, and are disabled when the datamodule's link is replaced.
 """
 
 import hashlib
@@ -62,14 +66,15 @@ class ApiKey:
     created_at: str
     last_used_at: str | None
     use_count: int
-    token_encrypted: str | None = None  # set iff excel_link
-    excel_link: bool = False  # the report's Excel link (one per report)
+    token_encrypted: str | None = None  # the token, Fernet-encrypted (Excel links)
+    old_report_link: bool = False  # a report's Excel link from before 2026-11-23
+    excel_link: bool = False  # the datamodule's Excel link (one per datamodule)
 
     _COLUMNS = (
         "id, uuid, token_hash, token_prefix, name, scope_type, datamodule_id, "
         "report_id, fixed_args_json, parameterised_args_json, enabled, "
         "expires_at, created_by, created_at, last_used_at, use_count, token_encrypted, "
-        "excel_link"
+        "excel_link, datamodule_excel_link"
     )
 
     @staticmethod
@@ -92,7 +97,8 @@ class ApiKey:
             last_used_at=str(row[14]) if row[14] is not None else None,
             use_count=int(row[15]),
             token_encrypted=str(row[16]) if row[16] is not None else None,
-            excel_link=bool(row[17]),
+            old_report_link=bool(row[17]),
+            excel_link=bool(row[18]),
         )
 
     @staticmethod
@@ -133,11 +139,12 @@ class ApiKey:
         return [ApiKey._from_row(row) for row in rows]
 
     @staticmethod
-    def get_excel_link(report_id: int) -> ApiKey | None:
+    def get_excel_link(datamodule_id: int) -> ApiKey | None:
         db = get_db()
         row = db.execute(
-            f"SELECT {ApiKey._COLUMNS} FROM api_key WHERE excel_link = 1 AND report_id = ?",
-            (report_id,),
+            f"SELECT {ApiKey._COLUMNS} FROM api_key "
+            "WHERE datamodule_excel_link = 1 AND datamodule_id = ?",
+            (datamodule_id,),
         ).fetchone()
         return ApiKey._from_row(row) if row else None
 
@@ -151,9 +158,9 @@ class ApiKey:
         return [ApiKey._from_row(row) for row in rows]
 
     @staticmethod
-    def ensure_excel_link(report_id: int, created_by: str) -> ApiKey:
-        """The report's Excel link, made now if it has none."""
-        existing = ApiKey.get_excel_link(report_id)
+    def ensure_excel_link(datamodule_id: int, created_by: str) -> ApiKey:
+        """The datamodule's Excel link, made now if it has none."""
+        existing = ApiKey.get_excel_link(datamodule_id)
         if existing is not None:
             return existing
         token, token_h, prefix = _new_token()
@@ -161,29 +168,30 @@ class ApiKey:
             with transaction() as cursor:
                 cursor.execute(
                     "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
-                    "report_id, enabled, created_by, created_at, use_count, token_encrypted, "
-                    "excel_link) VALUES (?, ?, ?, ?, 'report', ?, 1, ?, ?, 0, ?, 1)",
+                    "datamodule_id, enabled, created_by, created_at, use_count, "
+                    "token_encrypted, datamodule_excel_link) "
+                    "VALUES (?, ?, ?, ?, 'datamodule', ?, 1, ?, ?, 0, ?, 1)",
                     (
                         str(uuid_lib.uuid4()),
                         token_h,
                         prefix,
                         EXCEL_LINK_NAME,
-                        report_id,
+                        datamodule_id,
                         created_by,
                         datetime.now(UTC).isoformat(),
                         encrypt_text(token),
                     ),
                 )
-        except apsw.ConstraintError:  # one per report: another request made it first
+        except apsw.ConstraintError:  # one per datamodule: another request made it first
             pass
-        key = ApiKey.get_excel_link(report_id)
+        key = ApiKey.get_excel_link(datamodule_id)
         assert key is not None
         return key
 
     def link_token(self) -> str:
-        """An Excel link's plaintext, for the report's "Use in Excel" box."""
-        if not self.excel_link or self.token_encrypted is None:
-            raise ValueError("only a report's Excel link can be read back")
+        """The plaintext of a key whose token is kept (encrypted), for its links."""
+        if self.token_encrypted is None:
+            raise ValueError("this key's token was not kept; rotate it to make a new one")
         return decrypt_text(self.token_encrypted)
 
     @staticmethod
@@ -230,15 +238,23 @@ class ApiKey:
         return created, token
 
     def rotate(self) -> str:
-        """Replace the secret (breaks existing workbooks); returns the new plaintext."""
+        """Replace the secret (breaks existing workbooks); returns the new plaintext.
+        Replacing a datamodule's Excel link also disables its reports' old Excel links:
+        "every workbook on the datamodule stops refreshing" includes theirs."""
         token, token_h, prefix = _new_token()
-        encrypted = encrypt_text(token) if self.excel_link else None
+        encrypted = encrypt_text(token) if self.excel_link or self.old_report_link else None
         with transaction() as cursor:
             cursor.execute(
                 "UPDATE api_key SET token_hash = ?, token_prefix = ?, token_encrypted = ? "
                 "WHERE id = ?",
                 (token_h, prefix, encrypted, self.id),
             )
+            if self.excel_link:
+                cursor.execute(
+                    "UPDATE api_key SET enabled = 0 WHERE excel_link = 1 "
+                    "AND report_id IN (SELECT id FROM report WHERE datamodule_id = ?)",
+                    (self.datamodule_id,),
+                )
         self.token_hash = token_h
         self.token_prefix = prefix
         self.token_encrypted = encrypted

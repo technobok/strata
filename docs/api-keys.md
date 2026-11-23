@@ -4,29 +4,35 @@ Excel and PowerQuery cannot log in through single sign-on. An **API key** lets t
 fetch a report's **data** (Parquet, CSV, JSON or XLSX) without a login. A key never
 opens the HTML page. There are two kinds:
 
-- each report's **Excel link**: anyone who can view the report copies it from the
-  report page, and it reads that report only;
-- **admin keys**, made on a datamodule page for one datamodule or one report, with
-  fixed arguments if needed: for another program, or a workbook that must always get
-  the same rows.
+- each datamodule's **Excel link**: one key for all its reports, which anyone who
+  can view them copies from a report page's **Use in Excel** box;
+- **admin keys**, made on a datamodule page, with fixed arguments if needed: for
+  another program, or a workbook that must always get the same rows.
 
-## Each report's Excel link
+A report's data URL names the report in its path and carries the key in its query:
+`…/strata/r/<report id>.xlsx?key=<token>`. A key for a datamodule works for every
+report on it: only the report id changes.
+
+## Excel links
 
 On a report page, open **Use in Excel** (next to the export links). It shows a link
 for exactly the view you are looking at: its arguments, filters, sort and search.
 Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel).
 
-- The link carries the **report's key**: one per report, made the first time anyone
-  opens the box, and the same for everyone. It reads **this report only**.
-- It belongs to the report, not to a person: anyone with a workbook built from it can
-  refresh it, and it keeps working when the person who made the workbook leaves.
+- The link carries the **datamodule's Excel key**: one per datamodule, made the first
+  time anyone opens the box on any of its reports, and the same for everyone. It
+  reads every report on that datamodule, and nothing else.
+- It belongs to the datamodule, not to a person: anyone with a workbook built from it
+  can refresh it, and it keeps working when the person who made the workbook leaves.
 - A workbook refreshes from wherever Excel reaches the server directly. Behind a
   sign-in Excel cannot pass, such as Microsoft's in front of the server from outside
   the office, it does not refresh.
-- **Replace this report's key** (in the box, for its datamodule's owners and the
-  admins) cuts off every workbook on the report at once: each needs the new link.
-  That is the answer to a workbook that reached the wrong people, or to someone
-  leaving the report's viewers (see [Access](access.md#excel-links-and-keys)).
+- **Replace the datamodule's Excel key** (in the box, for its owners and the admins)
+  cuts off every workbook on any of its reports at once: each needs a new link. That
+  is the answer to a workbook that reached the wrong people, or to someone leaving
+  the datamodule's viewers (see [Access](access.md#excel-links-and-keys)).
+- Until 2026-11-23 each report had its own Excel key. Those links keep working until
+  the datamodule's key is first replaced, which disables them too.
 - A **locked** datamodule stops every key on it (see [Access](access.md#locks)).
 - Admins see every key, with its last use, under **Admin → API keys**.
 
