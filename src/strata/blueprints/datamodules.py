@@ -672,6 +672,13 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _datamodule_key(key_uuid: str) -> ApiKey:
+    key = ApiKey.get_by_uuid(key_uuid)
+    if key is None:
+        raise NotFound()
+    return key
+
+
 def _apikey_redirect(dm: Datamodule | None) -> Response:
     if dm is None:
         return redirect(url_for("datamodules.index"))
@@ -734,9 +741,7 @@ def apikey_create(uuid: str) -> Response:
 @bp.route("/apikeys/<key_uuid>/rotate", methods=["POST"])
 @admin_required
 def apikey_rotate(key_uuid: str) -> Response:
-    key = ApiKey.get_by_uuid(key_uuid)
-    if key is None:
-        raise NotFound()
+    key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
     token = key.rotate()
     session["new_api_token"] = {"token": token, "key_uuid": key.uuid}
@@ -747,9 +752,7 @@ def apikey_rotate(key_uuid: str) -> Response:
 @bp.route("/apikeys/<key_uuid>/toggle", methods=["POST"])
 @admin_required
 def apikey_toggle(key_uuid: str) -> Response:
-    key = ApiKey.get_by_uuid(key_uuid)
-    if key is None:
-        raise NotFound()
+    key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
     key.set_enabled(not key.enabled)
     flash(f"API key '{key.name}' {'enabled' if key.enabled else 'disabled'}.", "success")
@@ -759,9 +762,7 @@ def apikey_toggle(key_uuid: str) -> Response:
 @bp.route("/apikeys/<key_uuid>/delete", methods=["POST"])
 @admin_required
 def apikey_delete(key_uuid: str) -> Response:
-    key = ApiKey.get_by_uuid(key_uuid)
-    if key is None:
-        raise NotFound()
+    key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)  # resolve before delete (needs the report row)
     key.delete()
     flash(f"API key '{key.name}' deleted.", "success")

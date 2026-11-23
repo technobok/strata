@@ -155,7 +155,7 @@ def _require_prepivot(conn: apsw.Connection, db_path: str) -> None:
 
 
 def _read(conn: apsw.Connection, db_path: str, backup: str, dry_run: bool) -> Adoption:
-    from strata.services.connection_service import fernet_for
+    from strata.crypto import fernet_for
 
     settings = conn.execute("SELECT key, value FROM app_setting ORDER BY key").fetchall()
     kept = [str(k) for k, _v in settings if _carried(str(k))]

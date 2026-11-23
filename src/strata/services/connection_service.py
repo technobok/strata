@@ -7,47 +7,25 @@ adding a DriverSpec entry to DRIVERS.
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import duckdb
-from cryptography.fernet import Fernet, InvalidToken
 
-from strata.models.app_setting import get_setting
-
-_fernet_cache: Fernet | None = None
-
-
-def _fernet() -> Fernet:
-    """Return a Fernet keyed off app_setting.secret_key (lazy + cached)."""
-    global _fernet_cache
-    if _fernet_cache is not None:
-        return _fernet_cache
-    secret = get_setting("secret_key")
-    if not secret:
-        raise RuntimeError("secret_key missing from app_setting; run 'strata-admin init-db' first")
-    _fernet_cache = fernet_for(secret)
-    return _fernet_cache
-
-
-def fernet_for(secret: str) -> Fernet:
-    """The Fernet that connection params are encrypted with, from a secret_key."""
-    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()))
+from strata.crypto import decrypt_text, encrypt_text
 
 
 def encrypt_params(params: dict) -> str:
     """JSON-serialize and Fernet-encrypt a params dict."""
-    return _fernet().encrypt(json.dumps(params).encode()).decode()
+    return encrypt_text(json.dumps(params))
 
 
 def decrypt_params(token: str) -> dict:
     """Fernet-decrypt and JSON-parse back into a params dict."""
     try:
-        return json.loads(_fernet().decrypt(token.encode()).decode())
-    except InvalidToken as exc:
+        return json.loads(decrypt_text(token))
+    except RuntimeError as exc:
         raise RuntimeError("connection params decryption failed (key changed?)") from exc
 
 

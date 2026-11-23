@@ -1,11 +1,20 @@
-"""API key model — hashed bearer tokens for unauthenticated report data access.
+"""API key model — bearer tokens for report data access without a login.
 
 A key grants Gatekeeper-bypass access to a report's data formats via
-``?key=<token>`` (Excel/PowerQuery). Only the sha256 of the token is stored;
-the plaintext is returned exactly once from ``create``/``rotate``. Scope is a
-whole datamodule or a single report; ``fixed_args_json`` values always win over
-caller-supplied args and ``parameterised_args_json``, when set, whitelists the
-arg names a caller may supply.
+``?key=<token>`` (Excel/PowerQuery). Two kinds:
+
+- **admin keys** (scope 'datamodule' or 'report', made on the datamodule page):
+  only the sha256 of the token is stored, and the plaintext is returned exactly
+  once from ``create``/``rotate``.
+  ``fixed_args_json`` values always win over caller-supplied args, and
+  ``parameterised_args_json``, when set, whitelists the arg names a caller may
+  supply.
+- **a report's Excel link** (``excel_link``, scope 'report', one per report):
+  made the first time someone opens the report's "Use in Excel" box, copied from
+  there by anyone who can open the report, and replaced only by an admin or the
+  report's owner. Its token is also stored Fernet-encrypted (``token_encrypted``)
+  so the box can show it again. It belongs to the report, not to a person: a
+  workbook built from it keeps refreshing when the person who made it leaves.
 """
 
 import hashlib
@@ -16,7 +25,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import apsw
+
+from strata.crypto import decrypt_text, encrypt_text
 from strata.db import get_db, transaction
+
+EXCEL_LINK_NAME = "Excel link"
 
 
 def hash_token(token: str) -> str:
@@ -48,11 +62,14 @@ class ApiKey:
     created_at: str
     last_used_at: str | None
     use_count: int
+    token_encrypted: str | None = None  # set iff excel_link
+    excel_link: bool = False  # the report's Excel link (one per report)
 
     _COLUMNS = (
         "id, uuid, token_hash, token_prefix, name, scope_type, datamodule_id, "
         "report_id, fixed_args_json, parameterised_args_json, enabled, "
-        "expires_at, created_by, created_at, last_used_at, use_count"
+        "expires_at, created_by, created_at, last_used_at, use_count, token_encrypted, "
+        "excel_link"
     )
 
     @staticmethod
@@ -74,6 +91,8 @@ class ApiKey:
             created_at=str(row[13]),
             last_used_at=str(row[14]) if row[14] is not None else None,
             use_count=int(row[15]),
+            token_encrypted=str(row[16]) if row[16] is not None else None,
+            excel_link=bool(row[17]),
         )
 
     @staticmethod
@@ -112,6 +131,60 @@ class ApiKey:
             (datamodule_id, datamodule_id),
         ).fetchall()
         return [ApiKey._from_row(row) for row in rows]
+
+    @staticmethod
+    def get_excel_link(report_id: int) -> ApiKey | None:
+        db = get_db()
+        row = db.execute(
+            f"SELECT {ApiKey._COLUMNS} FROM api_key WHERE excel_link = 1 AND report_id = ?",
+            (report_id,),
+        ).fetchone()
+        return ApiKey._from_row(row) if row else None
+
+    @staticmethod
+    def get_all() -> list[ApiKey]:
+        """Every key (the admin overview)."""
+        db = get_db()
+        rows = db.execute(
+            f"SELECT {ApiKey._COLUMNS} FROM api_key ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+        return [ApiKey._from_row(row) for row in rows]
+
+    @staticmethod
+    def ensure_excel_link(report_id: int, created_by: str) -> ApiKey:
+        """The report's Excel link, made now if it has none."""
+        existing = ApiKey.get_excel_link(report_id)
+        if existing is not None:
+            return existing
+        token, token_h, prefix = _new_token()
+        try:
+            with transaction() as cursor:
+                cursor.execute(
+                    "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
+                    "report_id, enabled, created_by, created_at, use_count, token_encrypted, "
+                    "excel_link) VALUES (?, ?, ?, ?, 'report', ?, 1, ?, ?, 0, ?, 1)",
+                    (
+                        str(uuid_lib.uuid4()),
+                        token_h,
+                        prefix,
+                        EXCEL_LINK_NAME,
+                        report_id,
+                        created_by,
+                        datetime.now(UTC).isoformat(),
+                        encrypt_text(token),
+                    ),
+                )
+        except apsw.ConstraintError:  # one per report: another request made it first
+            pass
+        key = ApiKey.get_excel_link(report_id)
+        assert key is not None
+        return key
+
+    def link_token(self) -> str:
+        """An Excel link's plaintext, for the report's "Use in Excel" box."""
+        if not self.excel_link or self.token_encrypted is None:
+            raise ValueError("only a report's Excel link can be read back")
+        return decrypt_text(self.token_encrypted)
 
     @staticmethod
     def create(
@@ -159,13 +232,16 @@ class ApiKey:
     def rotate(self) -> str:
         """Replace the secret (breaks existing workbooks); returns the new plaintext."""
         token, token_h, prefix = _new_token()
+        encrypted = encrypt_text(token) if self.excel_link else None
         with transaction() as cursor:
             cursor.execute(
-                "UPDATE api_key SET token_hash = ?, token_prefix = ? WHERE id = ?",
-                (token_h, prefix, self.id),
+                "UPDATE api_key SET token_hash = ?, token_prefix = ?, token_encrypted = ? "
+                "WHERE id = ?",
+                (token_h, prefix, encrypted, self.id),
             )
         self.token_hash = token_h
         self.token_prefix = prefix
+        self.token_encrypted = encrypted
         return token
 
     def set_enabled(self, enabled: bool) -> None:

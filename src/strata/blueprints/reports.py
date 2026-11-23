@@ -22,6 +22,7 @@ from flask import Response as FlaskResponse
 from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response as WerkzeugResponse
 
+from strata.blueprints.auth import login_required
 from strata.models.api_key import ApiKey, hash_token
 from strata.models.api_key_access_log import ApiKeyAccessLog
 from strata.models.datamodule import Datamodule
@@ -135,7 +136,13 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         pinned_version=pinned,
         served=served,
         served_version=version,
-        ui=build_ui(lambda ext, p: _serve_url(report, ext, p), pairs, spec, result),
+        ui=build_ui(
+            lambda ext, p: _serve_url(report, ext, p),
+            pairs,
+            spec,
+            result,
+            excel=lambda p: _excel_box_url(report, p),
+        ),
     )
     # HTMX swaps just the table fragment; history restores need the full page.
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
@@ -272,6 +279,84 @@ def _serve_url(report: Report, ext: str, pairs: list[tuple[str, str]]) -> str:
     return f"{base}?{urlencode(pairs)}" if pairs else base
 
 
+# ---------------------------------------------------------------------------
+# "Use in Excel": the report's Excel link for the current view
+# ---------------------------------------------------------------------------
+
+EXCEL_FORMATS = (
+    ("parquet", "Parquet (keeps column types)"),
+    ("csv", "CSV"),
+    ("xlsx", "Excel workbook (.xlsx)"),
+    ("json", "JSON"),
+)
+
+
+def _excel_view(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The view an Excel link keeps: arguments, filters, sort and search. Never a
+    page, a pinned version (a workbook refreshes to live data) or a key."""
+    return [(k, v) for k, v in pairs if k not in (*_DROP_KEYS, "version")]
+
+
+def _excel_box_url(report: Report, pairs: list[tuple[str, str]]) -> str:
+    base = url_for("reports.excel_box", report_uuid=report.uuid)
+    return f"{base}?{urlencode(pairs)}" if pairs else base
+
+
+def _may_replace_excel_link(report: Report) -> bool:
+    """Replacing breaks every workbook on the report: admins and its owner only."""
+    return bool(g.get("strata_is_admin")) or report.created_by == g.user.username
+
+
+def _excel_box(report: Report, key: ApiKey, replaced: bool = False) -> str:
+    view = _excel_view(list(request.args.items(multi=True)))
+    query = urlencode([*view, ("key", key.link_token())])
+    links = [
+        (
+            label,
+            url_for("reports.serve", report_uuid=report.uuid, ext=fmt, _external=True)
+            + "?"
+            + query,
+        )
+        for fmt, label in EXCEL_FORMATS
+    ]
+    return render_template(
+        "reports/_excel.html",
+        links=links,
+        replaced=replaced,
+        can_replace=_may_replace_excel_link(report),
+        replace_url=url_for("reports.excel_replace", report_uuid=report.uuid)
+        + (f"?{urlencode(view)}" if view else ""),
+    )
+
+
+@bp.route("/r/<report_uuid>/excel")
+@login_required
+def excel_box(report_uuid: str) -> str:
+    """HTMX: the report's Excel link for the view in the query string, made the
+    first time anyone opens the box."""
+    resolved = report_service.resolve(report_uuid)
+    if resolved is None:
+        raise NotFound()
+    report, _dm = resolved
+    return _excel_box(report, ApiKey.ensure_excel_link(report.id, g.user.username))
+
+
+@bp.route("/r/<report_uuid>/excel/replace", methods=["POST"])
+@login_required
+def excel_replace(report_uuid: str) -> str | FlaskResponse:
+    """HTMX: a new token for the report's Excel link; workbooks with the old one
+    stop refreshing."""
+    resolved = report_service.resolve(report_uuid)
+    if resolved is None:
+        raise NotFound()
+    report, _dm = resolved
+    if not _may_replace_excel_link(report):
+        return FlaskResponse("Only an admin or the report's owner can replace its key.", status=403)
+    key = ApiKey.ensure_excel_link(report.id, g.user.username)
+    key.rotate()
+    return _excel_box(report, key, replaced=True)
+
+
 def _drop_first(pairs: list[tuple[str, str]], target: tuple[str, str]) -> list[tuple[str, str]]:
     out = list(pairs)
     try:
@@ -286,12 +371,14 @@ def build_ui(
     pairs: list[tuple[str, str]],
     spec: QuerySpec | None,
     result: TableResult | None,
+    excel: Callable[[list[tuple[str, str]]], str] | None = None,
 ) -> dict[str, Any] | None:
     """Precompute the URLs/state the table fragment needs (search, chips, sort
     headers, pager, exports). Templates never assemble query strings.
 
     ``url(ext, pairs)`` builds a link to the same table (a report, or a saved
-    run) in ``ext`` with ``pairs`` as its query string.
+    run) in ``ext`` with ``pairs`` as its query string. ``excel(pairs)``, for a
+    report, is the URL of its "Use in Excel" box for the current view.
 
     Chips are built from the raw spec, not the result, so a filter whose value
     fails to cast at runtime still shows up and can be removed.
@@ -320,6 +407,7 @@ def build_ui(
         "search_hidden": keep,
         "chips": chips,
         "exports": [(fmt, url(fmt, keep)) for fmt in ("parquet", "csv", "json", "xlsx")],
+        "excel": excel(_excel_view(keep)) if excel is not None else None,
         "sort_state": {},
         "sort_urls": {},
         "pager": {"prev_url": None, "next_url": None},

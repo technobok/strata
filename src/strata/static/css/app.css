@@ -80,6 +80,11 @@ table td {
     white-space: pre-wrap;
 }
 
+/* A long unbroken string (a URL with a key) wraps instead of widening the page. */
+.wrap-anywhere {
+    overflow-wrap: anywhere;
+}
+
 .flash-success {
     background: var(--pico-ins-color);
     color: white;
@@ -427,6 +432,29 @@ footer small {
 .chip:hover {
     border-color: var(--pico-del-color);
     text-decoration: line-through;
+}
+
+/* "Use in Excel": a full-width row under the search, chips and export links. */
+.excel-box {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.excel-box summary {
+    font-size: 0.85rem;
+}
+
+.excel-box .excel-body {
+    margin-top: 0.5rem;
+}
+
+.excel-box select {
+    width: auto;
+}
+
+.excel-replaced {
+    color: var(--pico-ins-color);
 }
 
 .export-links {

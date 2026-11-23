@@ -12,9 +12,9 @@ import pytest
 from click.testing import CliRunner
 
 from strata.cli import main
+from strata.crypto import fernet_for
 from strata.db import EXPECTED_SCHEMA_VERSION, UnusableDatabase, init_db_at, schema_tables
 from strata.prepivot import AdoptError, adopt
-from strata.services.connection_service import fernet_for
 
 SCHEMA = Path(__file__).parent / "fixtures" / "prepivot_schema.sql"
 OLD_SECRET = "old-secret-key-0123456789"

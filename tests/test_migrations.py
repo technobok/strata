@@ -93,3 +93,43 @@ def test_init_db_is_idempotent(tmp_path):
     db.init_db_at(db_path)
     assert _state(db_path) == first
     assert first[1] == str(db.EXPECTED_SCHEMA_VERSION)
+
+
+def test_0008_keeps_admin_keys_and_their_access_log(tmp_path, monkeypatch):
+    """Migration 0008 adds the Excel-link columns to api_key; existing keys become
+    ordinary admin keys and keep their access log."""
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 7])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 't/x', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO api_key (uuid, token_hash, token_prefix, name, scope_type, "
+        "datamodule_id, created_by, created_at, use_count) "
+        "VALUES ('k1', 'h1', 'p1', 'excel', 'datamodule', 1, 'jo', ?, 2)",
+        (now,),
+    )
+    conn.execute(
+        "INSERT INTO api_key_access_log (api_key_id, accessed_at, status) "
+        "VALUES (1, ?, 200), (1, ?, 403)",
+        (now, now),
+    )
+    conn.close()
+
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    assert conn.execute(
+        "SELECT id, uuid, scope_type, use_count, excel_link, token_encrypted FROM api_key"
+    ).fetchall() == [(1, "k1", "datamodule", 2, 0, None)]
+    assert conn.execute(
+        "SELECT api_key_id, status FROM api_key_access_log ORDER BY id"
+    ).fetchall() == [(1, 200), (1, 403)]
+    conn.close()

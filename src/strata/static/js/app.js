@@ -87,6 +87,15 @@ document.addEventListener('click', function(event) {
     });
 });
 
+// "Use in Excel": the format picker swaps the shown link and its Copy button.
+document.addEventListener('change', function(event) {
+    var select = event.target.closest('select.excel-format');
+    if (!select) return;
+    var box = select.closest('.excel-body');
+    box.querySelector('.excel-url').textContent = select.value;
+    box.querySelector('.excel-copy').setAttribute('data-copy', select.value);
+});
+
 // Hamburger menu on narrow screens (the CSS shows the button only there)
 document.addEventListener('DOMContentLoaded', function() {
     var toggle = document.querySelector('.nav-toggle');

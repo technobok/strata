@@ -2,9 +2,33 @@
 
 Excel and PowerQuery cannot log in through single sign-on. An **API key** lets them
 fetch a report's **data** (Parquet, CSV, JSON or XLSX) without a login. A key never
-opens the HTML page.
+opens the HTML page. There are two kinds:
 
-## Creating a key
+- each report's **Excel link**: anyone who can open the report copies it from the
+  report page, and it reads that report only;
+- **admin keys**, made on a datamodule page for one datamodule or one report, with
+  fixed arguments if needed: for another program, or a workbook that must always get
+  the same rows.
+
+## Each report's Excel link
+
+On a report page, open **Use in Excel** (next to the export links). It shows a link
+for exactly the view you are looking at: its arguments, filters, sort and search.
+Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel).
+
+- The link carries the **report's key**: one per report, made the first time anyone
+  opens the box, and the same for everyone. It reads **this report only**.
+- It belongs to the report, not to a person: anyone with a workbook built from it can
+  refresh it, and it keeps working when the person who made the workbook leaves.
+- A workbook refreshes from wherever Excel reaches the server directly. Behind a
+  sign-in Excel cannot pass, such as Microsoft's in front of the server from outside
+  the office, it does not refresh.
+- **Replace this report's key** (in the box, for admins and the report's owner) cuts
+  off every workbook on the report at once: each needs the new link. That is the
+  answer to a workbook that reached the wrong people.
+- Admins see every key, with its last use, under **Admin → API keys**.
+
+## Admin keys
 
 On the datamodule page, under **API keys**, choose:
 
@@ -23,12 +47,16 @@ again. If it is lost, **rotate** the key.
 Fixed args are how one report serves several audiences safely. For example, a key
 with `company=BRS` fixed always gets BRS rows, whatever the URL says.
 
-## Using it in Excel
+## Using a key in Excel
 
-1. Copy the report's URL from the key's reveal box. It looks like
+1. Copy the report's URL with the key: from the report's **Use in Excel** box, or from
+   an admin key's reveal box. It looks like
    `https://<server>/strata/r/<report id>.parquet?key=<token>`.
 2. In Excel: **Data → Get Data → From Other Sources → From Web**, and paste the URL.
-3. Load the table. **Refresh** fetches the current data again.
+3. When Excel asks how to connect, choose **Anonymous** (the key is the credential).
+   Excel remembers that choice per person, so a colleague refreshing your workbook for
+   the first time may be asked too.
+4. Load the table. **Refresh** fetches the current data again.
 
 Parquet is the default because it keeps column types (dates stay dates). Swap the
 extension for `.csv`, `.json` or `.xlsx` if needed.
@@ -45,15 +73,15 @@ waits at most `serve.max_wait_seconds` (default 60) for a rebuild before serving
 previous data, so a refresh does not time out (see
 [Freshness and builds](freshness.md#stale-data)).
 
-## Managing keys
+## Managing admin keys
 
 - **Rotate** issues a new token and stops the old one at once. Workbooks using the
   old URL need the new one.
 - **Disable** stops a key without deleting it; **enable** turns it back on.
 - **Delete** removes it.
 
-Every request made with a key is logged: format, rows, bytes, time taken, status and
-the caller's address. The key's use count and last-used time are on the datamodule
+Every request made with a key, Excel link or admin, is logged: format, rows, bytes,
+time taken, status and the caller's address. The key's use count and last-used time are on the datamodule
 page.
 
 A wrong, disabled, expired or out-of-scope token gets HTTP 403. A data request with

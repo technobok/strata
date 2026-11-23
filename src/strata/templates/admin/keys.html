@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}API keys — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>API keys{{ help_link('api-keys') }}</h1>
+    <p>Every key: each report's Excel link, and the keys made on datamodule pages.</p>
+</hgroup>
+
+<p><small>Keys are managed on their datamodule's page. A report's Excel link is replaced
+from the report's <strong>Use in Excel</strong> box, by an admin or the report's owner.</small></p>
+
+{% if rows %}
+<table>
+    <thead><tr><th>Key</th><th>Reads</th><th>Prefix</th><th>State</th><th>Made by</th><th>Last used</th><th>Uses</th></tr></thead>
+    <tbody>
+        {% for row in rows %}{% set key = row.key %}
+        <tr>
+            <td>{{ key.name }}</td>
+            <td>
+                {% if row.datamodule %}<a href="{{ url_for('datamodules.edit', uuid=row.datamodule.uuid) }}#api-keys">{{ row.datamodule.path }}</a>{% if row.report %}: {{ row.report.name }}{% else %} (every report){% endif %}
+                {% else %}(deleted){% endif %}
+            </td>
+            <td><code>{{ key.token_prefix }}…</code></td>
+            <td>{{ 'enabled' if key.enabled else 'disabled' }}{% if key.expires_at %}<br><small>expires {{ key.expires_at|localdate }}</small>{% endif %}</td>
+            <td>{{ key.created_by }}<br><small>{{ key.created_at|localdatetime }}</small></td>
+            <td>{{ key.last_used_at|localdatetime if key.last_used_at else '' }}</td>
+            <td>{{ key.use_count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No keys yet.</p>
+{% endif %}
+{% endblock %}

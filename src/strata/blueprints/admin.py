@@ -30,7 +30,10 @@ from strata.config import (
     serialize_value,
 )
 from strata.db import get_db, get_db_path
+from strata.models.api_key import ApiKey
 from strata.models.app_setting import clear_setting, set_setting
+from strata.models.datamodule import Datamodule
+from strata.models.report import Report
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +73,21 @@ def index() -> str:
         job_counts=BuildJob.counts_by_status(),
         public_url_missing=not live_str("server.public_url"),
     )
+
+
+@bp.route("/keys")
+@admin_required
+def keys() -> str:
+    """Every API key: each report's Excel link and the keys made on datamodule
+    pages, with what each reads, who made it and its use. Keys are managed on
+    their datamodule's page; an Excel link is replaced from its report's box."""
+    rows = []
+    for key in ApiKey.get_all():
+        report = Report.get_by_id(key.report_id) if key.report_id is not None else None
+        dm_id = report.datamodule_id if report is not None else key.datamodule_id
+        dm = Datamodule.get_by_id(dm_id) if dm_id is not None else None
+        rows.append({"key": key, "datamodule": dm, "report": report})
+    return render_template("admin/keys.html", rows=rows)
 
 
 @bp.route("/config", methods=["GET", "POST"])

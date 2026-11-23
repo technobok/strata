@@ -27,6 +27,14 @@
         <a href="{{ url }}">{{ fmt }}</a>
         {% endfor %}
     </div>
+    {% if ui.excel %}
+    {# The report's Excel key is made the first time anyone opens this box. #}
+    <details class="excel-box" hx-get="{{ ui.excel }}" hx-trigger="toggle once"
+             hx-target="find .excel-body" hx-swap="innerHTML">
+        <summary>Use in Excel</summary>
+        <div class="excel-body"><small>Loading…</small></div>
+    </details>
+    {% endif %}
 </div>
 {% endif %}
 
