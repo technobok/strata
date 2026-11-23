@@ -18,6 +18,15 @@ GROUP BY region;
 A script may hold any number of statements. If one fails, the build fails and the
 previous version stays live.
 
+The version keeps **only what the script creates**: name each table with
+`CREATE TABLE <name> AS SELECT …` (or a view with `CREATE VIEW`), and reports read it by
+that name. A `SELECT` on its own runs, but its rows are thrown away, so a script that
+creates no table or view fails rather than leave an empty version.
+
+Each version keeps the script it was built from: **script** in its row of the
+datamodule's **Versions** table shows it (for a Jinja script, the rendered text that
+ran).
+
 ## Source files
 
 Upload files on the datamodule page (Excel, CSV, Parquet, JSON, …), then refer to

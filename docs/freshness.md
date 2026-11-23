@@ -94,7 +94,9 @@ every evening.
 
 Every successful build is a new, immutable **version**. The datamodule page lists
 them, with the live one marked. Each version links to each report, opened on that
-version (see [Report URLs](urls.md#version-pinning)).
+version (see [Report URLs](urls.md#version-pinning)), and to the build script it was
+built from (**script**; failed builds keep theirs too). A version's script goes when
+the version does.
 
 Retention removes old versions after each successful build:
 

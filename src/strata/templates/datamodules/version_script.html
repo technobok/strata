@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ datamodule.path }} · version {{ version.uuid[:8] }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Build script of version <code>{{ version.uuid[:8] }}</code></h1>
+    <p><a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a></p>
+</hgroup>
+
+<p>
+    {{ version.status }}{% if version.id == datamodule.live_version_id %} <span class="status-badge status-completed">live</span>{% endif %}
+    · built {{ (version.build_ended_at or version.build_started_at)|localdatetime }}
+    · {{ version.triggered_by }}
+</p>
+
+{% if version.build_script_snapshot is none %}
+<p>This version's script was not recorded.</p>
+{% else %}
+<p><small>
+    The script exactly as this version ran it (for a Jinja script, the rendered text).
+    {% if same_as_current is true %}The current script is the same.{% elif same_as_current is false %}The current script has changed since.{% endif %}
+</small></p>
+<pre class="script-preview"><code>{{ version.build_script_snapshot }}</code></pre>
+{% endif %}
+{% endblock %}

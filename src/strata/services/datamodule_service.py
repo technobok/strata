@@ -401,6 +401,28 @@ def _resolve_connections(dm: Datamodule) -> list[tuple[str, Connection]]:
     return attachments
 
 
+NOTHING_BUILT = (
+    "The build script created no tables or views, so the new version would be empty "
+    "(the previous version stays live). A SELECT on its own runs and its rows are thrown "
+    "away: keep them with CREATE TABLE <name> AS SELECT …"
+)
+
+
+def _require_something_built(conn: duckdb.DuckDBPyConnection) -> None:
+    """A version with no table or view of its own has nothing for a report to read:
+    fail the build rather than swap in an empty version. Only the version's own
+    database counts: attached dependencies and connections are other databases, and
+    temp objects (not kept) live in DuckDB's `temp` database."""
+    row = conn.execute(
+        "SELECT (SELECT count(*) FROM duckdb_tables() "
+        "        WHERE NOT internal AND database_name = current_database())"
+        " + (SELECT count(*) FROM duckdb_views() "
+        "    WHERE NOT internal AND database_name = current_database())"
+    ).fetchone()
+    if not row or not row[0]:
+        raise RuntimeError(NOTHING_BUILT)
+
+
 # DuckDB's words when a script's odbc_query() has no usable connection handle.
 _ODBC_NULL_HANDLE = "ODBC connection must be not NULL"
 _ODBC_NOT_LOADED = 'name "odbc_query" is not in the catalog'
@@ -505,6 +527,7 @@ def _build_leased(
             duck.lock_down_build(conn, base)
             if rendered.strip():
                 conn.execute(rendered)
+            _require_something_built(conn)
             _run_gate_checks(conn, dm, deadline)
             conn.execute("CHECKPOINT")
             storage_version = _storage_version(conn)

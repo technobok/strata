@@ -38,7 +38,14 @@ from strata.models.report_check import SEVERITIES, ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.source_file import SourceFile
 from strata.models.worker_process import WorkerProcess
-from strata.services import build_queue, connection_service, datamodule_service, duck, run_service
+from strata.services import (
+    build_queue,
+    connection_service,
+    datamodule_service,
+    duck,
+    run_service,
+    script_template,
+)
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
@@ -410,8 +417,6 @@ def _status_context(dm: Datamodule) -> dict[str, object]:
 def preview_script(uuid: str) -> str:
     """HTMX: the posted build script rendered as a template, against the live
     versions of the datamodule's dependencies (nothing is built)."""
-    from strata.services import script_template
-
     dm = Datamodule.get_by_uuid(uuid)
     if dm is None:
         raise NotFound()
@@ -450,6 +455,31 @@ def status(uuid: str) -> str | Response:
         resp.headers["HX-Refresh"] = "true"
         return resp
     return html
+
+
+@bp.route("/<uuid>/versions/<version_uuid>/script")
+@admin_required
+def version_script(uuid: str, version_uuid: str) -> str:
+    """The build script a version was built from (its snapshot, as it ran)."""
+    dm = Datamodule.get_by_uuid(uuid)
+    if dm is None:
+        raise NotFound()
+    version = DatamoduleVersion.get_for_datamodule(dm.id, version_uuid)
+    if version is None:
+        raise NotFound()
+    # A Jinja version's snapshot is its rendered text, so it cannot be compared
+    # with the current template: say nothing rather than "changed".
+    same_as_current = (
+        None
+        if script_template.is_template(dm.build_script) or version.build_script_snapshot is None
+        else version.build_script_snapshot == dm.build_script
+    )
+    return render_template(
+        "datamodules/version_script.html",
+        datamodule=dm,
+        version=version,
+        same_as_current=same_as_current,
+    )
 
 
 @bp.route("/<uuid>/build", methods=["POST"])
