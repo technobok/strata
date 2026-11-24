@@ -54,7 +54,7 @@
                 {% if not fixed and row.datamodule_path %}{{ row.datamodule_path }}{% endif %}{% if row.report_name %}{% if not fixed and row.datamodule_path %}: {% endif %}{{ row.report_name }}{% endif %}{% if row.run_uuid %} · run <code>{{ row.run_uuid[:8] }}</code>{% endif %}{% if row.version_uuid and row.kind != 'run' and row.kind != 'run-data' %} · version <code>{{ row.version_uuid[:8] }}</code>{% endif %}
                 {% if row.format and row.format != 'html' or row.query %}<br><small>{% if row.format and row.format != 'html' %}{{ row.format }}{% endif %}{% if row.query %} <code>{{ row.query }}</code>{% endif %}</small>{% endif %}</td>
             <td>{{ row.row_count if row.row_count is not none else '' }}{% if row.bytes_sent %}<br><small>{{ row.bytes_sent }} bytes</small>{% endif %}</td>
-            <td>{{ row.status }}{% if row.duration_ms is not none %}<br><small>{{ row.duration_ms|duration }}</small>{% endif %}</td>
+            <td>{{ row.status }}{% if row.duration_ms is not none %}<br><small>{{ row.duration_ms|duration }}</small>{% endif %}{% if row.detail %}<br><small class="read-detail">{{ row.detail }}</small>{% endif %}</td>
             <td><span title="{{ row.user_agent or '' }}">{{ row.remote_addr or '' }}</span></td>
         </tr>
         {% endfor %}

@@ -38,6 +38,7 @@ class ReadLog:
     duration_ms: int | None
     remote_addr: str | None
     user_agent: str | None
+    detail: str | None = None  # a refusal's own text (migration 0014)
 
     FIELDS = (
         "id",
@@ -61,6 +62,7 @@ class ReadLog:
         "duration_ms",
         "remote_addr",
         "user_agent",
+        "detail",
     )
 
     @staticmethod

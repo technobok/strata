@@ -30,10 +30,12 @@ class Report:
     modified_by: str
     created_at: str
     modified_at: str
+    # Why it does not run on the live data (migration 0014); None = it does, or unchecked.
+    problem: str | None = None
 
     _COLUMNS = (
         "id, uuid, datamodule_id, name, macro_name, kind, description, body_sql, "
-        "created_by, modified_by, created_at, modified_at"
+        "created_by, modified_by, created_at, modified_at, problem"
     )
 
     @staticmethod
@@ -51,7 +53,14 @@ class Report:
             modified_by=str(row[9]),
             created_at=str(row[10]),
             modified_at=str(row[11]),
+            problem=str(row[12]) if row[12] is not None else None,
         )
+
+    @staticmethod
+    def set_problem(report_id: int, problem: str | None) -> None:
+        """Record why the report does not run on the live data (None: it does)."""
+        with transaction() as cur:
+            cur.execute("UPDATE report SET problem = ? WHERE id = ?", (problem, report_id))
 
     @staticmethod
     def get_by_id(report_id: int) -> Report | None:

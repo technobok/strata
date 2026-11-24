@@ -29,6 +29,25 @@ SELECT * FROM (PIVOT sales ON region USING sum(revenue) GROUP BY product)
 The **macro name** is the SQL name Strata gives the report internally. It must be a
 plain identifier (letters, digits, `_`), unique within the datamodule.
 
+## Saving checks it runs
+
+When the datamodule has data, saving a report first checks that it **runs on that
+data**: DuckDB works out the report's columns without reading any rows, so a table
+or column that does not exist, a type error, an argument default that is not of its
+type, or a broken constraint query is found at once. Such a report is **not saved**:
+the form shows DuckDB's error and keeps everything you typed. The check uses each
+argument's default (a required argument without one counts as a value of its type).
+
+A datamodule that has never been built has nothing to check against, so its reports
+save as long as they are one SELECT. Build it first to have them checked.
+
+A build can break a report that ran, e.g. when the script no longer creates a table
+the report reads. After every successful build, Strata checks each report again: a
+report that no longer runs is marked **does not run on this data** in the
+datamodule's Reports table, its edit page shows the error, and the datamodule's
+alert list is mailed (see [Freshness](freshness.md#alerts)). The mark goes once the
+report, or the build, is fixed.
+
 ## Arguments
 
 Each argument has:

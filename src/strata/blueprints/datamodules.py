@@ -7,6 +7,7 @@ datamodules. The serve path for running a report lives in blueprints/reports.py.
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,7 @@ from strata.services import (
     datamodule_service,
     duck,
     read_audit,
+    report_service,
     run_service,
     script_template,
 )
@@ -656,20 +658,8 @@ def report_new(uuid: str) -> str | Response:
         if error is None:
             flash("Report created.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
-        flash(error, "error")
-
-    return render_template(
-        "datamodules/report_edit.html",
-        datamodule=dm,
-        report=None,
-        args=[],
-        data_types=DATA_TYPES,
-        widgets=WIDGETS,
-        check=None,
-        severities=SEVERITIES,
-        runs=[],
-        schedules=[],
-    )
+        return _report_form(dm, None, error)
+    return _report_form(dm, None)
 
 
 @bp.route("/reports/<report_uuid>/edit", methods=["GET", "POST"])
@@ -687,17 +677,108 @@ def report_edit(report_uuid: str) -> str | Response:
         if error is None:
             flash("Report saved.", "success")
             return redirect(url_for("datamodules.report_edit", report_uuid=report.uuid))
-        flash(error, "error")
-        report = Report.get_by_uuid(report_uuid)
+        return _report_form(dm, Report.get_by_uuid(report_uuid), error)
+    return _report_form(dm, report)
 
+
+@dataclass(frozen=True)
+class _ReportDraft:
+    """What the report form shows: the saved report, or what was typed into a
+    refused form (so a refused save loses nothing)."""
+
+    name: str
+    macro_name: str
+    body_sql: str
+
+
+@dataclass(frozen=True)
+class _TypedArg:
+    name: str
+    data_type: str
+    widget: str
+    required: bool
+    default_value: str
+    constraint_query: str
+    description: str
+
+
+@dataclass(frozen=True)
+class _TypedCheck:
+    severity: str
+    gate: bool
+
+
+def _typed_args() -> list[_TypedArg]:
+    """The form's argument rows as typed (blank names dropped), invalid ones too."""
+    form = request.form
+    columns = [
+        form.getlist(k)
+        for k in (
+            "arg_name",
+            "arg_type",
+            "arg_widget",
+            "arg_required",
+            "arg_default",
+            "arg_constraint",
+            "arg_description",
+        )
+    ]
+
+    def at(i: int, j: int, default: str = "") -> str:
+        return columns[j][i] if i < len(columns[j]) else default
+
+    return [
+        _TypedArg(
+            name=name.strip(),
+            data_type=at(i, 1, "text"),
+            widget=at(i, 2, "input"),
+            required=at(i, 3, "yes") == "yes",
+            default_value=at(i, 4),
+            constraint_query=at(i, 5),
+            description=at(i, 6),
+        )
+        for i, name in enumerate(columns[0])
+        if name.strip()
+    ]
+
+
+def _report_form(dm: Datamodule, report: Report | None, error: str | None = None) -> str:
+    """The report form: the saved report, or (with ``error``) what was typed, the
+    error in a box that stays."""
+    draft: _ReportDraft
+    args: list[Any]
+    check: Any
+    if error is None:
+        draft = _ReportDraft(
+            name=report.name if report else "",
+            macro_name=report.macro_name if report else "",
+            body_sql=report.body_sql if report else "",
+        )
+        args = ReportArg.get_for_report(report.id) if report else []
+        check = ReportCheck.get(report.id) if report else None
+    else:
+        form = request.form
+        draft = _ReportDraft(
+            name=form.get("name", ""),
+            macro_name=form.get("macro_name", ""),
+            body_sql=form.get("body_sql", ""),
+        )
+        args = _typed_args()
+        check = (
+            _TypedCheck(form.get("severity", "warning"), form.get("gate") == "on")
+            if form.get("is_check") == "on"
+            else None
+        )
     return render_template(
         "datamodules/report_edit.html",
         datamodule=dm,
         report=report,
-        args=ReportArg.get_for_report(report.id) if report else [],
+        draft=draft,
+        error=error,
+        args=args,
         data_types=DATA_TYPES,
         widgets=WIDGETS,
-        check=ReportCheck.get(report.id) if report else None,
+        check=check,
         severities=SEVERITIES,
         runs=ReportRun.recent_for_report(report.id) if report else [],
         schedules=_report_schedule_rows(report, dm) if report else [],
@@ -718,6 +799,15 @@ def report_delete(report_uuid: str) -> Response:
     if dm is None:
         return redirect(url_for("datamodules.index"))
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
+
+
+def _live_version_file(dm: Datamodule) -> Path | None:
+    """The file of ``dm``'s live version, if it has one on disk."""
+    live = datamodule_service.live_version(dm)
+    if live is None:
+        return None
+    path = datamodule_service.version_path(dm.uuid, live.uuid)
+    return path if path.exists() else None
 
 
 def _save_report(dm: Datamodule, report: Report | None) -> str | None:
@@ -756,6 +846,29 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
     except duck.SqlShapeError as exc:
         return str(exc)
 
+    # It must run on the data it will read (when there is any yet): DuckDB
+    # describes it without reading rows (report_service.problem_on).
+    live = _live_version_file(dm)
+    if live is not None:
+        problem = report_service.problem_on(
+            live,
+            macro_name,
+            body_sql,
+            [
+                report_service.ArgShape(
+                    name=a["name"],
+                    data_type=a["data_type"],
+                    widget=a["widget"],
+                    default_value=a["default_value"] or None,
+                    required=a["required"],
+                    constraint_query=a["constraint_query"],
+                )
+                for a in args
+            ],
+        )
+        if problem is not None:
+            return f"Not saved: the report does not run on the data of {dm.path}.\n{problem}"
+
     existing = Report.get_by_uuid(report.uuid) if report else None
     try:
         if existing is None:
@@ -778,6 +891,7 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
         return f"Could not save report: {exc}"
 
     ReportArg.replace_all(saved.id, args)
+    Report.set_problem(saved.id, None)  # it runs on the live data (or there is none yet)
     if is_check:
         ReportCheck.save(saved.id, severity, gate)
     else:

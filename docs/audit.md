@@ -52,6 +52,11 @@ for. That includes someone who is not a viewer, a locked datamodule, a link with
 key, a wrong, disabled or expired key, bad arguments, and data that has not been
 built yet. Refused rows are tinted on the page; **refused only** shows just them.
 
+A refusal's own reason, the short text Strata answered with (e.g. "Argument
+'region' is required", or a report's SQL error), is shown under its status and is
+in the CSV's `detail` column. Excel shows only "400 Bad Request", so this is where
+to find why a workbook's refresh was refused.
+
 ## What is not recorded
 
 - **Mail.** Each run records who it was mailed to. A restricted datamodule's mail

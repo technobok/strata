@@ -266,3 +266,32 @@ def test_0013_moves_the_key_access_log_into_the_read_audit(tmp_path, monkeypatch
     tables = {name for (name,) in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
     assert "api_key_access_log" not in tables
     conn.close()
+
+
+def test_0014_adds_report_problem_and_read_detail(tmp_path, monkeypatch):
+    """An existing report has no problem recorded (NULL) until it is saved or built."""
+    path = str(tmp_path / "m.sqlite3")
+    every = db._migration_files
+    monkeypatch.setattr(db, "_migration_files", lambda: [f for f in every() if f[0] <= 13])
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    now = "2026-01-01T00:00:00+00:00"
+    conn.execute(
+        "INSERT INTO datamodule (uuid, path, build_script, created_by, modified_by, "
+        "created_at, modified_at) VALUES ('d1', 't/x', '', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.execute(
+        "INSERT INTO report (uuid, datamodule_id, name, macro_name, kind, body_sql, "
+        "created_by, modified_by, created_at, modified_at) "
+        "VALUES ('r1', 1, 'Sales', 'sales', 'query', 'SELECT 1', 'jo', 'jo', ?, ?)",
+        (now, now),
+    )
+    conn.close()
+
+    monkeypatch.setattr(db, "_migration_files", every)
+    db.init_db_at(path)
+    conn = apsw.Connection(path)
+    assert conn.execute("SELECT uuid, problem FROM report").fetchall() == [("r1", None)]
+    assert "detail" in [row[1] for row in conn.execute("PRAGMA table_info(read_log)")]
+    conn.close()

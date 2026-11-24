@@ -17,9 +17,10 @@ identifier literals and comments via template_service._strip_literals).
 import logging
 import os
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import duckdb
 from flask import Response
@@ -31,6 +32,37 @@ from strata.models.report_arg import ReportArg
 from strata.services import datamodule_service, duck, query_filter, stream_service, template_service
 
 log = logging.getLogger(__name__)
+
+
+class ArgLike(Protocol):
+    """What binding a report reads of an argument: a saved ``ReportArg``, or a
+    row of the report form before it is saved (``ArgShape``)."""
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def data_type(self) -> str: ...
+    @property
+    def widget(self) -> str: ...
+    @property
+    def default_value(self) -> str | None: ...
+    @property
+    def required(self) -> bool: ...
+    @property
+    def constraint_query(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class ArgShape:
+    """An argument as the report form gives it, before it is saved."""
+
+    name: str
+    data_type: str
+    widget: str
+    default_value: str | None
+    required: bool
+    constraint_query: str | None
+
 
 # report_arg.data_type -> template_service.cast_value type name.
 _CAST_TYPE = {
@@ -104,7 +136,7 @@ def _rewrite_body(body: str) -> str:
     return "".join(out)
 
 
-def _bind_args(args: list[ReportArg], arg_values: dict[str, list[str]]) -> list[Any]:
+def _bind_args(args: Sequence[ArgLike], arg_values: dict[str, list[str]]) -> list[Any]:
     """Bind request values to macro args (aligned with ``args``).
 
     Query-string keys may repeat, so values arrive as lists. A ``multiselect``
@@ -179,7 +211,7 @@ def _prepare(
 
     conn = duck.serve_conn(vpath)
     try:
-        call = _register_macro(conn, report, args)
+        call = _register_macro(conn, report.macro_name, report.body_sql, args)
         described = conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
         columns = [(str(row[0]), str(row[1])) for row in described]
         final_sql = f"SELECT * FROM {call}"
@@ -189,21 +221,89 @@ def _prepare(
     return conn, final_sql, binds, columns
 
 
-def _register_macro(conn: duckdb.DuckDBPyConnection, report: Report, args: list[ReportArg]) -> str:
-    """Register ``report`` as a TEMP macro on ``conn``; return its call with one
-    ``?`` per argument (bind them with ``_bind_args``)."""
+def _register_macro(
+    conn: duckdb.DuckDBPyConnection,
+    macro_name: str,
+    body_sql: str,
+    args: Sequence[ArgLike],
+    typed: frozenset[str] = frozenset(),
+) -> str:
+    """Register a report body as a TEMP macro on ``conn``; return its call with one
+    ``?`` per argument (bind them with ``_bind_args``). An argument named in
+    ``typed`` binds as its own type (``CAST(? AS DATE)``), so a NULL there types
+    like a real value would."""
     params = ", ".join(f"{_PARAM_PREFIX}{arg.name}" for arg in args)
-    body = _rewrite_body(report.body_sql)
-    conn.execute(f"CREATE OR REPLACE TEMP MACRO {report.macro_name}({params}) AS TABLE ({body})")
+    body = _rewrite_body(body_sql)
+    conn.execute(f"CREATE OR REPLACE TEMP MACRO {macro_name}({params}) AS TABLE ({body})")
+
     # multiselect binds a LIST: give it an explicit element type so an empty
     # selection still types correctly.
-    placeholders = ", ".join(
-        f"CAST(? AS {_DUCK_LIST_TYPE.get(arg.data_type, 'VARCHAR')}[])"
-        if arg.widget == "multiselect"
-        else "?"
-        for arg in args
-    )
-    return f"{report.macro_name}({placeholders})"
+    def placeholder(arg: ArgLike) -> str:
+        duck_type = _DUCK_LIST_TYPE.get(arg.data_type, "VARCHAR")
+        if arg.widget == "multiselect":
+            return f"CAST(? AS {duck_type}[])"
+        return f"CAST(? AS {duck_type})" if arg.name in typed else "?"
+
+    return f"{macro_name}({', '.join(placeholder(arg) for arg in args)})"
+
+
+def problem_on(vpath: Path, macro_name: str, body_sql: str, args: Sequence[ArgLike]) -> str | None:
+    """Why a report would not run on the version file ``vpath``; None when it would.
+
+    DuckDB describes the report without reading any rows, so this is cheap and
+    finds what a read would hit first: a missing table or column, a type error, an
+    argument default that is not of its type, a broken option (constraint) query.
+    Arguments bind as a read with none given would (their defaults; NULL for an
+    optional one); a required one without a default binds a NULL of its type, as
+    nobody can read the report without giving it.
+    """
+    try:
+        binds: list[Any] = []
+        typed: set[str] = set()
+        for arg in args:
+            if arg.required and not arg.default_value:
+                binds.append([] if arg.widget == "multiselect" else None)
+                typed.add(arg.name)
+            else:
+                binds.extend(_bind_args([arg], {}))
+    except ArgError as exc:
+        return str(exc)
+    try:
+        conn = duck.serve_conn(vpath)
+    except duckdb.Error as exc:
+        return str(exc)
+    try:
+        call = _register_macro(conn, macro_name, body_sql, args, frozenset(typed))
+        conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
+        for arg in args:
+            if arg.constraint_query:
+                try:
+                    conn.execute(f"DESCRIBE {arg.constraint_query}").fetchall()
+                except duckdb.Error as exc:
+                    return f"The constraint query of '{arg.name}': {exc}"
+    except duckdb.Error as exc:
+        return str(exc)
+    finally:
+        conn.close()
+    return None
+
+
+def check_reports(dm: Datamodule, version: DatamoduleVersion) -> list[tuple[Report, str]]:
+    """Describe every report of ``dm`` against ``version`` (its new live data) and
+    record each one's problem. Returns the reports that ran before and do not now
+    (newly broken), with their problems."""
+    vpath = datamodule_service.version_path(dm.uuid, version.uuid)
+    newly: list[tuple[Report, str]] = []
+    for report in Report.get_for_datamodule(dm.id):
+        if report.kind != "query":
+            continue
+        args = ReportArg.get_for_report(report.id)
+        problem = problem_on(vpath, report.macro_name, report.body_sql, args)
+        if problem != report.problem:
+            Report.set_problem(report.id, problem)
+            if problem is not None and report.problem is None:
+                newly.append((report, problem))
+    return newly
 
 
 def run_table(
@@ -372,7 +472,7 @@ def gate_rows(
     duck.validate_select(report.body_sql, f"The body of check '{report.name}'")
     args = ReportArg.get_for_report(report.id)
     binds = _bind_args(args, {})
-    call = _register_macro(conn, report, args)
+    call = _register_macro(conn, report.macro_name, report.body_sql, args)
     row = conn.execute(f"SELECT count(*) FROM {call}", binds).fetchone()
     count = int(row[0]) if row else 0
     rows = (

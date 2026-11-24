@@ -183,6 +183,12 @@ table td {
     white-space: pre-wrap;
 }
 
+/* A report its datamodule's live data cannot run (report.problem). */
+.report-broken {
+    color: var(--pico-del-color);
+    font-size: 0.85rem;
+}
+
 /* A long unbroken string (a URL with a key) wraps instead of widening the page. */
 .wrap-anywhere {
     overflow-wrap: anywhere;
@@ -418,6 +424,13 @@ footer small {
 
 tr.read-refused td {
     background: rgba(220, 60, 60, 0.08);
+}
+
+/* A refusal's own text, under its status. */
+.read-detail {
+    display: inline-block;
+    max-width: 24rem;
+    overflow-wrap: anywhere;
 }
 
 table.reads td code {

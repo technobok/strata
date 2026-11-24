@@ -137,7 +137,22 @@ def _write(resp: Response) -> None:
         duration_ms=int((time.perf_counter() - started) * 1000) if started else None,
         remote_addr=request.remote_addr,
         user_agent=(request.headers.get("User-Agent") or "")[:AGENT_MAX] or None,
+        detail=_refusal_text(resp),
     )
+
+
+DETAIL_MAX = 500  # longest refusal text kept
+
+
+def _refusal_text(resp: Response) -> str | None:
+    """A refused read's own short text answer (e.g. a 400's reason, which Excel does
+    not show); not an HTML error page, a streamed body or a long one."""
+    if resp.status_code < 400 or resp.is_streamed:
+        return None
+    body = resp.get_data()
+    if not body or len(body) > 4 * DETAIL_MAX or body.lstrip()[:1] == b"<":
+        return None
+    return body.decode("utf-8", "replace").strip()[:DETAIL_MAX] or None
 
 
 def init_app(app: Flask) -> None:

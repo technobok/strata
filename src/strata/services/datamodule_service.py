@@ -667,6 +667,17 @@ def _build_leased(
     # "Recovered" after a "build failing" mail; re-arms the stale alert.
     alert_service.build_succeeded(dm.id, dm.consecutive_failures)
 
+    # A build can break a report that ran (a table or column it reads is gone):
+    # describe each against the new data, best-effort, after the flip.
+    try:
+        from strata.services import report_service
+
+        newly_broken = report_service.check_reports(dm, version)
+        if newly_broken:
+            alert_service.reports_broken(dm.id, triggered_by, newly_broken)
+    except Exception as exc:
+        log.warning("post-build report check failed (uuid=%s): %s", dm.uuid, exc)
+
     # Retention runs best-effort after every successful flip; never fails a build.
     try:
         pruned = prune_versions(dm)

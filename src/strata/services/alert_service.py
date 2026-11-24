@@ -7,6 +7,9 @@
 - **Recovered**: the next successful build after a "failing" mail says so.
 - **Stale**: when a datamodule's last successful build is older than its
   ``stale_alert_seconds``, the worker's sweep mails once; a success re-arms it.
+- **Reports broken**: a successful build after which a report that ran no longer
+  does (``report_service.check_reports``) mails the reports and their errors, once
+  per report until it runs again (not for the Build button).
 
 The list is the datamodule's ``alert_recipients`` (usernames, @groups, email
 addresses), or the Strata admins when unset. A failed report/check query is
@@ -23,6 +26,7 @@ from markupsafe import Markup
 from strata.config import live_str
 from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
+from strata.models.report import Report
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +125,42 @@ def access_locked(dm_id: int, triggered_by: str, reason: str) -> None:
             dm.mark_alerted("failure_alerted_at", _now())
     except Exception:  # noqa: BLE001
         log.exception("access-lock alert for datamodule %s failed", dm_id)
+
+
+def reports_broken(dm_id: int, triggered_by: str, broken: list[tuple[Report, str]]) -> None:
+    """After a successful build: the reports that ran before it and no longer do.
+    Not for the Build button (its author sees them on the datamodule page)."""
+    from strata.services import notify_service
+
+    try:
+        dm = Datamodule.get_by_id(dm_id)
+        if dm is None or not broken or triggered_by.startswith("manual:"):
+            return
+        items = Markup("").join(
+            Markup("<li><strong>{name}</strong>{error}</li>").format(
+                name=report.name, error=notify_service.error_html(dm, problem, lead="")
+            )
+            for report, problem in broken
+        )
+        n = len(broken)
+        body = Markup(
+            "<p><strong>{path}</strong> built successfully ({trigger}), but {n} of its "
+            "report{s} no longer run{verb} on the new data: every page, run, schedule and "
+            "Excel link of {them} fails until {it} or the build script is fixed.</p>"
+            "<ul>{items}</ul>"
+        ).format(
+            path=dm.path,
+            trigger=triggered_by,
+            n=n,
+            s="" if n == 1 else "s",
+            verb="s" if n == 1 else "",
+            them="it" if n == 1 else "them",
+            it="the report" if n == 1 else "the reports",
+            items=items,
+        )
+        _mail(dm, f"[STRATA] {dm.path}: {n} report{'' if n == 1 else 's'} broken", body)
+    except Exception:  # noqa: BLE001
+        log.exception("broken-reports alert for datamodule %s failed", dm_id)
 
 
 def build_succeeded(dm_id: int, failures: int) -> None:

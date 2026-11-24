@@ -78,11 +78,12 @@ refreshing. Set it in the **Alerts** section of the datamodule's page, one per l
 | The next build succeeds | "recovered". |
 | No successful build for longer than the **stale alert** (hours) | "data is stale". **Once**, until the next success. |
 | A scheduled report or check run fails | the error (its recipients are not mailed). See [Checks and runs](checks.md#scheduled-runs-and-mail). |
+| A build succeeds, but a report that ran no longer does | "N reports broken", naming each with its error. **Once** per report, until it runs again (see [Reports](reports.md#saving-checks-it-runs)). |
 
 A failing **gate check** fails the build, so it alerts like any other failure.
 
 A build started with the **Build** button does not alert: whoever pressed it sees
-the error on the page. A scheduled build, a rebuild for a stale read, a dependency
+the error (or the broken reports) on the page. A scheduled build, a rebuild for a stale read, a dependency
 refreshed for another build, or the refresh before a scheduled run all alert.
 
 The stale alert is off until you give it a number of hours. Set it a little above

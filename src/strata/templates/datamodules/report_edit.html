@@ -9,21 +9,28 @@
     <p>Datamodule: <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a></p>
 </hgroup>
 
+{% if error %}
+<div class="error-box report-error">{{ error }}</div>
+{% elif report and report.problem %}
+<div class="error-box report-problem"><strong>This report does not run on the data of {{ datamodule.path }}</strong> (found after its last build): every page, run, schedule and Excel link of it fails until it is fixed.
+{{ report.problem }}</div>
+{% endif %}
+
 <form method="post"
       action="{% if report %}{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}{% else %}{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}{% endif %}">
     <div class="grid">
         <label>Name
-            <input type="text" name="name" value="{{ report.name if report else '' }}" required>
+            <input type="text" name="name" value="{{ draft.name }}" required>
         </label>
         <label>Macro name (SQL identifier){{ help_link('reports', 'the-report-body') }}
-            <input type="text" name="macro_name" value="{{ report.macro_name if report else '' }}"
+            <input type="text" name="macro_name" value="{{ draft.macro_name }}"
                    placeholder="nums" required>
         </label>
     </div>
 
     <label>Body SQL (reference args as <code>$argname</code>){{ help_link('reports', 'the-report-body') }}
         <textarea id="body_sql" class="sql-editor" name="body_sql" rows="8" style="font-family:monospace;"
-                  placeholder="SELECT n FROM t WHERE n >= $min">{{ report.body_sql if report else '' }}</textarea>
+                  placeholder="SELECT n FROM t WHERE n >= $min">{{ draft.body_sql }}</textarea>
     </label>
 
     <fieldset>

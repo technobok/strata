@@ -73,13 +73,25 @@ def test_a_stored_breakout_body_is_refused_at_serve(strata: Strata) -> None:
 # -- serve sandbox ---------------------------------------------------------------
 
 
+HOST_FILE = "SELECT * FROM read_text('/etc/hostname')"
+
+
 def test_report_cannot_read_host_files(strata: Strata) -> None:
+    """Refused when it is saved (it is checked on the live data, in the sandbox)
+    and, saved before there was any data to check, when it is read."""
     dm_uuid = strata.new_datamodule()
+    rpt = strata.new_report(dm_uuid, body=HOST_FILE)  # no data yet: not checked
     strata.build(dm_uuid)
-    rpt = strata.new_report(dm_uuid, body="SELECT * FROM read_text('/etc/hostname')")
     resp = strata.client.get(f"/r/{rpt}.json")
     assert resp.status_code == 400
     assert "Permission" in resp.get_data(as_text=True)
+    refused = strata.client.post(
+        f"/datamodules/{dm_uuid}/reports/new",
+        data={"name": "Host", "macro_name": "host", "body_sql": HOST_FILE},
+    )
+    assert refused.status_code == 200
+    page = refused.get_data(as_text=True)
+    assert "Not saved" in page and "Permission Error" in page
 
 
 def test_exports_land_in_the_exports_dir_and_are_removed(strata: Strata) -> None:
