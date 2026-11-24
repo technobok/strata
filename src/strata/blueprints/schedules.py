@@ -77,7 +77,9 @@ def _params_form(args: list[ReportArg]) -> dict[str, list[str]]:
 def _check_report_fields(
     recipients: list[str], args: list[ReportArg], params: dict[str, list[str]]
 ) -> None:
-    problem = notify_service.check_recipients(recipients)
+    problem = notify_service.check_recipients(recipients) or notify_service.unknown_recipients(
+        recipients
+    )
     if problem:
         raise ScheduleError(problem)
     try:

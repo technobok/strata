@@ -15,7 +15,7 @@ import apsw
 
 from strata.models.build_job import BuildJob
 from strata.models.report_run import ReportRun
-from tests.conftest import PUBLIC_URL, Strata
+from tests.conftest import PUBLIC_URL, FakeGatekeeper, GkUser, Strata
 
 NEGATIVE = "SELECT region, product, revenue FROM sales WHERE revenue < 0 ORDER BY product"
 BAD_ROW_SCRIPT = """
@@ -58,14 +58,18 @@ def _runs(strata: Strata, rpt: str) -> list[ReportRun]:
         return ReportRun.recent_for_report(report.id)
 
 
-def test_a_check_with_rows_mails_its_recipients(strata: Strata, mail: list[Any]) -> None:
+def test_a_check_with_rows_mails_its_recipients(
+    strata: Strata, mail: list[Any], gatekeeper: FakeGatekeeper
+) -> None:
     dm_uuid = strata.new_datamodule(script=BAD_ROW_SCRIPT)
     rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error")
     strata.build(dm_uuid)
+    gatekeeper.users["ghost"] = GkUser("ghost", "ghost@example.com")
     resp = _schedule(strata, rpt, "@brs-finance\njsmith\nops@example.com\nghost")
     assert resp.status_code == 302 and resp.headers["Location"].endswith(
         f"/reports/{rpt}/edit#schedules"
     )
+    del gatekeeper.users["ghost"]  # left after the schedule was saved: skipped at send
 
     assert _fire(strata) == ["test/sales: Negative revenue: weekly"]
     [run] = _runs(strata, rpt)

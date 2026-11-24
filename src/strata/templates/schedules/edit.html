@@ -130,7 +130,7 @@
     <fieldset>
         <legend>Mail{{ help_link('checks', 'scheduled-runs-and-mail') }}</legend>
         <label>Recipients: one per line, a username, an <code>@group</code> or an email address
-            <textarea name="recipients" rows="4" placeholder="@brs-finance&#10;jsmith&#10;ops@example.com">{{ values.recipients | join('\n') }}</textarea>
+            <textarea name="recipients" rows="4" data-people="{{ url_for('people.suggest') }}" data-people-emails="1" placeholder="@brs-finance&#10;jsmith&#10;ops@example.com">{{ values.recipients | join('\n') }}</textarea>
         </label>
         {% if restricted %}<p><small>Who may read {{ datamodule.path }} is restricted, so its mail carries the count and a link to the run, not the rows{{ help_link('access', 'mail-from-a-restricted-datamodule') }}.</small></p>{% endif %}
         {% if outside %}<article class="freshness-banner outside-viewers">Mail goes to every recipient, but some cannot open the run it links to: {{ outside }}.</article>{% endif %}

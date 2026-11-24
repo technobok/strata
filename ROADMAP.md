@@ -58,6 +58,8 @@ These replace the old Phases 7–10. **Order decided 2026-11-21: XL → G → D 
 
 ## Backlog (unscheduled, carried forward)
 
+- **HTMX on the datamodule page and the report form** (user, 2026-11-24: after the Phase D pilot) — today every section of the long datamodule page (build script, access, alerts, connections, dependencies, sources, API keys) and the report form is a full-page post + redirect, so each save reloads, jumps to the top and loses the editor's state. Each section becomes a partial that saves in place and shows its own message (as the connection form's driver fields and the Excel box already do).
+
 - **API rate limiting** — throttle keyed endpoints; must also cover key-triggered TTL rebuilds (cost amplification).
 - **CSRF tokens** — POST forms carry no token; Gatekeeper's `SameSite=Lax` cookie blocks cross-site posts but not posts from another `*.demant.com` site. A token in a `base.html` meta tag + `hx-headers` + the `post_button` macro would cover every form at once.
 - **Version keep/pin flag** — mark a specific version exempt from retention (e.g. year-end snapshots).

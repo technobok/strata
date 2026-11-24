@@ -23,11 +23,18 @@ Each datamodule has two lists, set in the **Access** section of its page:
   Checks page, and its "Use in Excel" box. They can also **Build now** from a
   report page.
 
-Write one entry per line:
+Each entry is:
 
 - a username as Gatekeeper has it, such as `asiap\jsmith` (case does not matter);
 - an `@group`, such as `@brs-finance`;
 - `*` for everyone signed in (viewers only: owners are named people or groups).
+
+Start typing a name, username, email address or `@group` and Strata suggests
+Gatekeeper's users and groups; pick one, or press Enter to add what you typed. (Without
+JavaScript the field is a plain box: one entry per line.) The same goes for a
+datamodule's alert list, a schedule's recipients and a connection's **May use**. When
+any of these lists is saved, a user or group Gatekeeper does not know is refused, so a
+typo cannot quietly leave someone out.
 
 A ticked **Use the default** box makes a list follow a setting as it changes:
 `access.default_owners` (blank = the writers group) and `access.default_viewers`

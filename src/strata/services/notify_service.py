@@ -153,6 +153,21 @@ def check_recipients(entries: list[str]) -> str | None:
     return None
 
 
+def unknown_recipients(entries: Iterable[str]) -> str | None:
+    """Why a recipient list is refused: a username or @group Gatekeeper does not know
+    (email addresses are not looked up), or Gatekeeper could not be asked."""
+    from strata.services import access
+
+    named = [e for e in entries if e.startswith("@") or "@" not in e]
+    try:
+        unknown = access.Directory().unknown(named)
+    except access.DirectoryUnavailable as exc:
+        return f"the names could not be checked: {exc}."
+    if unknown:
+        return f"Gatekeeper has no user or group {', '.join(unknown)}."
+    return None
+
+
 def resolve_recipients(entries: Iterable[str]) -> tuple[list[str], list[str]]:
     """(email addresses, problems). Duplicates are dropped, ignoring case."""
     gk = current_app.config.get("GATEKEEPER_CLIENT")

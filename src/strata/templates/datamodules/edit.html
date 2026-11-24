@@ -59,7 +59,7 @@
         <input type="hidden" name="alerts_present" value="1">
         <div class="grid">
             <label>Alert list: one per line, a username, an <code>@group</code> or an email address (blank = the Strata admins)
-                <textarea name="alert_recipients" rows="2" placeholder="@{{ config.get('AUTH_ADMIN_GROUP') or 'strata-admins' }}">{{ (datamodule.alert_recipients or []) | join('\n') }}</textarea>
+                <textarea name="alert_recipients" rows="2" data-people="{{ url_for('people.suggest') }}" data-people-emails="1" placeholder="@{{ config.get('AUTH_ADMIN_GROUP') or 'strata-admins' }}">{{ (datamodule.alert_recipients or []) | join('\n') }}</textarea>
             </label>
             <label>Stale alert after (hours without a successful build; blank = off)
                 <input type="number" name="stale_alert_hours" min="0.25" step="0.25"
@@ -76,14 +76,14 @@
         <div class="grid">
             <div>
                 <label>Owners: one per line, a username or an <code>@group</code>. They edit this datamodule, its reports, schedules, keys and access.
-                    <textarea name="owners" rows="3" placeholder="(none: the Strata admins only)">{{ owners_text }}</textarea>
+                    <textarea name="owners" rows="3" data-people="{{ url_for('people.suggest') }}" placeholder="(none: the Strata admins only)">{{ owners_text }}</textarea>
                 </label>
                 <label><input type="checkbox" name="owners_default" value="1" {% if owners_default %}checked{% endif %}>
                     Use the default owners ({{ default_owners | join(', ') }})</label>
             </div>
             <div>
                 <label>Viewers: one per line, a username, an <code>@group</code>, or <code>*</code> for everyone signed in. They open its reports and runs; owners view too.
-                    <textarea name="viewers" rows="3" placeholder="(none: the owners only)">{{ viewers_text }}</textarea>
+                    <textarea name="viewers" rows="3" data-people="{{ url_for('people.suggest') }}" data-people-everyone="1" placeholder="(none: the owners only)">{{ viewers_text }}</textarea>
                 </label>
                 <label><input type="checkbox" name="viewers_default" value="1" {% if viewers_default %}checked{% endif %}>
                     Use the default viewers ({% for v in default_viewers %}{{ 'everyone signed in' if v == '*' else v }}{% if not loop.last %}, {% endif %}{% endfor %})</label>

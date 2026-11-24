@@ -108,8 +108,10 @@ own `company` value.
 | `@brs-finance` | every member of the Gatekeeper group `brs-finance` |
 | `ops@example.com` | that address |
 
-A user who is unknown, disabled, or has no email address is skipped; the run page
-says who was skipped and why.
+Type to get suggestions from Gatekeeper (see [Access](access.md#owners-and-viewers)).
+Saving refuses a user or group Gatekeeper does not know; an email address is taken
+as it is. A user who later leaves, is disabled, or has no email address is skipped
+when mail is sent; the run page says who was skipped and why.
 
 **Who gets mail:**
 

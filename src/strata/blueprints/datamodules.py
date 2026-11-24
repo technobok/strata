@@ -419,7 +419,9 @@ def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | N
     if request.form.get("alerts_present") != "1":
         return None, None
     recipients = notify_service.recipient_lines(request.form.get("alert_recipients", ""))
-    problem = notify_service.check_recipients(recipients)
+    problem = notify_service.check_recipients(recipients) or notify_service.unknown_recipients(
+        recipients
+    )
     if problem:
         return None, f"Alert list: {problem}"
     raw = request.form.get("stale_alert_hours", "").strip()

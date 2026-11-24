@@ -259,6 +259,7 @@ class GkUser:
     username: str
     email: str
     enabled: bool = True
+    fullname: str = ""
 
 
 class FakeGatekeeper:
@@ -275,6 +276,26 @@ class FakeGatekeeper:
 
     def get_user(self, username: str) -> GkUser | None:
         return self.users.get(username)
+
+    def list_users(
+        self,
+        search: str | None = None,
+        enabled_only: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[GkUser]:
+        """Like Gatekeeper's: ``search`` matches the username, email or full name."""
+        needle = (search or "").lower()
+        found = [
+            u
+            for u in self.users.values()
+            if (not enabled_only or u.enabled)
+            and any(needle in (v or "").lower() for v in (u.username, u.email, u.fullname))
+        ]
+        return sorted(found, key=lambda u: u.username)[offset : offset + limit]
+
+    def list_groups(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(name=n, description=f"{n} group") for n in sorted(self.groups)]
 
     def get_group_members(self, name: str) -> list[str]:
         return self.groups.get(name, [])

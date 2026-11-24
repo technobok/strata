@@ -8,6 +8,7 @@
 
     <!-- Vendor CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/tom-select.min.css') }}">
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
@@ -91,9 +92,11 @@
 
     <!-- Vendor JS -->
     <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/tom-select.min.js') }}"></script>
 
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/people.js') }}"></script>
 
     {% block scripts %}{% endblock %}
 </body>

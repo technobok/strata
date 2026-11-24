@@ -119,6 +119,12 @@ def is_writer() -> bool:
     return user is not None and (is_admin() or user.in_group(writer_group()))
 
 
+def edits_people() -> bool:
+    """May look people up (the people fields' suggestions): writers, admins, and the
+    owners of any datamodule (who edit its lists and its reports' schedules)."""
+    return is_writer() or any(can_own(dm) for dm in Datamodule.get_all())
+
+
 # ---------------------------------------------------------------------------
 # A datamodule's lists, and the signed-in user's place in them
 # ---------------------------------------------------------------------------
