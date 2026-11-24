@@ -27,7 +27,7 @@ def test_report_body_must_be_one_select(strata: Strata, body: str) -> None:
     dm_uuid = strata.new_datamodule()
     resp = strata.client.post(
         f"/datamodules/{dm_uuid}/reports/new",
-        data={"name": "Bad", "macro_name": "bad", "body_sql": body},
+        data={"name": "Bad", "body_sql": body},
     )
     assert resp.status_code == 200  # the form re-renders with the error
     assert "The report body" in resp.get_data(as_text=True)
@@ -43,7 +43,6 @@ def test_constraint_query_must_be_one_select(strata: Strata) -> None:
         f"/datamodules/{dm_uuid}/reports/new",
         data={
             "name": "R",
-            "macro_name": "r",
             "body_sql": "SELECT * FROM sales WHERE region = $region",
             "arg_name": ["region"],
             "arg_type": ["text"],
@@ -87,7 +86,7 @@ def test_report_cannot_read_host_files(strata: Strata) -> None:
     assert "Permission" in resp.get_data(as_text=True)
     refused = strata.client.post(
         f"/datamodules/{dm_uuid}/reports/new",
-        data={"name": "Host", "macro_name": "host", "body_sql": HOST_FILE},
+        data={"name": "Host", "body_sql": HOST_FILE},
     )
     assert refused.status_code == 200
     page = refused.get_data(as_text=True)
@@ -169,7 +168,7 @@ def test_build_can_still_use_dependencies(strata: Strata) -> None:
     assert resp.status_code == 302
     strata.build(downstream)
     assert strata.datamodule(downstream).build_status == "ready", _last_error(strata, downstream)
-    rpt = strata.new_report(downstream, body="SELECT * FROM totals", macro="totals")
+    rpt = strata.new_report(downstream, body="SELECT * FROM totals")
     rows = json.loads(strata.client.get(f"/r/{rpt}.json").get_data(as_text=True))
     assert rows == [{"r": 425.75}]
 

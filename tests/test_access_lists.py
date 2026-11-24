@@ -64,7 +64,7 @@ def _authoring_urls(strata: Strata) -> list[tuple[str, str]]:
         dm = Datamodule.get_by_uuid(dm_uuid)
         assert dm is not None
         [schedule] = Schedule.for_datamodule(dm.id)
-        [key] = ApiKey.get_for_datamodule(dm.id)
+        [key] = [k for k in ApiKey.get_for_datamodule(dm.id) if not k.excel_link]
     [version] = strata.versions(dm_uuid)
     values = {
         "uuid": dm_uuid,

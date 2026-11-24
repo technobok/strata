@@ -85,7 +85,7 @@ def test_runs_are_for_viewers(strata: Strata) -> None:
 
 def test_checks_shows_only_what_the_user_may_view(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
-    strata.new_report(dm_uuid, name="Secret check", macro="secret", check="warning")
+    strata.new_report(dm_uuid, name="Secret check", check="warning")
     strata.set_access(dm_uuid, owners="alice", viewers="@brs-finance")
     assert "Secret check" in strata.client.get("/checks", headers=VIEWER).get_data(as_text=True)
     assert "Secret check" not in strata.client.get("/checks", headers=OUTSIDER).get_data(

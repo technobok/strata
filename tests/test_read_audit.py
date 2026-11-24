@@ -45,7 +45,6 @@ def sales(strata: Strata) -> tuple[str, str]:
         dm_uuid,
         body="SELECT * FROM sales WHERE region = $region",
         name="By region",
-        macro="by_region",
         args=[
             {
                 "name": "region",
@@ -311,7 +310,7 @@ def test_owners_see_their_datamodules_reads_only(strata: Strata, sales: tuple[st
     dm_uuid, rpt = sales
     other = strata.new_datamodule(path="test/other")
     strata.build(other)
-    other_rpt = strata.new_report(other, name="Other", macro="other")
+    other_rpt = strata.new_report(other, name="Other")
     strata.client.get(f"/r/{rpt}.html", headers=VIEWER)
     strata.client.get(f"/r/{other_rpt}.html")
     other_id = strata.datamodule(other).id

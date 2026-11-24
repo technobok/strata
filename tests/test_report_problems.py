@@ -17,7 +17,7 @@ MISSING_TABLE = "SELECT * FROM no_such_table"
 
 
 def _post_report(strata: Strata, dm_uuid: str, body: str, **form: Any) -> Any:
-    data: dict[str, Any] = {"name": "Sales", "macro_name": "sales_report", "body_sql": body}
+    data: dict[str, Any] = {"name": "Sales", "body_sql": body}
     data.update(form)
     return strata.client.post(f"/datamodules/{dm_uuid}/reports/new", data=data)
 
@@ -59,13 +59,14 @@ def test_a_report_on_a_missing_table_is_not_saved_and_the_form_keeps_it(
         arg_description=["which region"],
         is_check="on",
         severity="error",
+        description="Sales by region",
     )
     assert resp.status_code == 200
     page = resp.get_data(as_text=True)
     assert '<div class="error-box report-error">Not saved: the report does not run' in page
     assert "no_such_table" in page and "does not exist" in page
     # Everything typed is still in the form.
-    assert 'name="name" value="Sales"' in page and 'value="sales_report"' in page
+    assert 'name="name" value="Sales"' in page and ">Sales by region</textarea>" in page
     assert f">{MISSING_TABLE}</textarea>" in page
     assert 'name="arg_name" value="region"' in page and 'value="which region"' in page
     assert 'name="is_check" checked' in page and '<option value="error" selected>' in page
@@ -80,7 +81,6 @@ def test_a_refused_edit_keeps_what_was_typed_and_the_saved_report(strata: Strata
         f"/datamodules/reports/{rpt}/edit",
         data={
             "name": "Renamed",
-            "macro_name": "sales_report",
             "body_sql": "SELECT nope FROM sales",
         },
     )

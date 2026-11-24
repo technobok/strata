@@ -38,9 +38,7 @@ def test_a_loop_renders_one_branch_per_row_and_the_version_keeps_it(strata: Stra
     assert strata.datamodule(dm_uuid).build_status == "ready", strata.datamodule(
         dm_uuid
     ).last_build_error
-    rpt = strata.new_report(
-        dm_uuid, body="SELECT * FROM stock ORDER BY company", name="Stock", macro="stock"
-    )
+    rpt = strata.new_report(dm_uuid, body="SELECT * FROM stock ORDER BY company", name="Stock")
     rows = json.loads(strata.client.get(f"/r/{rpt}.json").get_data(as_text=True))
     assert rows == [
         {"company": "BRS", "db": "brs_db"},

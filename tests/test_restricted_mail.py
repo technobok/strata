@@ -14,7 +14,7 @@ from tests.test_notify import BAD_ROW_SCRIPT, NEGATIVE, _fire, _schedule
 
 def _check(strata: Strata, viewers: str | None) -> tuple[str, str]:
     dm_uuid = strata.new_datamodule(script=BAD_ROW_SCRIPT)
-    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative", macro="neg", check="error")
+    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative", check="error")
     strata.build(dm_uuid)
     assert strata.set_access(dm_uuid, owners=None, viewers=viewers).status_code == 302
     return dm_uuid, rpt
@@ -108,7 +108,6 @@ def _failing_gate(strata: Strata, viewers: str | None, ttl: str = "") -> str:
         dm_uuid,
         body="SELECT * FROM sales WHERE revenue > 200",
         name="Big",
-        macro="big",
         check="error",
         gate=True,
     )
@@ -151,7 +150,7 @@ def test_a_restricted_run_on_old_data_says_the_refresh_failed_without_why(
     strata: Strata, mail: list[Any]
 ) -> None:
     dm_uuid = _failing_gate(strata, viewers="@brs-finance", ttl="0")  # always stale
-    rpt = strata.new_report(dm_uuid, name="All", macro="all_sales")
+    rpt = strata.new_report(dm_uuid, name="All")
     assert _schedule(strata, rpt, "jsmith").status_code == 302
     _fire(strata)  # the run refreshes first: the gate fails it, the run uses the old data
     alert, sent = mail
@@ -164,7 +163,7 @@ def test_a_restricted_run_on_old_data_says_the_refresh_failed_without_why(
 def test_a_restricted_failed_run_does_not_quote_its_error(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
     rpt = strata.new_report(
-        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast", macro="as_int"
+        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast"
     )
     strata.build(dm_uuid)
     assert strata.set_access(dm_uuid, owners=None, viewers="@brs-finance").status_code == 302
@@ -178,7 +177,7 @@ def test_a_restricted_failed_run_does_not_quote_its_error(strata: Strata, mail: 
 def test_an_open_failed_run_quotes_its_error(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
     rpt = strata.new_report(
-        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast", macro="as_int"
+        dm_uuid, body="SELECT CAST(region AS INTEGER) AS n FROM sales", name="Cast"
     )
     strata.build(dm_uuid)
     _schedule(strata, rpt, "jsmith")

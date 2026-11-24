@@ -92,7 +92,6 @@ def test_a_failing_gate_alerts(strata: Strata, mail: list[Any]) -> None:
         dm_uuid,
         body="SELECT * FROM sales WHERE revenue > 200",
         name="Big",
-        macro="big",
         check="error",
         gate=True,
     )
@@ -108,7 +107,7 @@ def test_a_failed_scheduled_run_goes_to_the_datamodule_alert_list(
     from strata.services import schedule_service
 
     dm_uuid = strata.new_datamodule()
-    rpt = strata.new_report(dm_uuid, body="SELECT cost FROM sales", name="Costs", macro="costs")
+    rpt = strata.new_report(dm_uuid, body="SELECT cost FROM sales", name="Costs")
     strata.build(dm_uuid)
     _alerts_form(strata, dm_uuid, "@brs-finance")
     strata.client.post(

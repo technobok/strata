@@ -179,7 +179,7 @@ def test_a_dependency_in_backoff_fails_an_automatic_downstream_build(strata: Str
     )
     assert resp.status_code == 302
     strata.build(down)
-    rpt = strata.new_report(down, body="SELECT * FROM totals", macro="totals")
+    rpt = strata.new_report(down, body="SELECT * FROM totals")
 
     _break_script(strata, up)
     _make_stale(strata, up)

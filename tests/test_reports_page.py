@@ -24,11 +24,11 @@ def _home(strata: Strata, headers: dict[str, str]) -> str:
 
 def test_home_lists_the_reports_the_user_can_open(strata: Strata) -> None:
     secret = strata.new_datamodule(path="finance/payroll")
-    strata.new_report(secret, name="Salaries", macro="salaries")
+    strata.new_report(secret, name="Salaries")
     strata.set_access(secret, owners="alice", viewers="@brs-finance")
     shared = strata.new_datamodule(path="sales/daily")
-    strata.new_report(shared, name="Daily sales", macro="daily")
-    strata.new_report(shared, name="Negative revenue", macro="neg", check="error")
+    strata.new_report(shared, name="Daily sales")
+    strata.new_report(shared, name="Negative revenue", check="error")
     strata.new_datamodule(path="sales/empty")  # no reports: not listed
 
     page = _home(strata, OUTSIDER)

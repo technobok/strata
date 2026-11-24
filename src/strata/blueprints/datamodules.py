@@ -260,6 +260,9 @@ def new() -> str | Response:
                 owners=owners,
                 viewers=viewers,
             )
+            # Its Excel link exists from the start (the Reports table and every
+            # report's Use in Excel box show it).
+            ApiKey.ensure_excel_link(dm.id, g.user.username)
             flash("Datamodule created. Build it to produce a live version.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
@@ -342,9 +345,10 @@ def edit(uuid: str) -> str | Response:
     }
     reports = Report.get_for_datamodule(dm.id)
 
-    # Excel: each report's link carries the datamodule's Excel key (made now if it
-    # has none, so it is listed with the keys below); every key's links stay shown.
-    excel_key = ApiKey.ensure_excel_link(dm.id, g.user.username) if reports else None
+    # Excel: each report's link carries the datamodule's Excel key (made with the
+    # datamodule; made now for one older than that, so it is listed with the keys
+    # below); every key's links stay shown.
+    excel_key = ApiKey.ensure_excel_link(dm.id, g.user.username)
     excel_links = (
         {r.id: _excel_url(r, excel_key.link_token()) for r in reports} if excel_key else {}
     )
@@ -687,7 +691,7 @@ class _ReportDraft:
     refused form (so a refused save loses nothing)."""
 
     name: str
-    macro_name: str
+    description: str
     body_sql: str
 
 
@@ -751,7 +755,7 @@ def _report_form(dm: Datamodule, report: Report | None, error: str | None = None
     if error is None:
         draft = _ReportDraft(
             name=report.name if report else "",
-            macro_name=report.macro_name if report else "",
+            description=report.description if report else "",
             body_sql=report.body_sql if report else "",
         )
         args = ReportArg.get_for_report(report.id) if report else []
@@ -760,7 +764,7 @@ def _report_form(dm: Datamodule, report: Report | None, error: str | None = None
         form = request.form
         draft = _ReportDraft(
             name=form.get("name", ""),
-            macro_name=form.get("macro_name", ""),
+            description=form.get("description", ""),
             body_sql=form.get("body_sql", ""),
         )
         args = _typed_args()
@@ -811,15 +815,25 @@ def _live_version_file(dm: Datamodule) -> Path | None:
 
 
 def _save_report(dm: Datamodule, report: Report | None) -> str | None:
-    """Create or update a query report from the form. Returns an error or None."""
+    """Create or update a query report from the form. Returns an error or None.
+
+    A new report's macro name is made from its name (report_service.macro_name_for)
+    and kept from then on, renames included: workbooks select its xlsx sheet and
+    table by it."""
     name = request.form.get("name", "").strip()
-    macro_name = request.form.get("macro_name", "").strip()
+    description = request.form.get("description", "").strip()
     body_sql = request.form.get("body_sql", "")
 
     if not name:
         return "Report name is required."
-    if not macro_name or not ALIAS_RE.match(macro_name):
-        return "Macro name must be a letter/underscore identifier (used as the SQL macro)."
+    others = [r for r in Report.get_for_datamodule(dm.id) if report is None or r.id != report.id]
+    if any(r.name.lower() == name.lower() for r in others):
+        return f"{dm.path} already has a report named '{name}': choose another name."
+    macro_name = (
+        report.macro_name
+        if report is not None
+        else report_service.macro_name_for(name, (r.macro_name for r in others))
+    )
 
     args, arg_error = _parse_args_form()
     if arg_error:
@@ -878,12 +892,13 @@ def _save_report(dm: Datamodule, report: Report | None) -> str | None:
                 macro_name=macro_name,
                 body_sql=body_sql,
                 created_by=g.user.username,
+                description=description,
             )
         else:
             existing.update(
                 modified_by=g.user.username,
                 name=name,
-                macro_name=macro_name,
+                description=description,
                 body_sql=body_sql,
             )
             saved = existing

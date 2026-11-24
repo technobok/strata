@@ -15,11 +15,11 @@ def _names(page: str) -> list[str]:
 def test_the_overview_lists_checks_flagged_first(strata: Strata) -> None:
     sales = strata.new_datamodule()
     strata.build(sales)
-    big = strata.new_report(sales, body=BIG, name="Big sales", macro="big", check="info")
-    neg = strata.new_report(sales, body=NEGATIVE, name="Negative", macro="neg", check="error")
-    strata.new_report(sales, name="Plain report", macro="plain")  # not a check
+    big = strata.new_report(sales, body=BIG, name="Big sales", check="info")
+    neg = strata.new_report(sales, body=NEGATIVE, name="Negative", check="error")
+    strata.new_report(sales, name="Plain report")  # not a check
     broken = strata.new_datamodule(path="ops/broken", script="SELECT * FROM missing_table")
-    strata.new_report(broken, body="SELECT 1 AS x", name="On broken", macro="onb", check="warning")
+    strata.new_report(broken, body="SELECT 1 AS x", name="On broken", check="warning")
     strata.build(broken)
     strata.client.post(f"/reports/{big}/run")  # 1 row: flagged
     strata.client.post(f"/reports/{neg}/run")  # 0 rows: not flagged

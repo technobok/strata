@@ -60,9 +60,7 @@ def _runs(strata: Strata, rpt: str) -> list[ReportRun]:
 
 def test_a_check_with_rows_mails_its_recipients(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule(script=BAD_ROW_SCRIPT)
-    rpt = strata.new_report(
-        dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="error"
-    )
+    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error")
     strata.build(dm_uuid)
     resp = _schedule(strata, rpt, "@brs-finance\njsmith\nops@example.com\nghost")
     assert resp.status_code == 302 and resp.headers["Location"].endswith(
@@ -88,9 +86,7 @@ def test_a_check_with_rows_mails_its_recipients(strata: Strata, mail: list[Any])
 
 def test_a_check_with_no_rows_sends_nothing(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
-    rpt = strata.new_report(
-        dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="warning"
-    )
+    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="warning")
     strata.build(dm_uuid)
     _schedule(strata, rpt, "jsmith")
     _fire(strata)
@@ -101,7 +97,7 @@ def test_a_check_with_no_rows_sends_nothing(strata: Strata, mail: list[Any]) -> 
 
 def test_a_plain_report_always_mails(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
-    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Refunds", macro="refunds")
+    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Refunds")
     strata.build(dm_uuid)
     _schedule(strata, rpt, "jsmith")
     _fire(strata)
@@ -111,7 +107,7 @@ def test_a_plain_report_always_mails(strata: Strata, mail: list[Any]) -> None:
 
 def test_a_failed_query_mails_the_admins_only(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
-    rpt = strata.new_report(dm_uuid, body="SELECT cost FROM sales", name="Costs", macro="costs")
+    rpt = strata.new_report(dm_uuid, body="SELECT cost FROM sales", name="Costs")
     strata.build(dm_uuid)
     _schedule(strata, rpt, "jsmith")
     _fire(strata)
@@ -130,7 +126,6 @@ def test_each_schedule_has_its_own_arguments(strata: Strata, mail: list[Any]) ->
         dm_uuid,
         body="SELECT * FROM sales WHERE region = $region",
         name="By region",
-        macro="by_region",
         args=[{"name": "region", "type": "text", "widget": "input", "required": "yes"}],
     )
     strata.build(dm_uuid)

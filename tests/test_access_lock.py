@@ -36,7 +36,7 @@ def payroll(strata: Strata, gatekeeper: FakeGatekeeper) -> dict[str, Any]:
     child = strata.new_datamodule(path="finance/summary", script=CHILD_SCRIPT)
     assert strata.set_access(child, owners="alice", viewers=None).status_code == 302
     strata.add_dependency(child, parent, "pay")
-    rpt = strata.new_report(child, body="SELECT * FROM totals", name="Totals", macro="totals")
+    rpt = strata.new_report(child, body="SELECT * FROM totals", name="Totals")
     strata.build(child)
     assert strata.datamodule(child).build_status == "ready"
     return {"gk": gatekeeper, "parent": parent, "child": child, "report": rpt}
@@ -184,7 +184,7 @@ def test_a_scheduled_check_on_a_locked_datamodule_mails_no_rows(
     strata: Strata, payroll: dict[str, Any], mail: list[Any]
 ) -> None:
     rpt = strata.new_report(
-        payroll["child"], body="SELECT * FROM totals", name="Big", macro="big", check="warning"
+        payroll["child"], body="SELECT * FROM totals", name="Big", check="warning"
     )
     assert _schedule(strata, rpt, "jsmith").status_code == 302
     _lose_access(payroll)
@@ -244,9 +244,7 @@ def test_the_preview_follows_the_build_rule(strata: Strata, payroll: dict[str, A
 
 
 def test_checks_shows_a_locked_datamodule(strata: Strata, payroll: dict[str, Any]) -> None:
-    strata.new_report(
-        payroll["child"], body="SELECT * FROM totals", name="Big", macro="big", check="warning"
-    )
+    strata.new_report(payroll["child"], body="SELECT * FROM totals", name="Big", check="warning")
     _lose_access(payroll)
     _build(strata, payroll["child"])
     page = strata.client.get("/checks", headers=VIEWER).get_data(as_text=True)

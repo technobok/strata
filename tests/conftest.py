@@ -164,13 +164,12 @@ class Strata:
         dm_uuid: str,
         body: str = "SELECT * FROM sales",
         name: str = "Sales",
-        macro: str = "sales_report",
         args: list[dict[str, str]] | None = None,
         check: str | None = None,
         gate: bool = False,
     ) -> str:
         """Create a report; ``check`` = a severity makes it a check (``gate`` too)."""
-        data: dict[str, Any] = {"name": name, "macro_name": macro, "body_sql": body}
+        data: dict[str, Any] = {"name": name, "body_sql": body}
         if check is not None:
             data.update(is_check="on", severity=check)
             if gate:
@@ -185,7 +184,7 @@ class Strata:
 
             dm = Datamodule.get_by_uuid(dm_uuid)
             assert dm is not None
-            reports = [r for r in Report.get_for_datamodule(dm.id) if r.macro_name == macro]
+            reports = [r for r in Report.get_for_datamodule(dm.id) if r.name == name]
             assert reports, self.flashes()
             return reports[0].uuid
 

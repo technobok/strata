@@ -212,7 +212,14 @@ def snapshot_download(
     conn, final_sql, columns = _snapshot_query(run, dm_uuid)
     try:
         return report_service.stream_rows(
-            conn, final_sql, [], columns, spec, fmt, f"{report.macro_name}-{run.uuid[:8]}"
+            conn,
+            final_sql,
+            [],
+            columns,
+            spec,
+            fmt,
+            f"{report.macro_name}-{run.uuid[:8]}",
+            sheet=report.macro_name,
         )
     except Exception:
         conn.close()

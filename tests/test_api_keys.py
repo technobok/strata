@@ -16,7 +16,6 @@ def dm(strata: Strata) -> tuple[str, str]:
     rpt = strata.new_report(
         dm_uuid,
         body="SELECT * FROM sales WHERE region = $region",
-        macro="by_region",
         args=[
             {"name": "region", "type": "text", "widget": "input", "default": "North"},
         ],
@@ -62,9 +61,7 @@ def test_a_key_reads_every_report_of_its_datamodule_only(
 ) -> None:
     """User decision 2026-11-23: no scope; a key is for the whole datamodule."""
     dm_uuid, rpt = dm
-    other = strata.new_report(
-        dm_uuid, body="SELECT * FROM sales", name="Everything", macro="everything"
-    )
+    other = strata.new_report(dm_uuid, body="SELECT * FROM sales", name="Everything")
     elsewhere_dm = strata.new_datamodule(path="test/elsewhere")
     strata.build(elsewhere_dm)
     elsewhere = strata.new_report(elsewhere_dm)
@@ -107,9 +104,7 @@ def test_an_old_report_scoped_key_still_reads_its_report_only(
     strata: Strata, dm: tuple[str, str]
 ) -> None:
     dm_uuid, rpt = dm
-    other = strata.new_report(
-        dm_uuid, body="SELECT * FROM sales", name="Everything", macro="everything"
-    )
+    other = strata.new_report(dm_uuid, body="SELECT * FROM sales", name="Everything")
     token = _old_key(strata, rpt)
     assert strata.client.get(f"/r/{rpt}.csv?key={token}", headers=ANON).status_code == 200
     assert strata.client.get(f"/r/{other}.csv?key={token}", headers=ANON).status_code == 403
@@ -152,9 +147,7 @@ def test_an_old_key_says_to_rotate_and_then_shows_its_links(
 
 def test_the_reports_table_has_each_reports_excel_link(strata: Strata, dm: tuple[str, str]) -> None:
     dm_uuid, rpt = dm
-    other = strata.new_report(
-        dm_uuid, body="SELECT * FROM sales", name="Everything", macro="everything"
-    )
+    other = strata.new_report(dm_uuid, body="SELECT * FROM sales", name="Everything")
     page = _page(strata, dm_uuid)
     with strata.app.app_context():
         from strata.models.api_key import ApiKey

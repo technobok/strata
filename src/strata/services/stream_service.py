@@ -9,6 +9,7 @@ closes.
 
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Iterator
 from datetime import date, datetime, time
@@ -112,14 +113,28 @@ def _xlsx_value(value: Any) -> Any:
     return str(value)  # STRUCT / LIST / BLOB / UUID / INTERVAL ...
 
 
+def xlsx_names(sheet: str) -> tuple[str, str]:
+    """(sheet title, table name) for a report's xlsx: Power Query's Navigator lists
+    both, and a workbook's query selects one of them BY NAME, so both come from the
+    report's macro name, which never changes once the report is made. The table is
+    ``<macro>_table`` (a table name is letters, digits and ``_``; a sheet title is at
+    most 31 characters)."""
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", sheet) or "report"
+    if not (safe[0].isalpha() or safe[0] == "_"):
+        safe = f"_{safe}"
+    return sheet[:31] or "Report", f"{safe}_table"
+
+
 def stream_xlsx(
     conn: duckdb.DuckDBPyConnection,
     final_sql: str,
     binds: list[Any],
     download_name: str,
     columns: list[str],
+    sheet: str | None = None,
 ) -> Response:
     """Write the result to a temp .xlsx via openpyxl's write-only mode and stream it.
+    Its sheet and table are named after ``sheet`` (default: the file name's stem).
 
     Rows pass through in fetchmany batches (constant memory); the first
     _XLSX_PROBE_ROWS rows are buffered up front to size the columns, which
@@ -137,7 +152,7 @@ def stream_xlsx(
             probe.extend(batch)
 
         wb = Workbook(write_only=True)
-        title = download_name.rsplit(".", 1)[0][:31] or "Report"
+        title, table_name = xlsx_names(sheet or download_name.rsplit(".", 1)[0])
         ws = wb.create_sheet(title=title)
 
         for i, name in enumerate(columns):
@@ -168,7 +183,7 @@ def stream_xlsx(
         # subscripts the sheet to derive them, which write-only mode can't do.
         if nrows >= 1 and columns and all(columns) and len(set(columns)) == len(columns):
             ref = f"A1:{get_column_letter(len(columns))}{nrows + 1}"
-            table = Table(displayName="StrataReport", ref=ref)
+            table = Table(displayName=table_name, ref=ref)
             table.tableColumns = [
                 TableColumn(id=i, name=str(name)) for i, name in enumerate(columns, 1)
             ]

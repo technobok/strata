@@ -25,9 +25,10 @@ def test_select_runs(strata: Strata) -> None:
 def test_a_second_statement_is_refused_not_run(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
     strata.new_api_key(dm_uuid)
+    keys = _api_key_count(strata)  # its Excel link and that key
     body = _run(strata, "SELECT 1; DELETE FROM api_key")
     assert "one statement at a time" in body
-    assert _api_key_count(strata) == 1
+    assert _api_key_count(strata) == keys == 2
 
 
 def test_writes_are_refused_by_the_connection(strata: Strata) -> None:

@@ -26,8 +26,21 @@ A bare `PIVOT` parses as a statement of its own, so wrap it:
 SELECT * FROM (PIVOT sales ON region USING sum(revenue) GROUP BY product)
 ```
 
-The **macro name** is the SQL name Strata gives the report internally. It must be a
-plain identifier (letters, digits, `_`), unique within the datamodule.
+## Names
+
+A report's **name** is its title everywhere: lists, its page, mail subjects. No two
+reports on a datamodule may have the same name, in any mix of capitals. Its
+optional **description** says what it shows, or for a check what to do about the
+rows it finds. It is shown under the name on the report's page and at the top of
+its mail.
+
+Strata also gives each report a **macro name**, made from its name when the report
+is created: `Bad item department` becomes `bad_item_department`. Strata runs the
+report under that name, and downloads are named after it. In an `.xlsx` it names the
+sheet, and the Excel table on that sheet is `<macro name>_table`. Power Query's
+Navigator lists both; choose the table. The macro name never changes, even when the
+report is renamed, because a workbook's query picks the sheet or table by name. The
+report's edit page shows both names.
 
 ## Saving checks it runs
 

@@ -308,8 +308,9 @@ def build_run_mail(
     footer = _footer(report, dm, schedule, run)
     html = Markup(
         '<div style="font-family:sans-serif;font-size:14px;">'
-        "<p>{first}.</p><p><strong>{shown}</strong></p>{table}{more}{footer}</div>"
+        "{about}<p>{first}.</p><p><strong>{shown}</strong></p>{table}{more}{footer}</div>"
     ).format(
+        about=Markup("<p>{}</p>").format(report.description) if report.description else "",
         first=first,
         shown=shown,
         table=_table(columns, rows) if rows else "",

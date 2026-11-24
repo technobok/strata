@@ -61,7 +61,6 @@ def test_declared_args_bind(strata: Strata) -> None:
     rpt = strata.new_report(
         dm_uuid,
         body="SELECT * FROM sales WHERE region = $region",
-        macro="by_region",
         args=[{"name": "region", "type": "text", "widget": "input", "required": "yes"}],
     )
     rows = _rows(strata, f"/r/{rpt}.json?region=South")
@@ -78,7 +77,7 @@ def test_version_pin_serves_an_old_snapshot(strata: Strata) -> None:
     )
     assert resp.status_code == 302
     strata.build(dm_uuid)
-    rpt = strata.new_report(dm_uuid, body="SELECT * FROM t", macro="t_report")
+    rpt = strata.new_report(dm_uuid, body="SELECT * FROM t")
 
     assert _rows(strata, f"/r/{rpt}.json") == [{"n": 2}]
     assert _rows(strata, f"/r/{rpt}.json?version={first.uuid}") == [{"n": 1}]

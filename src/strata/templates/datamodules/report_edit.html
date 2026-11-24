@@ -18,15 +18,14 @@
 
 <form method="post"
       action="{% if report %}{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}{% else %}{{ url_for('datamodules.report_new', uuid=datamodule.uuid) }}{% endif %}">
-    <div class="grid">
-        <label>Name
-            <input type="text" name="name" value="{{ draft.name }}" required>
-        </label>
-        <label>Macro name (SQL identifier){{ help_link('reports', 'the-report-body') }}
-            <input type="text" name="macro_name" value="{{ draft.macro_name }}"
-                   placeholder="nums" required>
-        </label>
-    </div>
+    <label>Name
+        <input type="text" name="name" value="{{ draft.name }}" required>
+        {% if report %}<small>In Excel: sheet <code>{{ report.macro_name }}</code>, table <code>{{ report.macro_name }}_table</code>. These stay the same when the report is renamed, so workbooks keep working.{{ help_link('reports', 'names') }}</small>{% endif %}
+    </label>
+
+    <label>Description <small>(optional: what it shows, or for a check what to do about its rows)</small>
+        <textarea name="description" rows="2">{{ draft.description }}</textarea>
+    </label>
 
     <label>Body SQL (reference args as <code>$argname</code>){{ help_link('reports', 'the-report-body') }}
         <textarea id="body_sql" class="sql-editor" name="body_sql" rows="8" style="font-family:monospace;"

@@ -59,9 +59,7 @@ def test_a_report_becomes_a_check_and_back(strata: Strata) -> None:
     from strata.models.report_check import ReportCheck
 
     dm_uuid = strata.new_datamodule()
-    rpt = strata.new_report(
-        dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="error"
-    )
+    rpt = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error")
     page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
     assert '<span class="severity severity-error">error</span>' in page
 
@@ -71,7 +69,7 @@ def test_a_report_becomes_a_check_and_back(strata: Strata) -> None:
         assert ReportCheck.get(report.id) == ReportCheck(report.id, "error", False)
     strata.client.post(
         f"/datamodules/reports/{rpt}/edit",
-        data={"name": "Negative revenue", "macro_name": "neg", "body_sql": NEGATIVE},
+        data={"name": "Negative revenue", "body_sql": NEGATIVE},
     )
     with strata.app.app_context():
         assert ReportCheck.get(report.id) is None
@@ -83,7 +81,6 @@ def test_a_gate_needs_defaults_for_required_arguments(strata: Strata) -> None:
         f"/datamodules/{dm_uuid}/reports/new",
         data={
             "name": "Below",
-            "macro_name": "below",
             "body_sql": "SELECT * FROM sales WHERE revenue < $floor",
             "arg_name": ["floor"],
             "arg_type": ["number"],
@@ -109,9 +106,7 @@ def test_a_gate_needs_defaults_for_required_arguments(strata: Strata) -> None:
 def test_a_gate_with_rows_fails_the_build_and_the_old_version_serves(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
     sales = strata.new_report(dm_uuid)
-    strata.new_report(
-        dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="error", gate=True
-    )
+    strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error", gate=True)
     strata.build(dm_uuid)
     good = strata.datamodule(dm_uuid)
     assert good.build_status == "ready"
@@ -131,7 +126,6 @@ def test_a_gate_that_cannot_run_fails_the_build(strata: Strata) -> None:
         dm_uuid,
         body="SELECT * FROM sales WHERE cost > 0",
         name="Cost",
-        macro="cost",
         check="warning",
         gate=True,
     )
@@ -143,7 +137,7 @@ def test_a_gate_that_cannot_run_fails_the_build(strata: Strata) -> None:
 
 def test_a_check_that_is_not_a_gate_never_touches_builds(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule(script=BAD_ROW_SCRIPT)
-    strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="error")
+    strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error")
     strata.build(dm_uuid)
     assert strata.datamodule(dm_uuid).build_status == "ready"
 
@@ -154,7 +148,6 @@ def test_a_gate_runs_with_its_argument_defaults(strata: Strata) -> None:
         dm_uuid,
         body="SELECT * FROM sales WHERE revenue < $floor",
         name="Below floor",
-        macro="below",
         args=[
             {
                 "name": "floor",
@@ -180,7 +173,6 @@ def test_a_gate_that_outlasts_the_build_limit_reports_the_limit(strata: Strata) 
         dm_uuid,
         body="SELECT x FROM range(100000000000) r(x) WHERE x % 7 = 3 AND x < 0",
         name="Slow",
-        macro="slow",
         check="warning",
         gate=True,
     )
@@ -240,14 +232,11 @@ def test_a_saved_run_records_its_arguments(strata: Strata) -> None:
 
 def test_empty_and_failed_runs(strata: Strata) -> None:
     dm_uuid = strata.new_datamodule()
-    neg = strata.new_report(
-        dm_uuid, body=NEGATIVE, name="Negative revenue", macro="neg", check="error"
-    )
+    neg = strata.new_report(dm_uuid, body=NEGATIVE, name="Negative revenue", check="error")
     needs = strata.new_report(
         dm_uuid,
         body="SELECT * FROM sales WHERE region = $region",
         name="By region",
-        macro="by_region",
         args=[{"name": "region", "type": "text", "widget": "input", "required": "yes"}],
     )
     strata.build(dm_uuid)

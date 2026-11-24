@@ -29,7 +29,7 @@ def _setup(strata: Strata) -> tuple[str, str, str]:
     dm_uuid = strata.new_datamodule()
     strata.build(dm_uuid)
     report = strata.new_report(dm_uuid)
-    other = strata.new_report(dm_uuid, name="Other", macro="other_report")
+    other = strata.new_report(dm_uuid, name="Other")
     return dm_uuid, report, other
 
 
@@ -57,9 +57,10 @@ def _excel_key(strata: Strata, report: str) -> ApiKey | None:
         return ApiKey.get_excel_link(rpt.datamodule_id)
 
 
-def test_opening_a_box_makes_the_datamodules_key_once(strata: Strata) -> None:
+def test_every_box_shows_the_key_made_with_the_datamodule(strata: Strata) -> None:
     _dm, report, other = _setup(strata)
-    assert _excel_key(strata, report) is None  # nobody opened the box yet
+    made = _excel_key(strata, report)  # made when the datamodule was
+    assert made is not None and made.created_by == "tester"  # who made the datamodule
     box = _box(strata, report, headers=VIEWER)
     first = _links(box)
     assert set(first) == {
@@ -80,7 +81,7 @@ def test_opening_a_box_makes_the_datamodules_key_once(strata: Strata) -> None:
     key = _excel_key(strata, report)
     assert key is not None and key.excel_link and not key.old_report_link
     assert key.scope_type == "datamodule" and key.report_id is None
-    assert key.created_by == "viewer" and key.name == "Excel link"
+    assert key.id == made.id and key.name == "Excel link"
     assert key.token_hash == hashlib.sha256(token.encode()).hexdigest()
     assert key.token_encrypted and token not in key.token_encrypted
     with strata.app.app_context():
@@ -119,7 +120,6 @@ def test_the_report_page_offers_the_box_and_a_run_page_does_not(strata: Strata) 
     _dm, report, _other = _setup(strata)
     page = strata.client.get(f"/r/{report}.html?region=North").get_data(as_text=True)
     assert f'hx-get="/r/{report}/excel?region=North"' in page and "Use in Excel" in page
-    assert _excel_key(strata, report) is None  # the page alone makes no key
 
     resp = strata.client.post(f"/reports/{report}/run")
     assert resp.status_code == 302
@@ -131,7 +131,7 @@ def test_the_box_needs_a_login(strata: Strata) -> None:
     _dm, report, _other = _setup(strata)
     resp = strata.client.get(f"/r/{report}/excel", headers=ANON)
     assert resp.status_code == 302 and "/login" in resp.headers["Location"]
-    assert _excel_key(strata, report) is None
+    assert b"key=" not in resp.get_data()
 
 
 def test_only_the_datamodules_owners_replace_the_key(strata: Strata) -> None:
@@ -318,3 +318,32 @@ def test_0011_keeps_old_report_links_and_names_them(tmp_path, monkeypatch) -> No
         "SELECT name, scope_type, enabled, excel_link, datamodule_excel_link FROM api_key"
     ).fetchall() == [("Excel link (one report, before 2026-11-23)", "report", 1, 1, 0)]
     conn.close()
+
+
+def test_a_new_datamodule_has_its_excel_key_before_any_report(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    with strata.app.app_context():
+        from strata.models.datamodule import Datamodule
+
+        dm = Datamodule.get_by_uuid(dm_uuid)
+        assert dm is not None
+        key = ApiKey.get_excel_link(dm.id)
+    assert key is not None and key.excel_link and key.scope_type == "datamodule"
+    page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
+    assert key.token_prefix in page  # listed in its API keys table
+
+
+def test_an_older_datamodule_without_a_key_gets_one_on_its_page(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    with strata.app.app_context():
+        from strata.db import transaction
+        from strata.models.datamodule import Datamodule
+
+        dm = Datamodule.get_by_uuid(dm_uuid)
+        assert dm is not None
+        with transaction() as cur:  # as made before keys came with the datamodule
+            cur.execute("DELETE FROM api_key WHERE datamodule_id = ?", (dm.id,))
+        assert ApiKey.get_excel_link(dm.id) is None
+    strata.client.get(f"/datamodules/{dm_uuid}/edit")  # no reports yet
+    with strata.app.app_context():
+        assert ApiKey.get_excel_link(dm.id) is not None

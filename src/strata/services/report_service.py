@@ -14,10 +14,13 @@ Authors reference args in the body with the familiar ``$arg`` syntax; we rewrite
 identifier literals and comments via template_service._strip_literals).
 """
 
+import functools
 import logging
 import os
+import re
 import tempfile
-from collections.abc import Sequence
+import unicodedata
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -32,6 +35,43 @@ from strata.models.report_arg import ReportArg
 from strata.services import datamodule_service, duck, query_filter, stream_service, template_service
 
 log = logging.getLogger(__name__)
+
+
+MACRO_MAX = 40  # longest generated macro name (the xlsx sheet title keeps 31)
+
+
+@functools.cache
+def _duckdb_words() -> frozenset[str]:
+    """DuckDB's function names and keywords: a report macro named like one would
+    shadow it in its own body (a macro ``range`` breaks ``range(5)``) or not parse."""
+    conn = duckdb.connect(":memory:")
+    try:
+        rows = conn.execute(
+            "SELECT function_name FROM duckdb_functions() "
+            "UNION SELECT keyword_name FROM duckdb_keywords()"
+        ).fetchall()
+    finally:
+        conn.close()
+    return frozenset(str(row[0]).lower() for row in rows)
+
+
+def macro_name_for(name: str, taken: Iterable[str]) -> str:
+    """A report's macro name, made from its name: lower case, ASCII letters, digits
+    and ``_`` (``Bad item — département`` → ``bad_item_departement``); never a DuckDB
+    function or keyword, never one in ``taken`` (the datamodule's other reports).
+    It is made once: renaming the report keeps it, as workbooks select its xlsx
+    sheet and table by it."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "_", ascii_name.lower()).strip("_")[:MACRO_MAX].strip("_")
+    if not base or base[0].isdigit():
+        base = f"report_{base}".rstrip("_")
+    if base in _duckdb_words():
+        base = f"{base}_report"
+    used = {t.lower() for t in taken}
+    candidate, n = base, 2
+    while candidate in used:
+        candidate, n = f"{base}_{n}", n + 1
+    return candidate
 
 
 class ArgLike(Protocol):
@@ -411,8 +451,11 @@ def stream_rows(
     spec: query_filter.QuerySpec,
     fmt: str,
     name: str,
+    sheet: str | None = None,
 ) -> Response:
-    """Stream ``final_sql`` (spec applied) as ``fmt``; the writer closes ``conn``.
+    """Stream ``final_sql`` (spec applied) as ``fmt`` as the file ``<name>.<fmt>`` (an
+    xlsx's sheet and table are named after ``sheet``, default ``name``); the writer
+    closes ``conn``.
 
     Exports cover the full result; an explicit ``page=N`` yields just that slice.
     """
@@ -425,7 +468,7 @@ def stream_rows(
     download_name = f"{name}.{fmt}"
     if fmt == "xlsx":
         return stream_service.stream_xlsx(
-            conn, select_sql, binds + extra, download_name, [n for n, _ in columns]
+            conn, select_sql, binds + extra, download_name, [n for n, _ in columns], sheet
         )
     if fmt in stream_service.COPY_FORMATS:
         return stream_service.stream_copy(conn, select_sql, binds + extra, fmt, download_name)

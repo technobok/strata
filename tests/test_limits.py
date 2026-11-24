@@ -11,7 +11,7 @@ SETTINGS_SCRIPT = (
 
 
 def _first_row(strata: Strata, dm_uuid: str, body: str, macro: str) -> dict:
-    rpt = strata.new_report(dm_uuid, body=body, name=macro, macro=macro)
+    rpt = strata.new_report(dm_uuid, body=body, name=macro)
     resp = strata.client.get(f"/r/{rpt}.json")
     assert resp.status_code == 200, resp.get_data(as_text=True)
     return json.loads(resp.get_data(as_text=True))[0]
