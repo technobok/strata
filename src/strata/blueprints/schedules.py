@@ -19,7 +19,7 @@ from strata.models.datamodule import Datamodule
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
 from strata.models.schedule import Schedule
-from strata.services import access, notify_service, report_service, schedule_service
+from strata.services import access, authoring, notify_service, schedule_service
 from strata.services.schedule_service import Definition, ScheduleError
 
 bp = Blueprint("schedules", __name__, url_prefix="/datamodules")
@@ -72,27 +72,6 @@ def _params_form(args: list[ReportArg]) -> dict[str, list[str]]:
             parts = raw.split(",") if arg.widget == "multiselect" else [raw]
             params[arg.name] = [p.strip() for p in parts if p.strip()]
     return params
-
-
-def _check_report_fields(
-    recipients: list[str], args: list[ReportArg], params: dict[str, list[str]]
-) -> None:
-    problem = notify_service.check_recipients(recipients) or notify_service.unknown_recipients(
-        recipients
-    )
-    if problem:
-        raise ScheduleError(problem)
-    try:
-        report_service.check_args(args, params)
-    except report_service.ArgError as exc:
-        raise ScheduleError(
-            f"{exc}: set it on this schedule, or give the argument a default."
-        ) from exc
-
-
-def _next_run_iso(definition: Definition) -> str | None:
-    nxt = schedule_service.next_run(definition, datetime.now(UTC))
-    return nxt.isoformat() if nxt else None
 
 
 def _render(
@@ -187,39 +166,20 @@ def _back(dm: Datamodule, report: Report | None) -> Response:
 
 
 def _submit(dm: Datamodule, schedule: Schedule | None, report: Report | None) -> str | Response:
-    """Create or update a rebuild schedule, or (``report``) a report schedule."""
+    """Create or update a rebuild schedule, or (``report``) a report schedule (the
+    rules: authoring.save_schedule)."""
     name, kind, timezone, fields, enabled = _form()
     recipients = _recipients_form() if report else []
     args = ReportArg.get_for_report(report.id) if report else []
     params = _params_form(args) if report else {}
     try:
-        if not name:
-            raise ScheduleError("Name is required.")
-        definition = schedule_service.build(kind, fields, timezone)
-        if report is not None:
-            _check_report_fields(recipients, args, params)
-        next_run = _next_run_iso(definition) if enabled else None
-        if schedule is None:
-            Schedule.create(
-                dm.id,
-                name,
-                definition.to_json(),
-                next_run,
-                g.user.username,
-                enabled=enabled,
-                report_id=report.id if report else None,
-                recipients=recipients,
-                parameters=params,
-            )
-        else:
-            schedule.update(
-                name,
-                definition.to_json(),
-                next_run,
-                enabled,
-                recipients=recipients if report else None,
-                parameters=params if report else None,
-            )
+        authoring.save_schedule(
+            dm,
+            schedule,
+            report,
+            authoring.ScheduleFields(name, kind, fields, timezone, enabled, recipients, params),
+            g.user.username,
+        )
     except ScheduleError as exc:
         flash(str(exc), "error")
         values = {"name": name, "kind": kind, "timezone": timezone, "enabled": enabled}
@@ -268,7 +228,7 @@ def toggle(schedule_uuid: str) -> Response:
     enabling = not schedule.enabled
     next_run = None
     if enabling:
-        next_run = _next_run_iso(Definition.from_json(schedule.schedule_definition))
+        next_run = authoring.next_run_iso(Definition.from_json(schedule.schedule_definition))
     schedule.set_enabled(enabling, next_run)
     flash(f"Schedule '{schedule.name}' {'enabled' if enabling else 'disabled'}.", "success")
     return _back(dm, report)

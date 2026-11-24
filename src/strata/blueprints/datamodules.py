@@ -44,16 +44,15 @@ from strata.models.source_file import SourceFile
 from strata.models.worker_process import WorkerProcess
 from strata.services import (
     access,
+    authoring,
     build_queue,
     connection_service,
     datamodule_service,
-    duck,
     read_audit,
     report_service,
     run_service,
     script_template,
 )
-from strata.services.query_filter import RESERVED_KEYS
 from strata.services.template_service import ALIAS_RE
 
 bp = Blueprint("datamodules", __name__, url_prefix="/datamodules")
@@ -192,19 +191,11 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
         name = name.strip()
         if not name:
             continue
-        if not ALIAS_RE.match(name):
-            return [], f"Argument name '{name}' must be a letter/underscore identifier."
-        if name in RESERVED_KEYS:
-            return [], (
-                f"Argument name '{name}' is reserved for sorting/filtering "
-                "(sort, page, q, format, key, version)."
-            )
         data_type = _at(types, i, "text")
-        if data_type not in DATA_TYPES:
-            return [], f"Unknown argument type '{data_type}'."
         widget = _at(widgets, i, "input")
-        if widget not in WIDGETS:
-            return [], f"Unknown widget '{widget}'."
+        problem = authoring.arg_problem(name, data_type, widget)
+        if problem:
+            return [], problem
         args.append(
             {
                 "name": name,
@@ -449,16 +440,9 @@ def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | N
     if request.form.get("alerts_present") != "1":
         return None, None
     recipients = notify_service.recipient_lines(request.form.get("alert_recipients", ""))
-    if not recipients:
-        return None, (
-            f"Alert list: name at least one person, @group or email address (the Strata "
-            f"admins are @{access.admin_group()})."
-        )
-    problem = notify_service.check_recipients(recipients) or notify_service.unknown_recipients(
-        recipients
-    )
+    problem = authoring.alert_list_problem(recipients)
     if problem:
-        return None, f"Alert list: {problem}"
+        return None, problem
     raw = request.form.get("stale_alert_hours", "").strip()
     try:
         hours = float(raw) if raw else None
@@ -477,25 +461,9 @@ def _parse_access() -> tuple[tuple[list[str] | None, list[str] | None] | None, s
         return None, None
     owners = access.principal_lines(request.form.get("owners", ""))
     viewers = access.principal_lines(request.form.get("viewers", ""))
-    if not owners:
-        return None, "Access: Owners must name at least one person or @group."
-    if not viewers:
-        return None, (
-            "Access: Viewers must name at least one person or @group, or * for everyone "
-            "signed in (owners view too: name them for an owners-only datamodule)."
-        )
-    named = owners + viewers
-    problem = access.check_principals(named)
+    problem = authoring.access_problem(owners, viewers)
     if problem:
-        return None, f"Access: {problem}"
-    if access.EVERYONE in owners:
-        return None, "Access: owners are people or groups; * (everyone signed in) can only view."
-    try:
-        unknown = access.Directory().unknown(named)
-    except access.DirectoryUnavailable as exc:
-        return None, f"Access: the names could not be checked: {exc}."
-    if unknown:
-        return None, f"Access: Gatekeeper has no user or group {', '.join(unknown)}."
+        return None, problem
     return (owners, viewers), None
 
 
@@ -513,13 +481,7 @@ def _stays_owner(owners: list[str] | None) -> str | None:
 
 def _inputs_allow(dm: Datamodule, owners: list[str] | None) -> str | None:
     """Why these owners may not own ``dm``: one of them may not use a bound connection."""
-    try:
-        problems = access.input_problems(
-            dm, owners if owners is not None else access.default_owners(), access.Directory()
-        )
-    except access.DirectoryUnavailable as exc:
-        return f"Access: the owners could not be checked: {exc}."
-    return f"Access: {'; '.join(problems)}." if problems else None
+    return authoring.inputs_problem(dm, owners if owners is not None else access.default_owners())
 
 
 def _warn_dependants(dm: Datamodule) -> None:
@@ -880,112 +842,25 @@ def report_delete(report_uuid: str) -> Response:
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
 
-def _live_version_file(dm: Datamodule) -> Path | None:
-    """The file of ``dm``'s live version, if it has one on disk."""
-    live = datamodule_service.live_version(dm)
-    if live is None:
-        return None
-    path = datamodule_service.version_path(dm.uuid, live.uuid)
-    return path if path.exists() else None
-
-
 def _save_report(dm: Datamodule, report: Report | None) -> str | None:
-    """Create or update a query report from the form. Returns an error or None.
-
-    A new report's macro name is made from its name (report_service.macro_name_for)
-    and kept from then on, renames included: workbooks select its xlsx sheet and
-    table by it."""
-    name = request.form.get("name", "").strip()
-    description = request.form.get("description", "").strip()
-    body_sql = request.form.get("body_sql", "")
-
-    if not name:
-        return "Report name is required."
-    others = [r for r in Report.get_for_datamodule(dm.id) if report is None or r.id != report.id]
-    if any(r.name.lower() == name.lower() for r in others):
-        return f"{dm.path} already has a report named '{name}': choose another name."
-    macro_name = (
-        report.macro_name
-        if report is not None
-        else report_service.macro_name_for(name, (r.macro_name for r in others))
-    )
-
+    """Create or update a query report from the form. Returns an error or None
+    (the rules: authoring.save_report)."""
     args, arg_error = _parse_args_form()
     if arg_error:
         return arg_error
     is_check = request.form.get("is_check") == "on"
-    severity = request.form.get("severity", "warning")
-    gate = is_check and request.form.get("gate") == "on"
-    if is_check and severity not in SEVERITIES:
-        return f"Unknown severity '{severity}'."
-    if gate:
-        for arg in args:
-            if arg["required"] and not arg["default_value"]:
-                return (
-                    f"A gate check runs inside each build with its arguments' defaults: "
-                    f"give '{arg['name']}' a default, make it optional, or untick Gate."
-                )
+    fields = authoring.ReportFields(
+        name=request.form.get("name", ""),
+        description=request.form.get("description", ""),
+        body_sql=request.form.get("body_sql", ""),
+        args=args,
+        severity=request.form.get("severity", "warning") if is_check else None,
+        gate=is_check and request.form.get("gate") == "on",
+    )
     try:
-        duck.validate_select(body_sql, "The report body")
-        for arg in args:
-            if arg["constraint_query"]:
-                duck.validate_select(
-                    arg["constraint_query"], f"The constraint query for '{arg['name']}'"
-                )
-    except duck.SqlShapeError as exc:
+        authoring.save_report(dm, report, fields, g.user.username)
+    except authoring.AuthoringError as exc:
         return str(exc)
-
-    # It must run on the data it will read (when there is any yet): DuckDB
-    # describes it without reading rows (report_service.problem_on).
-    live = _live_version_file(dm)
-    if live is not None:
-        problem = report_service.problem_on(
-            live,
-            macro_name,
-            body_sql,
-            [
-                report_service.ArgShape(
-                    name=a["name"],
-                    data_type=a["data_type"],
-                    widget=a["widget"],
-                    default_value=a["default_value"] or None,
-                    required=a["required"],
-                    constraint_query=a["constraint_query"],
-                )
-                for a in args
-            ],
-        )
-        if problem is not None:
-            return f"Not saved: the report does not run on the data of {dm.path}.\n{problem}"
-
-    existing = Report.get_by_uuid(report.uuid) if report else None
-    try:
-        if existing is None:
-            saved = Report.create(
-                datamodule_id=dm.id,
-                name=name,
-                macro_name=macro_name,
-                body_sql=body_sql,
-                created_by=g.user.username,
-                description=description,
-            )
-        else:
-            existing.update(
-                modified_by=g.user.username,
-                name=name,
-                description=description,
-                body_sql=body_sql,
-            )
-            saved = existing
-    except Exception as exc:  # UNIQUE(datamodule_id, macro_name|name) etc.
-        return f"Could not save report: {exc}"
-
-    ReportArg.replace_all(saved.id, args)
-    Report.set_problem(saved.id, None)  # it runs on the live data (or there is none yet)
-    if is_check:
-        ReportCheck.save(saved.id, severity, gate)
-    else:
-        ReportCheck.clear(saved.id)
     return None
 
 
@@ -1177,12 +1052,8 @@ def dependency_add(uuid: str) -> Response:
     elif dep_dm is None or not access.can_view(dep_dm):
         # One message either way: a refusal must not confirm what it is.
         flash("Choose a datamodule to depend on.", "error")
-    elif dep_dm.id == dm.id:
-        flash("A datamodule cannot depend on itself.", "error")
-    elif Dependency.reaches(dep_dm.id, dm.id):
-        flash(f"Adding this dependency would create a cycle via '{dep_dm.path}'.", "error")
-    elif (problem := _owners_may_read(dm, dep_dm, local_name)) is not None:
-        flash(f"Not added: {problem}.", "error")
+    elif (problem := authoring.dependency_problem(dm, dep_dm, local_name)) is not None:
+        flash(problem, "error")
     else:
         try:
             Dependency.create(dm.id, dep_dm.id, local_name)
@@ -1216,16 +1087,12 @@ def connection_add(uuid: str) -> Response:
     local_name = request.form.get("local_name", "").strip()
     crow = Connection.get_by_id(connection_id) if connection_id else None
 
-    problems = _owners_may_use(dm, crow) if crow is not None and access.may_use(crow) else []
     if not local_name or not ALIAS_RE.match(local_name):
         flash("Local name must be a letter/underscore identifier.", "error")
     elif crow is None or not access.may_use(crow):
         flash("Choose a connection.", "error")  # the same words: nothing is confirmed
-    elif problems:
-        flash(
-            f'Not bound: {problems[0]}. An admin can add them to the connection\'s "May use" list.',
-            "error",
-        )
+    elif (problem := authoring.connection_problem(dm, crow, local_name)) is not None:
+        flash(problem, "error")
     else:
         try:
             DatamoduleConnection.create(dm.id, crow.id, local_name)
@@ -1233,26 +1100,6 @@ def connection_add(uuid: str) -> Response:
         except Exception as exc:  # UNIQUE(datamodule_id, local_name)
             flash(f"Could not bind connection: {exc}", "error")
     return redirect(url_for("datamodules.edit", uuid=dm.uuid))
-
-
-def _owners_may_read(dm: Datamodule, parent: Datamodule, local_name: str) -> str | None:
-    """Why ``dm``'s owners may not depend on ``parent``: one of them may not read it."""
-    try:
-        return access.parent_problem(access.owners_of(dm), parent, local_name, access.Directory())
-    except access.DirectoryUnavailable as exc:
-        return f"access could not be checked: {exc}"
-
-
-def _owners_may_use(dm: Datamodule, crow: Connection) -> list[str]:
-    """Why ``dm``'s owners may not use ``crow`` (one line), or []."""
-    try:
-        missing = access.Directory().missing(access.owners_of(dm), crow.users or [])
-    except access.DirectoryUnavailable as exc:
-        return [f"access could not be checked: {exc}"]
-    if not missing:
-        return []
-    names = ", ".join(access.describe(p) for p in missing)
-    return [f"{names} (owners of this datamodule) may not use the connection '{crow.name}'"]
 
 
 @bp.route("/<uuid>/connections/<int:link_id>/delete", methods=["POST"])
