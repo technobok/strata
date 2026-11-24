@@ -375,3 +375,31 @@ def save_schedule(
     updated = Schedule.get_by_id(schedule.id)
     assert updated is not None
     return updated
+
+
+# ---------------------------------------------------------------------------
+# Tags
+# ---------------------------------------------------------------------------
+
+
+def tag_names(text: str) -> list[str]:
+    """The names in a comma-separated tags field, blanks dropped, each once."""
+    return list(dict.fromkeys(n.strip() for n in text.split(",") if n.strip()))
+
+
+def tag_ids(names: list[str], create: bool = False) -> list[int]:
+    """The ids of the tags ``names``, ignoring case; raise AuthoringError for a name
+    no tag has, unless ``create`` (strata-admin import makes the tags it names)."""
+    from strata.models.tag import Tag
+
+    ids: list[int] = []
+    for name in names:
+        tag = Tag.get_by_name(name)
+        if tag is None:
+            if not create:
+                raise AuthoringError(
+                    f"Tags: there is no tag named '{name}' (an admin makes tags: Admin, Tags)."
+                )
+            tag = Tag.create(name)
+        ids.append(tag.id)
+    return ids

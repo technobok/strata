@@ -26,7 +26,9 @@ can refresh.
 
 **Datamodule.** A named DuckDB database such as `finance/monthly`. It has a build
 script, optional inputs, a TTL and a retention policy. See
-[Build scripts](build-scripts.md).
+[Build scripts](build-scripts.md). **Tags** (set in its form, from the tags an admin
+makes under Admin, Tags) group datamodules: click one on the Datamodules page to see
+only those with it.
 
 **Build and version.** Each successful build writes a new, immutable **version**
 and then makes it **live** in one step. Readers already using the old version keep

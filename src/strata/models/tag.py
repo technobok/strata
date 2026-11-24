@@ -170,6 +170,52 @@ class Tag:
             cursor.execute("DELETE FROM tag WHERE id = ?", (self.id,))
             return cursor.execute("SELECT changes()").fetchone()[0] > 0  # type: ignore[index]
 
+    @staticmethod
+    def for_datamodule(datamodule_id: int) -> list[Tag]:
+        """A datamodule's tags, by name."""
+        rows = (
+            get_db()
+            .execute(
+                "SELECT t.id, t.name, t.color, t.created_at FROM tag t "
+                "JOIN datamodule_tag dt ON dt.tag_id = t.id WHERE dt.datamodule_id = ? "
+                "ORDER BY LOWER(t.name)",
+                (datamodule_id,),
+            )
+            .fetchall()
+        )
+        return [Tag._from_row(row) for row in rows]
+
+    @staticmethod
+    def by_datamodule() -> dict[int, list[Tag]]:
+        """Every tagged datamodule's tags, by name (one query for a list page)."""
+        rows: list[tuple[Any, ...]] = (
+            get_db()
+            .execute(
+                "SELECT dt.datamodule_id, t.id, t.name, t.color, t.created_at FROM tag t "
+                "JOIN datamodule_tag dt ON dt.tag_id = t.id ORDER BY LOWER(t.name)"
+            )
+            .fetchall()
+        )
+        found: dict[int, list[Tag]] = {}
+        for datamodule_id, tag in map(Tag._from_tagged_row, rows):
+            found.setdefault(datamodule_id, []).append(tag)
+        return found
+
+    @staticmethod
+    def _from_tagged_row(row: tuple[Any, ...]) -> tuple[int, Tag]:
+        return int(row[0]), Tag._from_row(row[1:])
+
+    @staticmethod
+    def set_for_datamodule(datamodule_id: int, tag_ids: list[int]) -> None:
+        """Make ``tag_ids`` exactly the datamodule's tags."""
+        with transaction() as cursor:
+            cursor.execute("DELETE FROM datamodule_tag WHERE datamodule_id = ?", (datamodule_id,))
+            for tag_id in dict.fromkeys(tag_ids):
+                cursor.execute(
+                    "INSERT INTO datamodule_tag (datamodule_id, tag_id) VALUES (?, ?)",
+                    (datamodule_id, tag_id),
+                )
+
     def usage_count(self) -> int:
         db = get_db()
         row = db.execute(

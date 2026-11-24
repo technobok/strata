@@ -30,6 +30,10 @@
     <label>Description
         <input type="text" name="description" value="{{ draft.description }}">
     </label>
+    <input type="hidden" name="tags_present" value="1">
+    <label>Tags: comma-separated, to find datamodules on the Datamodules page (an admin makes tags: Admin, Tags)
+        <input type="text" name="tags" value="{{ draft.tags }}" placeholder="finance, testrunner">
+    </label>
     <label>TTL (seconds; blank = never auto-expire, 0 = always rebuild){{ help_link('freshness', 'ttl') }}
         <input type="number" name="ttl_seconds" step="1" min="0"
                value="{{ draft.ttl_seconds }}">

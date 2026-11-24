@@ -12,11 +12,15 @@
         <a href="{{ url_for('datamodules.new') }}" role="button" class="outline">New datamodule</a>
     </div>
 
+    {% if tag %}
+    <p>With the tag <strong>{{ tag }}</strong>: {{ datamodules | length }}. <a href="{{ url_for('datamodules.index') }}">Show all</a></p>
+    {% endif %}
     {% if datamodules %}
     <table>
         <thead>
             <tr>
                 <th>Path</th>
+                <th>Tags</th>
                 <th>Description</th>
                 <th>Status</th>
                 <th>TTL</th>
@@ -27,6 +31,7 @@
             {% for dm in datamodules %}
             <tr>
                 <td><a href="{{ url_for('datamodules.edit', uuid=dm.uuid) }}">{{ dm.path }}</a></td>
+                <td><span class="tag-list">{% for t in tags.get(dm.id, []) %}<a class="tag-badge" href="{{ url_for('datamodules.index', tag=t.name) }}" style="background-color: {{ t.color }}" data-light="{{ t.is_light()|lower }}">{{ t.name }}</a>{% endfor %}</span></td>
                 <td>{{ dm.description }}</td>
                 <td>{{ dm.build_status }}</td>
                 <td>{% if dm.ttl_seconds is none %}never{% else %}{{ dm.ttl_seconds }}s{% endif %}</td>
@@ -35,6 +40,8 @@
             {% endfor %}
         </tbody>
     </table>
+    {% elif tag %}
+    <p>None.</p>
     {% else %}
     <p>No datamodules yet. <a href="{{ url_for('datamodules.new') }}">Create your first datamodule</a>.</p>
     {% endif %}

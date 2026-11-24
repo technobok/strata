@@ -41,6 +41,7 @@ from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.report_check import SEVERITIES, ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.source_file import SourceFile
+from strata.models.tag import Tag
 from strata.models.worker_process import WorkerProcess
 from strata.services import (
     access,
@@ -218,9 +219,27 @@ def _parse_args_form() -> tuple[list[dict], str | None]:
 @bp.route("/")
 @login_required
 def index() -> str:
-    """The datamodules the user may edit (an admin: all of them)."""
+    """The datamodules the user may edit (an admin: all of them); ``?tag=`` shows
+    those with that tag."""
     owned = [dm for dm in Datamodule.get_all() if access.can_own(dm)]
-    return render_template("datamodules/index.html", datamodules=owned)
+    tags = Tag.by_datamodule()
+    tag = request.args.get("tag", "").strip()
+    if tag:
+        owned = [
+            dm for dm in owned if any(t.name.lower() == tag.lower() for t in tags.get(dm.id, []))
+        ]
+    return render_template("datamodules/index.html", datamodules=owned, tags=tags, tag=tag)
+
+
+def _parse_tags() -> tuple[list[int] | None, str | None]:
+    """(tag ids, error) from the Tags field; (None, None) when the form has no Tags
+    field, so a partial post leaves the tags alone."""
+    if request.form.get("tags_present") != "1":
+        return None, None
+    try:
+        return authoring.tag_ids(authoring.tag_names(request.form.get("tags", ""))), None
+    except authoring.AuthoringError as exc:
+        return None, str(exc)
 
 
 @bp.route("/new", methods=["GET", "POST"])
@@ -232,6 +251,7 @@ def new() -> str | Response:
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
         ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
+        tag_ids, tags_error = _parse_tags()
         lists, access_error = _parse_access()
         # A post without the Access fieldset (a script, a test) gets the default lists.
         owners, viewers = (
@@ -244,6 +264,8 @@ def new() -> str | Response:
             error = f"A datamodule with path '{path}' already exists."
         elif ttl_error:
             error = ttl_error
+        elif tags_error:
+            error = tags_error
         elif access_error or (access_error := _stays_owner(owners)):
             error = access_error
         else:
@@ -260,6 +282,8 @@ def new() -> str | Response:
             # report's Use in Excel box show it), and its alert list names the admins.
             ApiKey.ensure_excel_link(dm.id, g.user.username)
             dm.set_alerts([f"@{access.admin_group()}"], None)
+            if tag_ids:
+                Tag.set_for_datamodule(dm.id, tag_ids)
             flash("Datamodule created. Build it to produce a live version.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
@@ -289,6 +313,7 @@ def edit(uuid: str) -> str | Response:
         retention_kind, retention_count, retention_age, retention_error = _parse_retention()
         build_queue_name = request.form.get("build_queue", "").strip() or None
         alerts, alerts_error = _parse_alerts()
+        tag_ids, tags_error = _parse_tags()
         lists, access_error = _parse_access()
         if lists is not None and access_error is None:
             access_error = _stays_owner(lists[0]) or _inputs_allow(dm, lists[0])
@@ -306,6 +331,8 @@ def edit(uuid: str) -> str | Response:
             error = "Worker queue: lowercase letters, digits, '-' and '_' only."
         elif alerts_error:
             error = alerts_error
+        elif tags_error:
+            error = tags_error
         elif access_error:
             error = access_error
         else:
@@ -325,6 +352,8 @@ def edit(uuid: str) -> str | Response:
                 dm.set_alerts(*alerts)
             if lists is not None and lists != (dm.owners, dm.viewers):
                 dm.set_access(*lists, modified_by=g.user.username)
+            if tag_ids is not None:
+                Tag.set_for_datamodule(dm.id, tag_ids)
             if script_changed and dm.live_version_id is not None:
                 # The live data comes from the old script: stale from now, so the
                 # next read or scheduled run rebuilds it (or the Build button).
@@ -512,6 +541,7 @@ def _warn_dependants(dm: Datamodule) -> None:
 _FORM_FIELDS = (
     "path",
     "description",
+    "tags",
     "ttl_seconds",
     "retention_kind",
     "retention_count",
@@ -541,6 +571,7 @@ def _form_draft(dm: Datamodule | None, typed: bool) -> dict[str, str]:
     return {
         "path": dm.path if dm else "",
         "description": dm.description if dm else "",
+        "tags": ", ".join(t.name for t in Tag.for_datamodule(dm.id)) if dm else "",
         "ttl_seconds": text(dm.ttl_seconds) if dm else "",
         "retention_kind": dm.retention_kind if dm else "count",
         "retention_count": text(dm.retention_count) if dm else "",

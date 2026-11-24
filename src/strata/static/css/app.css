@@ -378,6 +378,10 @@ footer small {
     color: #1f2937;
 }
 
+a.tag-badge {
+    text-decoration: none;
+}
+
 /* Tag list display */
 .tag-list {
     display: flex;
