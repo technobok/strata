@@ -374,7 +374,8 @@ def edit(uuid: str) -> str | Response:
         reports=reports,
         checks=ReportCheck.for_datamodule(dm.id),
         report_by_id={r.id: r for r in reports},
-        api_keys=api_keys,
+        excel_key=excel_key,
+        named_keys=[k for k in api_keys if not k.excel_link],
         excel_links=excel_links,
         key_links=key_links,
         versions=DatamoduleVersion.list_for(dm.id),
@@ -982,10 +983,12 @@ def _datamodule_key(key_uuid: str) -> ApiKey:
     return key
 
 
-def _apikey_redirect(dm: Datamodule | None) -> Response:
+def _apikey_redirect(dm: Datamodule | None, key: ApiKey | None = None) -> Response:
+    """Back to the key's section: the Excel link's line, or the (opened) Named keys."""
     if dm is None:
         return redirect(url_for("datamodules.index"))
-    return redirect(url_for("datamodules.edit", uuid=dm.uuid) + "#api-keys")
+    anchor = "#excel-link" if key is not None and key.excel_link else "#named-keys"
+    return redirect(url_for("datamodules.edit", uuid=dm.uuid) + anchor)
 
 
 @bp.route("/<uuid>/apikeys", methods=["POST"])
@@ -1016,7 +1019,7 @@ def apikey_create(uuid: str) -> Response:
         expires_at=expires_at,
         created_by=g.user.username,
     )
-    flash(f"API key '{key.name}' created: its links are in the API keys table.", "success")
+    flash(f"Key '{key.name}' created: its links are in the Named keys table.", "success")
     return _apikey_redirect(dm)
 
 
@@ -1026,12 +1029,19 @@ def apikey_rotate(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
     key.rotate()
-    flash(
-        f"API key '{key.name}' rotated: the old token no longer works; its new links are "
-        "in the API keys table.",
-        "success",
-    )
-    return _apikey_redirect(dm)
+    if key.excel_link:
+        flash(
+            "The Excel key was replaced: workbooks with the old one stop refreshing; the "
+            "Reports table and every Use in Excel box have the new links.",
+            "success",
+        )
+    else:
+        flash(
+            f"Key '{key.name}' rotated: the old token no longer works; its new links are in "
+            "the Named keys table.",
+            "success",
+        )
+    return _apikey_redirect(dm, key)
 
 
 @bp.route("/apikeys/<key_uuid>/toggle", methods=["POST"])
@@ -1040,8 +1050,9 @@ def apikey_toggle(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)
     key.set_enabled(not key.enabled)
-    flash(f"API key '{key.name}' {'enabled' if key.enabled else 'disabled'}.", "success")
-    return _apikey_redirect(dm)
+    label = "The Excel key" if key.excel_link else f"Key '{key.name}'"
+    flash(f"{label} {'enabled' if key.enabled else 'disabled'}.", "success")
+    return _apikey_redirect(dm, key)
 
 
 @bp.route("/apikeys/<key_uuid>/delete", methods=["POST"])
@@ -1049,9 +1060,13 @@ def apikey_toggle(key_uuid: str) -> Response:
 def apikey_delete(key_uuid: str) -> Response:
     key = _datamodule_key(key_uuid)
     dm = _apikey_datamodule(key)  # resolve before delete (needs the report row)
+    if key.excel_link:
+        # Deleting it would only make a new one at once (every datamodule has one).
+        flash("The Excel key cannot be deleted: replace it or disable it.", "error")
+        return _apikey_redirect(dm, key)
     key.delete()
-    flash(f"API key '{key.name}' deleted.", "success")
-    return _apikey_redirect(dm)
+    flash(f"Key '{key.name}' deleted.", "success")
+    return _apikey_redirect(dm, key)
 
 
 @bp.route("/<uuid>/sources", methods=["POST"])

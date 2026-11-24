@@ -6,7 +6,7 @@ opens the HTML page. There are two kinds:
 
 - each datamodule's **Excel link**: one key for all its reports, which anyone who
   can view them copies from a report page's **Use in Excel** box;
-- **admin keys**, made on a datamodule page, with fixed arguments if needed: for
+- **named keys**, made on a datamodule page, with fixed arguments if needed: for
   another program, or a workbook that must always get the same rows.
 
 A report's data URL names the report in its path and carries the key in its query:
@@ -21,27 +21,31 @@ On a report page, open **Use in Excel** (next to the export links). It shows a l
 for exactly the view you are looking at: its arguments, filters, sort and search.
 Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel).
 
-- The link carries the **datamodule's Excel key**: one per datamodule, made the first
-  time anyone opens the box on any of its reports, and the same for everyone. It
-  reads every report on that datamodule, and nothing else.
+- The link carries the **datamodule's Excel key**: one per datamodule, made with the
+  datamodule, and the same for everyone. It reads every report on that datamodule,
+  and nothing else.
 - It belongs to the datamodule, not to a person: anyone with a workbook built from it
   can refresh it, and it keeps working when the person who made the workbook leaves.
 - A workbook refreshes from wherever Excel reaches the server directly. Behind a
   sign-in Excel cannot pass, such as Microsoft's in front of the server from outside
   the office, it does not refresh.
-- **Replace the datamodule's Excel key** (in the box, for its owners and the admins)
-  cuts off every workbook on any of its reports at once: each needs a new link. That
-  is the answer to a workbook that reached the wrong people, or to someone leaving
-  the datamodule's viewers (see [Access](access.md#excel-links-and-keys)).
+- **Replace the datamodule's Excel key** (in the box, or **Replace** on the
+  **Excel link key** line under the datamodule page's Reports table; for its owners
+  and the admins) cuts off every workbook on any of its reports at once: each needs a
+  new link. That is the answer to a workbook that reached the wrong people, or to
+  someone leaving the datamodule's viewers (see [Access](access.md#excel-links-and-keys)).
+- **Disable** on the same line stops every workbook until it is enabled again, with
+  the same links. The Excel key cannot be deleted: every datamodule has one.
 - Until 2026-11-23 each report had its own Excel key. Those links keep working until
   the datamodule's key is first replaced, which disables them too.
 - A **locked** datamodule stops every key on it (see [Access](access.md#locks)).
 - Admins see every key, with its last use, under **Admin → API keys**.
 
-## Admin keys
+## Named keys
 
-On the datamodule page, under **API keys**, its owners make keys for another program,
-or for a workbook that needs fixed arguments, an expiry date, or a key it can lose
+On the datamodule page, under **Named keys** (closed until you open it: most
+datamodules need none), its owners make extra keys for another program, or for a
+workbook that needs fixed arguments, an expiry date, or a key that can be cut off
 without affecting anyone else. A key reads **every report of the datamodule**. Choose:
 
 | Field | Meaning |
@@ -51,7 +55,7 @@ without affecting anyone else. A key reads **every report of the datamodule**. C
 | Fixed args | Argument values the key always sends, one `name=value` per line. They win over anything in the URL. Repeat a name for a multiselect. |
 | Caller-suppliable args | The argument names a URL may set, comma-separated. Blank means every argument that is not fixed. |
 
-Each key's links (one per report, `.xlsx`) stay in the API keys table, under its
+Each key's links (one per report, `.xlsx`) stay in the Named keys table, under its
 token prefix: one **Copy: <report>** button per report (hover to see the link). Its
 owners can copy them again at any time. Strata
 looks a key up by a hash of its token and keeps the token itself encrypted, like the
@@ -65,7 +69,7 @@ with `company=BRS` fixed always gets BRS rows, whatever the URL says.
 
 1. Copy the report's URL with the key: from the report's **Use in Excel** box (for the
    view you are looking at), from the **Excel** column of the datamodule page's Reports
-   table, or from an admin key's links. It looks like
+   table, or from a named key's links. It looks like
    `https://<server>/strata/r/<report id>.xlsx?key=<token>`.
 2. In Excel: **Data → Get Data → From Other Sources → From Web**, and paste the URL.
 3. When Excel asks how to connect, choose **Anonymous** (the key is the credential).
@@ -158,14 +162,14 @@ What a refusal means:
   `Authorization` and the value starts with `Bearer `.
 - **403** "invalid API key": the key is wrong, replaced, disabled or expired.
 
-## Managing admin keys
+## Managing named keys
 
 - **Rotate** issues a new token and stops the old one at once. Workbooks using the
   old URL need the new one.
 - **Disable** stops a key without deleting it; **enable** turns it back on.
 - **Delete** removes it.
 
-Every request made with a key, Excel link or admin, is in the [read audit](audit.md):
+Every request made with a key, the Excel key or a named one, is in the [read audit](audit.md):
 the format, the arguments, rows, bytes, time taken, status, the caller's address and
 program, and refusals too (a wrong, disabled or expired key). The key's use count and
 last-used time are on the datamodule page; the **reads** link under them lists that

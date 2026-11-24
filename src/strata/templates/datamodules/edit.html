@@ -223,17 +223,33 @@
 {% else %}
 <p>No reports yet.</p>
 {% endif %}
+{% if excel_key %}
+<div id="excel-link" class="excel-key-line">
+    <small><strong>Excel link key</strong>{{ help_link('api-keys', 'excel-links') }} <code>{{ excel_key.token_prefix }}…</code>
+    · {% if excel_key.enabled %}enabled{% else %}<strong>disabled</strong>: no workbook on this datamodule refreshes{% endif %}
+    · used {{ excel_key.use_count }} time{{ '' if excel_key.use_count == 1 else 's' }}{% if excel_key.last_used_at %}, last {{ excel_key.last_used_at|localdatetime }}{% endif %}
+    · <a href="{{ url_for('datamodules.reads', uuid=datamodule.uuid, key=excel_key.id) }}">reads</a></small>
+    <div class="actions">
+        {{ post_button(url_for('datamodules.apikey_rotate', key_uuid=excel_key.uuid), 'Replace', confirm='Replace the Excel key of ' ~ datamodule.path ~ '? Every workbook on any of its reports stops refreshing until it gets a new link.') }}
+        {% if excel_key.enabled %}
+        {{ post_button(url_for('datamodules.apikey_toggle', key_uuid=excel_key.uuid), 'Disable', confirm='Disable the Excel key of ' ~ datamodule.path ~ '? Every workbook on any of its reports stops refreshing until it is enabled again.') }}
+        {% else %}
+        {{ post_button(url_for('datamodules.apikey_toggle', key_uuid=excel_key.uuid), 'Enable') }}
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 <hr>
-<h2 id="api-keys">API keys{{ help_link('api-keys') }}</h2>
-<p><small>A key grants <em>unauthenticated</em> data access (parquet/csv/json/xlsx, never html)
-via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of this datamodule; its links (one per report, xlsx; change the extension for <code>.csv</code>, <code>.json</code> or <code>.parquet</code>) stay here for its owners. The <em>Excel link</em> is the key in every report's Use in Excel box.</small></p>
+<details id="named-keys" class="section-details">
+<summary><h2>Named keys{% if named_keys %} ({{ named_keys | length }}){% endif %}</h2>{{ help_link('api-keys', 'named-keys') }}</summary>
+<p><small>Extra keys for a particular use: a workbook or program that must be cut off on its own, always get the same rows (fixed arguments), or expire. A key grants <em>unauthenticated</em> data access (parquet/csv/json/xlsx, never html) and reads every report of this datamodule; its links (one per report, xlsx; change the extension for <code>.csv</code>, <code>.json</code> or <code>.parquet</code>) stay here for its owners. Most workbooks need none: they use the Excel link key above.</small></p>
 
-{% if api_keys %}
+{% if named_keys %}
 <table>
     <thead><tr><th>Name</th><th>Links</th><th>Reads</th><th>Enabled</th><th>Expires</th><th>Last used</th><th>Uses</th><th></th></tr></thead>
     <tbody>
-        {% for k in api_keys %}
+        {% for k in named_keys %}
         <tr>
             <td>{{ k.name }}</td>
             <td><code>{{ k.token_prefix }}…</code>
@@ -273,8 +289,9 @@ via <code>?key=…</code> — for Excel/PowerQuery. A key reads every report of 
             <input type="text" name="whitelist" placeholder="region, min_n">
         </label>
     </div>
-    <button type="submit" class="outline">Create API key</button>
+    <button type="submit" class="outline">Create named key</button>
 </form>
+</details>
 
 <hr>
 <div class="section-header">

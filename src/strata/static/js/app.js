@@ -129,3 +129,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// A link to a section inside a closed <details> (e.g. #named-keys after creating a
+// key there) opens it.
+(function () {
+    function openTarget() {
+        var id = decodeURIComponent(location.hash.slice(1));
+        var el = id && document.getElementById(id);
+        if (!el) { return; }
+        var details = el.tagName === 'DETAILS' ? el : el.closest('details');
+        if (details) { details.open = true; el.scrollIntoView(); }
+    }
+    document.addEventListener('DOMContentLoaded', openTarget);
+    window.addEventListener('hashchange', openTarget);
+})();

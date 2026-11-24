@@ -331,6 +331,7 @@ def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = Fal
         datamodule=dm,
         links=links,
         replaced=replaced,
+        key_enabled=key.enabled,
         # Replacing breaks every workbook on the report: its datamodule's owners only.
         can_replace=access.can_own(dm),
         replace_url=url_for("reports.excel_replace", report_uuid=report.uuid)

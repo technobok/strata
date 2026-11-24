@@ -19,7 +19,7 @@ from the <strong>Use in Excel</strong> box of any of its reports, by its owners 
         <tr>
             <td>{{ key.name }}</td>
             <td>
-                {% if row.datamodule %}<a href="{{ url_for('datamodules.edit', uuid=row.datamodule.uuid) }}#api-keys">{{ row.datamodule.path }}</a>{% if row.report %}: {{ row.report.name }}{% else %} (every report){% endif %}
+                {% if row.datamodule %}<a href="{{ url_for('datamodules.edit', uuid=row.datamodule.uuid) }}{{ '#excel-link' if key.excel_link else '#named-keys' }}">{{ row.datamodule.path }}</a>{% if row.report %}: {{ row.report.name }}{% else %} (every report){% endif %}
                 {% else %}(deleted){% endif %}
             </td>
             <td><code>{{ key.token_prefix }}…</code></td>

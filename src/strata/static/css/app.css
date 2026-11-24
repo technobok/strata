@@ -1061,3 +1061,25 @@ header nav .brand img {
 .ts-dropdown small {
     color: var(--pico-muted-color);
 }
+
+/* A page section that starts closed (e.g. Named keys): its heading is the summary. */
+details.section-details > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+details.section-details > summary > h2 {
+    display: inline;
+    margin: 0;
+}
+details.section-details[open] > summary {
+    margin-bottom: var(--pico-spacing);
+}
+
+/* The datamodule's Excel link key, under its Reports table. */
+.excel-key-line {
+    margin-bottom: var(--pico-spacing);
+}
+.excel-key-line .actions {
+    margin-top: 0.35rem;
+}

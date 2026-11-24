@@ -121,7 +121,8 @@ def test_a_keys_links_stay_on_its_datamodule_page(strata: Strata, dm: tuple[str,
     copy = f'data-copy="{link}" title="{link}">Copy: Sales</button>'
     assert copy in _page(strata, dm_uuid)
     assert copy in _page(strata, dm_uuid)  # not once: every time
-    assert "<details" not in _page(strata, dm_uuid).split('id="api-keys"')[1].split("</table>")[0]
+    named = _page(strata, dm_uuid).split('id="named-keys"')[1]
+    assert "<details" not in named.split("<tbody>")[1].split("</table>")[0]  # no nested box
     assert "Scope" not in _page(strata, dm_uuid)  # the form offers no scope
 
 
@@ -159,7 +160,11 @@ def test_the_reports_table_has_each_reports_excel_link(strata: Strata, dm: tuple
         link = f"/r/{report}.xlsx?key={token}"
         assert f'class="outline small excel-link" data-copy="http://localhost{link}"' in page
         assert strata.client.get(link, headers=ANON).status_code == 200
-    assert ">Excel link</td>" in page
+    # the Excel link key has its own line (Replace, Disable, no Delete), not a Named keys row
+    line = page.split('id="excel-link"')[1].split("</div>\n</div>")[0]
+    assert excel.token_prefix in line and ">Replace<" in line and ">Disable<" in line
+    assert ">Delete<" not in line
+    assert ">Excel link</td>" not in page
 
 
 def test_disabled_key_is_403(strata: Strata, dm: tuple[str, str]) -> None:
@@ -262,3 +267,35 @@ def test_header_keyed_requests_are_in_the_read_audit(strata: Strata, dm: tuple[s
             .fetchall()
         )
     assert rows == [(200, 1, token[:8]), (403, 0, "wrongtok")]
+
+
+def test_the_excel_key_cannot_be_deleted_only_replaced_or_disabled(
+    strata: Strata, dm: tuple[str, str]
+) -> None:
+    dm_uuid, rpt = dm
+    with strata.app.app_context():
+        from strata.models.api_key import ApiKey
+
+        excel = ApiKey.get_excel_link(strata.datamodule(dm_uuid).id)
+        assert excel is not None
+    resp = strata.client.post(f"/datamodules/apikeys/{excel.uuid}/delete")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("#excel-link")
+    assert ("error", "The Excel key cannot be deleted: replace it or disable it.") in (
+        strata.flashes()
+    )
+    with strata.app.app_context():
+        still = ApiKey.get_excel_link(strata.datamodule(dm_uuid).id)
+        assert still is not None and still.id == excel.id
+    strata.client.post(f"/datamodules/apikeys/{excel.uuid}/toggle")  # disable
+    box = strata.client.get(f"/r/{rpt}/excel").get_data(as_text=True)
+    assert "This Excel key is disabled" in box
+
+
+def test_named_keys_start_closed_and_a_key_action_opens_them(
+    strata: Strata, dm: tuple[str, str]
+) -> None:
+    dm_uuid, _rpt = dm
+    page = _page(strata, dm_uuid)
+    assert '<details id="named-keys" class="section-details">' in page  # closed
+    resp = strata.client.post(f"/datamodules/{dm_uuid}/apikeys", data={"name": "finance"})
+    assert resp.headers["Location"].endswith("#named-keys")  # app.js opens it
