@@ -31,8 +31,10 @@ SELECT * FROM (PIVOT sales ON region USING sum(revenue) GROUP BY product)
 A report's **name** is its title everywhere: lists, its page, mail subjects. No two
 reports on a datamodule may have the same name, in any mix of capitals. Its
 optional **description** says what it shows, or for a check what to do about the
-rows it finds. It is shown under the name on the report's page and at the top of
-its mail.
+rows it finds, in as many lines as it takes. It is shown under the name on the
+report's page and at the top of its mail, formatted with **Markdown**: `**bold**`,
+`*italic*`, lists (`- item`), links (`[text](https://…)`) and tables. HTML typed into
+it is shown as text, and images as their description.
 
 Strata also gives each report a **macro name**, made from its name when the report
 is created: `Bad item department` becomes `bad_item_department`. Strata runs the
@@ -63,7 +65,8 @@ report, or the build, is fixed.
 
 ## Arguments
 
-Each argument has:
+**Add argument** adds a row to the form, and **Remove** takes one out; the rows'
+order is the arguments' order. Each argument has:
 
 | Field | Meaning |
 |---|---|

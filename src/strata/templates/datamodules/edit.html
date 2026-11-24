@@ -160,9 +160,9 @@
 </table>
 {% endif %}
 <form method="post" action="{{ url_for('datamodules.dependency_add', uuid=datamodule.uuid) }}" class="inline-form">
-    <select name="depends_on_uuid" required>
+    <select name="depends_on_uuid" required data-fills="local_name">
         <option value="">— datamodule —</option>
-        {% for d in all_datamodules %}<option value="{{ d.uuid }}">{{ d.path }}</option>{% endfor %}
+        {% for d in all_datamodules %}<option value="{{ d.uuid }}" data-local-name="{{ d.path | local_name }}">{{ d.path }}</option>{% endfor %}
     </select>
     <input type="text" name="local_name" placeholder="local_name" required>
     <button type="submit" class="outline">Add dependency</button>
@@ -188,9 +188,9 @@
 {% endif %}
 {% if all_connections %}
 <form method="post" action="{{ url_for('datamodules.connection_add', uuid=datamodule.uuid) }}" class="inline-form">
-    <select name="connection_id" required>
+    <select name="connection_id" required data-fills="local_name">
         <option value="">— connection —</option>
-        {% for c in all_connections %}<option value="{{ c.id }}">{{ c.name }} ({{ c.driver }})</option>{% endfor %}
+        {% for c in all_connections %}<option value="{{ c.id }}" data-local-name="{{ c.name | local_name }}">{{ c.name }} ({{ c.driver }})</option>{% endfor %}
     </select>
     <input type="text" name="local_name" placeholder="local_name" required>
     <button type="submit" class="outline">Bind connection</button>

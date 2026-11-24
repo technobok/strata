@@ -35,6 +35,7 @@ from strata.models.report import Report
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.schedule import Schedule
+from strata.services import text_format
 
 log = logging.getLogger(__name__)
 
@@ -325,7 +326,7 @@ def build_run_mail(
         '<div style="font-family:sans-serif;font-size:14px;">'
         "{about}<p>{first}.</p><p><strong>{shown}</strong></p>{table}{more}{footer}</div>"
     ).format(
-        about=Markup("<p>{}</p>").format(report.description) if report.description else "",
+        about=text_format.markdown(report.description),
         first=first,
         shown=shown,
         table=_table(columns, rows) if rows else "",

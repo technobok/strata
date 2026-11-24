@@ -44,7 +44,8 @@ file.
 ## Dependencies
 
 A datamodule can read another datamodule's live version. Add it under
-**Dependencies** with a **local name**; the script then sees it as a read-only
+**Dependencies** with a **local name** (choosing the datamodule suggests the last part
+of its path: `ref/companies` → `companies`); the script then sees it as a read-only
 database of that name:
 
 ```sql
@@ -63,7 +64,8 @@ upstream script.
 ## Connections
 
 An admin registers external databases under **Admin → Connections**. A datamodule
-**binds** a connection under a local name (the **Connections** section of its page),
+**binds** a connection under a local name (the **Connections** section of its page;
+choosing a connection suggests its own name),
 and its build script then reads it **by that name**; the page shows how, next to each
 binding. A connection that is not bound to the datamodule does not exist for its
 build, and reports never read connections (they read the built data):

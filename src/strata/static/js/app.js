@@ -143,3 +143,42 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('DOMContentLoaded', openTarget);
     window.addEventListener('hashchange', openTarget);
 })();
+
+// A <select data-fills="<input name>"> fills that input of its form with the chosen
+// option's data-local-name (a dependency: the last part of the datamodule's path; a
+// connection: its name), unless someone typed a name of their own there.
+document.addEventListener('change', function (e) {
+    var sel = e.target;
+    if (!(sel instanceof HTMLSelectElement) || !sel.dataset.fills || !sel.form) { return; }
+    var input = sel.form.querySelector('[name="' + sel.dataset.fills + '"]');
+    if (!input) { return; }
+    var opt = sel.selectedOptions[0];
+    var suggested = (opt && opt.dataset.localName) || '';
+    if (input.value === '' || input.value === input.dataset.filled) {
+        input.value = suggested;
+        input.dataset.filled = suggested;
+    }
+});
+
+// Rows added and removed by buttons (the report form's arguments):
+// <button data-add-row="<template id>" data-into="<tbody id>"> appends a copy of the
+// template's row; a [data-remove-row] button removes its own row.
+document.addEventListener('click', function (e) {
+    var add = e.target.closest && e.target.closest('[data-add-row]');
+    if (add) {
+        var tpl = document.getElementById(add.dataset.addRow);
+        var body = document.getElementById(add.dataset.into);
+        if (tpl && body) {
+            var row = tpl.content.firstElementChild.cloneNode(true);
+            body.appendChild(row);
+            var first = row.querySelector('input');
+            if (first) { first.focus(); }
+        }
+        return;
+    }
+    var remove = e.target.closest && e.target.closest('[data-remove-row]');
+    if (remove) {
+        var tr = remove.closest('tr');
+        if (tr) { tr.remove(); }
+    }
+});

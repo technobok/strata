@@ -1083,3 +1083,40 @@ details.section-details[open] > summary {
 .excel-key-line .actions {
     margin-top: 0.35rem;
 }
+
+/* Controls in a table cell line up with its text: no Pico bottom margin; labels
+   (severity, gate) centred on the line like the buttons beside them. */
+td > :is(button, [role="button"], input, select) {
+    margin-bottom: 0;
+    vertical-align: middle;
+}
+td .severity {
+    vertical-align: 0.15em; /* measured: centres the small label on the row's text */
+}
+
+/* The report form: argument rows (Add argument / Remove) and the check fields,
+   stacked on the left. */
+.arg-table td {
+    padding: 0.25rem 0.35rem;
+}
+.arg-table select {
+    min-width: 6.5rem;
+}
+.arg-table input,
+.arg-table select {
+    margin-bottom: 0;
+}
+.check-fields select {
+    display: block;
+    width: auto;
+    min-width: 10rem;
+    margin-top: 0.25rem;
+}
+
+/* A report's description (Markdown) under its title. */
+.report-description {
+    margin-bottom: var(--pico-spacing);
+}
+.report-description > :last-child {
+    margin-bottom: 0;
+}

@@ -1,6 +1,26 @@
 {% extends "base.html" %}
 {% from "_macros.html" import post_button %}
 
+{% macro arg_row(arg) -%}
+<tr>
+    <td><input type="text" name="arg_name" value="{{ arg.name if arg else '' }}" placeholder="name"></td>
+    <td><select name="arg_type">
+        {% for t in data_types %}<option value="{{ t }}" {% if arg and arg.data_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select></td>
+    <td><select name="arg_widget">
+        {% for w in widgets %}<option value="{{ w }}" {% if arg and arg.widget == w %}selected{% endif %}>{{ w }}</option>{% endfor %}
+    </select></td>
+    <td><select name="arg_required">
+        <option value="yes" {% if not arg or arg.required %}selected{% endif %}>yes</option>
+        <option value="no" {% if arg and not arg.required %}selected{% endif %}>no</option>
+    </select></td>
+    <td><input type="text" name="arg_default" value="{{ (arg.default_value or '') if arg else '' }}"></td>
+    <td><input type="text" name="arg_constraint" value="{{ (arg.constraint_query or '') if arg else '' }}" placeholder="SELECT DISTINCT x FROM t"></td>
+    <td><input type="text" name="arg_description" value="{{ (arg.description or '') if arg else '' }}"></td>
+    <td><button type="button" class="outline secondary small" data-remove-row title="Remove this argument">Remove</button></td>
+</tr>
+{%- endmacro %}
+
 {% block title %}{% if report %}{{ report.name }}{% else %}New Report{% endif %} — Strata{% endblock %}
 
 {% block content %}
@@ -23,8 +43,8 @@
         {% if report %}<small>In Excel: sheet <code>{{ report.macro_name }}</code>, table <code>{{ report.macro_name }}_table</code>. These stay the same when the report is renamed, so workbooks keep working.{{ help_link('reports', 'names') }}</small>{% endif %}
     </label>
 
-    <label>Description <small>(optional: what it shows, or for a check what to do about its rows)</small>
-        <textarea name="description" rows="2">{{ draft.description }}</textarea>
+    <label>Description <small>(optional: what it shows, or for a check what to do about its rows; Markdown: <code>**bold**</code>, <code>- lists</code>, <code>[links](https://…)</code>)</small>
+        <textarea name="description" rows="5">{{ draft.description }}</textarea>
     </label>
 
     <label>Body SQL (reference args as <code>$argname</code>){{ help_link('reports', 'the-report-body') }}
@@ -34,75 +54,39 @@
 
     <fieldset>
         <legend>Arguments{{ help_link('reports', 'arguments') }}</legend>
-        <p><small>Widgets <code>select</code>/<code>multiselect</code> populate their options from the
-        constraint query (first column = value, optional second column = label). Row order = macro
-        parameter order; blank-name rows are ignored.</small></p>
-        <div style="overflow-x:auto;">
-        <table>
+        <p><small>Refer to an argument in the body as <code>$name</code>. Widgets <code>select</code>/<code>multiselect</code> take their options from the
+        constraint query (first column = value, optional second column = label). Row order = argument order.</small></p>
+        <div class="table-scroll">
+        <table class="arg-table">
             <thead><tr>
                 <th>Name</th><th>Type</th><th>Widget</th><th>Required</th>
-                <th>Default</th><th>Constraint query{{ help_link('reports', 'constraint-queries') }}</th><th>Description</th>
+                <th>Default</th><th>Constraint query{{ help_link('reports', 'constraint-queries') }}</th><th>Description</th><th></th>
             </tr></thead>
-            <tbody>
-                {% for arg in args %}
-                <tr>
-                    <td><input type="text" name="arg_name" value="{{ arg.name }}"></td>
-                    <td><select name="arg_type">
-                        {% for t in data_types %}<option value="{{ t }}" {% if arg.data_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
-                    </select></td>
-                    <td><select name="arg_widget">
-                        {% for w in widgets %}<option value="{{ w }}" {% if arg.widget == w %}selected{% endif %}>{{ w }}</option>{% endfor %}
-                    </select></td>
-                    <td><select name="arg_required">
-                        <option value="yes" {% if arg.required %}selected{% endif %}>yes</option>
-                        <option value="no" {% if not arg.required %}selected{% endif %}>no</option>
-                    </select></td>
-                    <td><input type="text" name="arg_default" value="{{ arg.default_value or '' }}"></td>
-                    <td><input type="text" name="arg_constraint" value="{{ arg.constraint_query or '' }}" placeholder="SELECT DISTINCT x FROM t"></td>
-                    <td><input type="text" name="arg_description" value="{{ arg.description or '' }}"></td>
-                </tr>
-                {% endfor %}
-                {% for _ in range(3) %}
-                <tr>
-                    <td><input type="text" name="arg_name" value="" placeholder="min"></td>
-                    <td><select name="arg_type">
-                        {% for t in data_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-                    </select></td>
-                    <td><select name="arg_widget">
-                        {% for w in widgets %}<option value="{{ w }}">{{ w }}</option>{% endfor %}
-                    </select></td>
-                    <td><select name="arg_required">
-                        <option value="yes">yes</option>
-                        <option value="no">no</option>
-                    </select></td>
-                    <td><input type="text" name="arg_default" value=""></td>
-                    <td><input type="text" name="arg_constraint" value="" placeholder="SELECT DISTINCT x FROM t"></td>
-                    <td><input type="text" name="arg_description" value=""></td>
-                </tr>
-                {% endfor %}
+            <tbody id="arg-rows">
+                {% for arg in args %}{{ arg_row(arg) }}{% endfor %}
             </tbody>
         </table>
         </div>
+        <template id="arg-row-template">{{ arg_row(none) }}</template>
+        <button type="button" class="outline small" data-add-row="arg-row-template" data-into="arg-rows">Add argument</button>
     </fieldset>
 
-    <fieldset>
+    <fieldset class="check-fields">
         <legend>Check{{ help_link('checks') }}</legend>
         <label>
             <input type="checkbox" name="is_check" {% if check %}checked{% endif %}>
             This is a check: a run that finds rows is an exception
         </label>
-        <div class="grid">
-            <label>Severity
-                <select name="severity">
-                    {% for s in severities %}<option value="{{ s }}" {% if (check.severity if check else 'warning') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
-                </select>
-            </label>
-            <label style="align-self:end;">
-                <input type="checkbox" name="gate" {% if check and check.gate %}checked{% endif %}>
-                Gate{{ help_link('checks', 'gate-checks') }}: also run inside each build; rows fail the
-                build and the previous version stays live
-            </label>
-        </div>
+        <label>Severity
+            <select name="severity">
+                {% for s in severities %}<option value="{{ s }}" {% if (check.severity if check else 'warning') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select>
+        </label>
+        <label>
+            <input type="checkbox" name="gate" {% if check and check.gate %}checked{% endif %}>
+            Gate{{ help_link('checks', 'gate-checks') }}: also run inside each build; rows fail the
+            build and the previous version stays live
+        </label>
     </fieldset>
 
     <button type="submit">{% if report %}Save{% else %}Create{% endif %}</button>

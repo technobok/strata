@@ -130,6 +130,11 @@ def _build_app(app: Flask) -> Flask:
         except Exception:
             return iso_string[:16].replace("T", " ") if iso_string else ""
 
+    from strata.services import text_format
+
+    app.add_template_filter(text_format.markdown, "markdown")
+    app.add_template_filter(text_format.local_name, "local_name")
+
     @app.template_filter("duration")
     def duration_filter(ms: int | None) -> str:
         """Format a duration in milliseconds to a human-readable string."""

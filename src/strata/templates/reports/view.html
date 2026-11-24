@@ -7,9 +7,9 @@
     <h1>{{ report.name }}{{ help_link('urls') }}</h1>
     <p>
         {% if can_own(datamodule) %}<a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a>{% else %}{{ datamodule.path }}{% endif %}
-        {% if report.description %} — {{ report.description }}{% endif %}
     </p>
 </hgroup>
+{% if report.description %}<div class="report-description">{{ report.description | markdown }}</div>{% endif %}
 
 <div class="actions">
     {% if can_own(datamodule) %}
