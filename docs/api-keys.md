@@ -11,7 +11,9 @@ opens the HTML page. There are two kinds:
 
 A report's data URL names the report in its path and carries the key in its query:
 `…/strata/r/<report id>.xlsx?key=<token>`. A key for a datamodule works for every
-report on it: only the report id changes.
+report on it: only the report id changes. A workbook can send the key in a request
+header instead, so the link has no key (see
+[Keeping the key out of the link](#keeping-the-key-out-of-the-link)).
 
 ## Excel links
 
@@ -89,6 +91,73 @@ waits at most `serve.max_wait_seconds` (default 60) for a rebuild before serving
 previous data, so a refresh does not time out (see
 [Freshness and builds](freshness.md#stale-data)).
 
+## Keeping the key out of the link
+
+A workbook can send its key in a request **header** instead of in the link. The link
+then has no `key=`, so a copied link, Excel's **Data Source Settings** list and any
+request log never show the key. The workbook still holds the key, in its query: anyone
+with the file can refresh it and can read the key, so keep such workbooks in protected
+folders either way. **Replace** still cuts every workbook off.
+
+| Header name | Value |
+|---|---|
+| `Authorization` | `Bearer <token>`: the word `Bearer`, one space, then the key |
+
+`<token>` is the end of the link, after `key=`. Strata's links always put the key
+last: in `…/r/<report id>.xlsx?region=North&key=AbC123`, the token is `AbC123`, and
+the link without its key is `…/r/<report id>.xlsx?region=North` (drop the `&` or `?`
+before `key=` too).
+
+Power Query sends an `Authorization` header only when it connects **Anonymously**,
+which is what Strata's links use.
+
+### A new workbook
+
+1. Copy the report's link (as in [Using a key in Excel](#using-a-key-in-excel)) and
+   split it into the link without its key, and the token.
+2. In Excel: **Data → Get Data → From Other Sources → From Web**, and choose
+   **Advanced** at the top of the dialog.
+3. **URL parts**: paste the link without its key.
+4. **HTTP request header parameters**: type `Authorization` in the left box and
+   `Bearer <token>` in the right one.
+5. **OK**, choose **Anonymous**, then **Connect**.
+
+### Moving a workbook from the link to the header
+
+1. In Excel: **Data → Queries & Connections**, right-click the query, **Edit**.
+2. In Power Query: **Home → Advanced Editor**. The `Source` line holds the link,
+   for example:
+
+   ```
+   Source = Excel.Workbook(Web.Contents("https://<server>/strata/r/<report id>.xlsx?region=North&key=<token>"), null, true),
+   ```
+
+3. Take `key=<token>` (and the `&` or `?` before it) out of the link, and add the
+   header after the link, inside `Web.Contents( … )`:
+
+   ```
+   Source = Excel.Workbook(Web.Contents("https://<server>/strata/r/<report id>.xlsx?region=North", [Headers=[Authorization="Bearer <token>"]]), null, true),
+   ```
+
+   Leave the rest of the line as it is: `Excel.Workbook(…, null, true)` for `.xlsx`,
+   `Csv.Document(…)` for `.csv`, `Json.Document(…)` for `.json`.
+4. **Done**, then **Home → Refresh Preview**. If Excel says the `Authorization`
+   header is only supported when connecting anonymously, set the server to Anonymous:
+   **Data → Get Data → Data Source Settings**, select the server, **Edit
+   Permissions**, **Anonymous**.
+5. **Close & Load**. The data loads with no key in the link, so the key came in the
+   header. The [read audit](audit.md) lists the request under the key's name.
+
+When the key is replaced, put the new token after `Bearer ` in the header.
+
+What a refusal means:
+
+- **400** "two different keys": the link still has a `key=` and it is not the key in
+  the header. Take the key out of the link. The same key in both works.
+- **401** "authentication required": no key arrived. Check the header name is
+  `Authorization` and the value starts with `Bearer `.
+- **403** "invalid API key": the key is wrong, replaced, disabled or expired.
+
 ## Managing admin keys
 
 - **Rotate** issues a new token and stops the old one at once. Workbooks using the
@@ -103,7 +172,8 @@ last-used time are on the datamodule page; the **reads** link under them lists t
 key's requests.
 
 A wrong, disabled or expired token, or one for another datamodule, gets HTTP 403. A data request with
-no login and no key gets 401.
+no login and no key gets 401. Two different keys, one in the link and one in the
+header, get 400.
 
 ## Testing Excel's sign-in (the auth probe)
 
@@ -156,5 +226,8 @@ To test whether Excel can send a key in a request header instead of in the link:
 in step 3 choose **Advanced**, add the header `Authorization` with the value
 `Bearer test-123`, and choose **Anonymous**. The answer's `authorization` should
 show `scheme` `Bearer` and `length` 8, and `headers` should list `Authorization`.
-(Power Query sends an `Authorization` header only with Anonymous.) From the office
-this worked on 2026-11-24.
+From the office this worked on 2026-11-24 (see
+[Keeping the key out of the link](#keeping-the-key-out-of-the-link)). In Power Query
+a nested value shows as **Record** or **List**: click beside it to preview it, or
+change `Json.Document(` to `Text.FromBinary(` in the `Source` step to see the whole
+answer as text.

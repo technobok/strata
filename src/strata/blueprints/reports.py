@@ -5,8 +5,9 @@ a report over its datamodule's live version, rebuilding first if the datamodule
 is TTL-stale. Query params: declared args by name, ``field__op=value`` filters,
 ``q`` substring search, ``sort=-a,b`` and ``page=N`` — all validated against
 the macro's real output columns (services/query_filter). Auth: a session user,
-or for data formats an API key via ``?key=<token>`` (hashed lookup, scope +
-expiry checked; html always requires a session). Every request that names a
+or for data formats an API key via ``?key=<token>`` or an ``Authorization:
+Bearer <token>`` header (hashed lookup, scope + expiry checked; html always
+requires a session). Every request that names a
 report is recorded by the read audit (services/read_audit). Authoring
 lives in blueprints/datamodules.py.
 """
@@ -73,8 +74,9 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if dm.access_lock:
         return _locked(dm, ext)
 
-    # Session users pass straight through; anonymous callers need a valid
-    # ?key= and get data formats only (html keeps the SSO redirect).
+    # Session users pass straight through; anonymous callers need a valid key
+    # (?key= or a Bearer header) and get data formats only (html keeps the SSO
+    # redirect and never reads a key).
     api_key: ApiKey | None = None
     if g.get("user") is None:
         if ext == "html":
@@ -202,15 +204,34 @@ def _not_built_yet(
     return FlaskResponse(message, status=503, headers={"Retry-After": "30"})
 
 
-def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskResponse | None]:
-    """Anonymous data request: authenticate ``?key=``.
+TWO_KEYS = (
+    "two different keys: send the key in the link (?key=) or in the Authorization header, not both"
+)
 
-    (key, None) on success; (None, 401/403 response) otherwise. The 403 text is
-    uniform — it never reveals whether the token, expiry, or scope failed — but
+
+def _sent_token() -> tuple[str, FlaskResponse | None]:
+    """The key a data request carries: ``?key=<token>`` or ``Authorization: Bearer
+    <token>`` (another scheme, or Power Query's empty ``Bearer``, is no key). Both
+    may come only if they are the same token; two different ones get 400."""
+    in_link = request.args.get("key", "")
+    scheme, _, credentials = request.headers.get("Authorization", "").strip().partition(" ")
+    in_header = credentials.strip() if scheme.lower() == "bearer" else ""
+    if in_link and in_header and in_link != in_header:
+        return "", FlaskResponse(TWO_KEYS, status=400)
+    return in_link or in_header, None
+
+
+def _authenticate_key(report: Report, ext: str) -> tuple[ApiKey | None, FlaskResponse | None]:
+    """Anonymous data request: authenticate its key (``_sent_token``).
+
+    (key, None) on success; (None, 400/401/403 response) otherwise. The 403 text
+    is uniform — it never reveals whether the token, expiry, or scope failed — but
     the read audit records the key it matched, or the prefix of a token that
     matched none.
     """
-    token = request.args.get("key", "")
+    token, deny = _sent_token()
+    if deny is not None:
+        return None, deny
     if not token:
         return None, FlaskResponse("authentication required", status=401)
     key = ApiKey.get_by_token_hash(hash_token(token))

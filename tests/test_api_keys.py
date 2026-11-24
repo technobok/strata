@@ -195,3 +195,77 @@ def test_keyed_requests_are_in_the_read_audit(strata: Strata, dm: tuple[str, str
             .fetchall()
         )
     assert rows == [("data", 200, "csv", 2, token[:8])]  # region defaults to North: A and C
+
+
+def _bearer(token: str, scheme: str = "Bearer") -> dict[str, str]:
+    return {**ANON, "Authorization": f"{scheme} {token}"}
+
+
+@pytest.mark.parametrize("scheme", ["Bearer", "bearer"])
+def test_a_key_in_the_authorization_header_serves_data(
+    strata: Strata, dm: tuple[str, str], scheme: str
+) -> None:
+    dm_uuid, rpt = dm
+    token = strata.new_api_key(dm_uuid)
+    resp = strata.client.get(f"/r/{rpt}.json?region=South", headers=_bearer(token, scheme))
+    assert resp.status_code == 200
+    assert [r["product"] for r in json.loads(resp.get_data(as_text=True))] == ["B"]
+
+
+def test_the_same_key_in_the_link_and_the_header_serves_data(
+    strata: Strata, dm: tuple[str, str]
+) -> None:
+    dm_uuid, rpt = dm
+    token = strata.new_api_key(dm_uuid)
+    resp = strata.client.get(f"/r/{rpt}.csv?key={token}", headers=_bearer(token))
+    assert resp.status_code == 200
+
+
+def test_two_different_keys_are_refused(strata: Strata, dm: tuple[str, str]) -> None:
+    from strata.blueprints.reports import TWO_KEYS
+
+    dm_uuid, rpt = dm
+    in_link, in_header = strata.new_api_key(dm_uuid), strata.new_api_key(dm_uuid)
+    for token in (in_link, in_header):  # each key works on its own
+        assert strata.client.get(f"/r/{rpt}.csv", headers=_bearer(token)).status_code == 200
+    resp = strata.client.get(f"/r/{rpt}.csv?key={in_link}", headers=_bearer(in_header))
+    assert resp.status_code == 400
+    assert resp.get_data(as_text=True) == TWO_KEYS
+
+
+def test_a_wrong_key_in_the_header_is_403(strata: Strata, dm: tuple[str, str]) -> None:
+    _, rpt = dm
+    assert strata.client.get(f"/r/{rpt}.csv", headers=_bearer("nope")).status_code == 403
+
+
+@pytest.mark.parametrize("value", ["Basic dXNlcjpwYXNz", "Bearer", "Bearer   "])
+def test_no_bearer_token_is_no_key(strata: Strata, dm: tuple[str, str], value: str) -> None:
+    _, rpt = dm
+    resp = strata.client.get(f"/r/{rpt}.csv", headers={**ANON, "Authorization": value})
+    assert resp.status_code == 401
+
+
+def test_a_header_key_never_opens_the_page(strata: Strata, dm: tuple[str, str]) -> None:
+    dm_uuid, rpt = dm
+    token = strata.new_api_key(dm_uuid)
+    resp = strata.client.get(f"/r/{rpt}.html", headers=_bearer(token))
+    assert resp.status_code == 302
+    assert "/auth/login" in resp.headers["Location"]
+
+
+def test_header_keyed_requests_are_in_the_read_audit(strata: Strata, dm: tuple[str, str]) -> None:
+    dm_uuid, rpt = dm
+    token = strata.new_api_key(dm_uuid)
+    strata.client.get(f"/r/{rpt}.csv", headers=_bearer(token))
+    strata.client.get(f"/r/{rpt}.csv", headers=_bearer("wrongtoken"))
+    with strata.app.app_context():
+        from strata.db import get_db
+
+        rows = (
+            get_db()
+            .execute(
+                "SELECT status, api_key_id IS NOT NULL, token_prefix FROM read_log ORDER BY id"
+            )
+            .fetchall()
+        )
+    assert rows == [(200, 1, token[:8]), (403, 0, "wrongtok")]
