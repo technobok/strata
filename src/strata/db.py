@@ -1,5 +1,6 @@
 """Database connection and transaction handling using APSW."""
 
+import itertools
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import apsw
 
 _standalone_db: apsw.Connection | None = None
+_savepoints = itertools.count(1)  # names for nested transaction() savepoints
 
 # Highest migration version this code expects; checked at app boot. The containers
 # run `strata-admin init-db` before starting, so a lower value on disk means the
@@ -161,10 +163,23 @@ def standalone_transaction() -> Generator[apsw.Cursor]:
 def transaction() -> Generator[apsw.Cursor]:
     """Context manager for database transactions.
 
-    Automatically commits on success, rolls back on exception.
+    Automatically commits on success, rolls back on exception. Inside another
+    transaction it is a savepoint of that one, so a caller can make several model
+    writes all or nothing (strata-admin import applies a file that way).
     """
     db = get_db()
     cursor = db.cursor()
+    if db.in_transaction:
+        name = f"sp_{next(_savepoints)}"
+        cursor.execute(f"SAVEPOINT {name};")
+        try:
+            yield cursor
+            cursor.execute(f"RELEASE {name};")
+        except Exception:
+            cursor.execute(f"ROLLBACK TO {name};")
+            cursor.execute(f"RELEASE {name};")
+            raise
+        return
     cursor.execute("BEGIN IMMEDIATE;")
     try:
         yield cursor
