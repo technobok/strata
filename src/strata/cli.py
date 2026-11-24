@@ -1,7 +1,9 @@
 """CLI entry point for strata-admin."""
 
+import fnmatch
 import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import click
 
@@ -301,3 +303,93 @@ def reconcile_command(dry_run: bool) -> None:
         f"{rep.expired_reads} expired read-audit row(s), "
         f"{len(rep.warnings)} warning(s)" + (" (dry-run: no changes made)" if dry_run else "")
     )
+
+
+# ---- definition files ------------------------------------------------------
+
+
+@main.command("import")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Check every file and show what would change.")
+@click.option(
+    "--prune",
+    is_flag=True,
+    help="Also remove the reports, schedules, dependencies and connection bindings "
+    "a file does not list.",
+)
+@click.option("--build", is_flag=True, help="Queue a build of each datamodule made or changed.")
+@click.option("--only", default=None, help="Only datamodules whose path matches, e.g. 'checks/*'.")
+@click.option(
+    "--as",
+    "actor",
+    default="strata-admin",
+    show_default=True,
+    help="Recorded as who made or changed them.",
+)
+def import_command(
+    paths: tuple[Path, ...], dry_run: bool, prune: bool, build: bool, only: str | None, actor: str
+) -> None:
+    """Make or update datamodules from definition files (TOML; a folder: every *.toml
+    in it). Each file is all or nothing; see the help page 'Import and export'."""
+    from strata import create_app
+    from strata.models.datamodule import Datamodule
+    from strata.services import build_queue, definitions
+
+    defs, unreadable = definitions.read_files(paths)
+    if only:
+        defs = [d for d in defs if fnmatch.fnmatchcase(d.path, only)]
+    with create_app().app_context():
+        outcomes = definitions.import_definitions(defs, actor, dry_run=dry_run, prune=prune)
+        if build and not dry_run:
+            for o in outcomes:
+                dm = Datamodule.get_by_uuid(o.datamodule_uuid) if o.datamodule_uuid else None
+                if dm is not None and o.action in ("create", "update"):
+                    build_queue.request_build(dm, f"manual:{actor}", force=True)
+
+    for source, reason in unreadable:
+        click.echo(f"REFUSED {source}: {reason}")
+    for o in outcomes:
+        if o.refused is not None:
+            click.echo(f"REFUSED {o.path} ({o.source}): {o.refused}")
+            continue
+        changed = f": {', '.join(o.changes)}" if o.action == "update" else ""
+        click.echo(f"{o.action} {o.path}{changed}")
+        for note in o.notes:
+            click.echo(f"  note: {note}")
+    count = {a: sum(o.action == a for o in outcomes) for a in ("create", "update", "unchanged")}
+    refused = len(unreadable) + sum(o.refused is not None for o in outcomes)
+    click.echo(
+        f"import: {count['create']} created, {count['update']} updated, "
+        f"{count['unchanged']} unchanged, {refused} refused"
+        + (" (dry run: nothing was changed)" if dry_run else "")
+    )
+    if refused:
+        sys.exit(1)
+
+
+@main.command("export")
+@click.option(
+    "--out",
+    "out_dir",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Folder to write into (made if missing); a datamodule a/b goes to a/b.toml.",
+)
+@click.option("--only", default=None, help="Only datamodules whose path matches, e.g. 'checks/*'.")
+def export_command(out_dir: Path, only: str | None) -> None:
+    """Write datamodules as definition files that import back unchanged."""
+    from strata import create_app
+    from strata.models.datamodule import Datamodule
+    from strata.services import definitions
+
+    written = 0
+    with create_app().app_context():
+        for dm in Datamodule.get_all():
+            if only and not fnmatch.fnmatchcase(dm.path, only):
+                continue
+            target = definitions.export_path(out_dir, dm)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(definitions.export_datamodule(dm), encoding="utf-8")
+            click.echo(f"wrote {target}")
+            written += 1
+    click.echo(f"export: {written} datamodule(s)")
