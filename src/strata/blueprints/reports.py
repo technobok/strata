@@ -127,8 +127,9 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
 
     options = report_service.arg_options_map(report, dm, args)
 
-    # Run once args are submitted, or when nothing is required — a report with
-    # required args shows its (options-populated) form before first running.
+    # Run once args are submitted, or when every required argument has a default to
+    # run with; only a required argument with no default waits for the form.
+    runs_on_defaults = all(not a.required or a.default_value for a in args)
     result = None
     arg_error = version_error
     spec: QuerySpec | None = None
@@ -136,7 +137,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if version_error is None and version is not None:
         try:
             arg_values, spec = query_filter.parse_params(pairs, arg_names)
-            if request.args or not any(a.required for a in args):
+            if request.args or runs_on_defaults:
                 result = report_service.run_table(report, dm, arg_values, spec, version)
                 read_audit.update(row_count=result.row_count)
         except (ArgError, FilterError) as exc:
@@ -147,6 +148,7 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
         datamodule=dm,
         args=args,
         arg_values=arg_values,
+        arg_summary=_arg_summary(args, arg_values),
         options=options,
         result=result,
         arg_error=arg_error,
@@ -165,6 +167,23 @@ def serve(report_uuid: str, ext: str) -> FlaskResponse | WerkzeugResponse | str:
     if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
         return render_template("reports/_table.html", **context)
     return render_template("reports/view.html", **context)
+
+
+def _arg_summary(
+    args: list[ReportArg], arg_values: dict[str, list[str]]
+) -> list[tuple[str, str, str]]:
+    """(name, value, where from) per argument for the page's header: "given" in the
+    URL, its "default", "needed" (required, no default), or "none" (optional)."""
+    summary: list[tuple[str, str, str]] = []
+    for arg in args:
+        given = [v for v in arg_values.get(arg.name) or [] if v != ""]
+        if given:
+            summary.append((arg.name, ", ".join(given), "given"))
+        elif arg.default_value:
+            summary.append((arg.name, arg.default_value, "default"))
+        else:
+            summary.append((arg.name, "", "needed" if arg.required else "none"))
+    return summary
 
 
 def _locked(dm: Datamodule, ext: str) -> FlaskResponse:

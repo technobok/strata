@@ -115,7 +115,13 @@ list empty and is logged.
 
 ## Reading a report
 
-- **Run** on the report page opens it in the browser.
+- Opening a report runs it at once with its arguments' defaults. Only a **required**
+  argument with **no default** makes the page wait for you to fill it in and press
+  **Run**. Change any argument and press **Run** again to see other rows.
+- A small table at the top says how old the data is (**Data as of**, when its
+  datamodule was last built), which argument values are in use (and which are
+  defaults), and how many rows came back. A **saved run** (Run now, or a schedule)
+  has the same table, with its values fixed: open **View current** to change them.
 - The table has sortable headers, a search box, filter chips and a pager. Every
   change is kept in the URL, so a link reproduces the same view.
 - The export links download the same rows as Parquet, CSV, JSON or XLSX.

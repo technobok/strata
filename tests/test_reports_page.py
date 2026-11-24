@@ -81,3 +81,45 @@ def test_the_nav_offers_each_role_what_it_can_use(strata: Strata) -> None:
         "tester",
     ]
     assert 'href="/tags/" role="button"' in strata.client.get("/admin/").get_data(as_text=True)
+
+
+def _header(page: str) -> str:
+    return page.split('<table class="run-header report-header">', 1)[1].split("</table>", 1)[0]
+
+
+def test_a_required_argument_with_a_default_runs_at_once(strata: Strata) -> None:
+    dm = strata.new_datamodule()
+    strata.build(dm)
+    rpt = strata.new_report(
+        dm,
+        body="SELECT * FROM sales WHERE region = $region",
+        args=[
+            {
+                "name": "region",
+                "type": "text",
+                "widget": "input",
+                "default": "North",
+                "required": "yes",
+            }
+        ],
+    )
+    page = strata.client.get(f"/r/{rpt}.html").get_data(as_text=True)
+    header = _header(page)
+    assert "Data as of" in header and "<code>region=North</code> <small>(default)</small>" in header
+    assert "2 rows" in header  # North: A and C, run with the default
+    given = _header(strata.client.get(f"/r/{rpt}.html?region=South").get_data(as_text=True))
+    assert "<code>region=South</code>" in given and "(default)" not in given
+    assert "1 row<" in given
+
+
+def test_a_required_argument_without_a_default_waits_for_the_form(strata: Strata) -> None:
+    dm = strata.new_datamodule()
+    strata.build(dm)
+    rpt = strata.new_report(
+        dm,
+        body="SELECT * FROM sales WHERE region = $region",
+        args=[{"name": "region", "type": "text", "widget": "input", "required": "yes"}],
+    )
+    header = _header(strata.client.get(f"/r/{rpt}.html").get_data(as_text=True))
+    assert "<code>region=</code> <small>(needed)</small>" in header
+    assert "not run yet" in header and "Data as of" in header
