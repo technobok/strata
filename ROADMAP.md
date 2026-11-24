@@ -60,7 +60,7 @@ These replace the old Phases 7–10. **Order decided 2026-11-21: XL → G → D 
 
 - **API rate limiting** — throttle keyed endpoints; must also cover key-triggered TTL rebuilds (cost amplification).
 - **CSRF tokens** — POST forms carry no token; Gatekeeper's `SameSite=Lax` cookie blocks cross-site posts but not posts from another `*.demant.com` site. A token in a `base.html` meta tag + `hx-headers` + the `post_button` macro would cover every form at once.
-- **Authorization-header token auth** — alternative to `?key=` so tokens stay out of proxy/server request logs.
+- **Authorization-header token auth** — alternative to `?key=` so tokens stay out of proxy/server request logs. Excel test passed 2026-11-24 (From Web → Advanced + Anonymous: `Authorization: Bearer …` and a custom header both reached Strata from the office, User-Agent `Microsoft.Data.Mashup`); not built yet. Nothing logs request URLs today (no Caddy `log`, no gunicorn access log; the read audit drops `key`), and a workbook holds the key in its M code either way.
 - **Version keep/pin flag** — mark a specific version exempt from retention (e.g. year-end snapshots).
 - **Editor assists** — DuckDB `sql_auto_complete()` completion, `$arg` name completion, EXPLAIN preview for build scripts/macros.
 - **Reproducible image** — the Dockerfile installs from `pyproject.toml` (not `uv.lock`) and pulls gatekeeper/outbox from git HEAD, so a rebuild picks up the newest versions within each constraint (`duckdb` is bounded `>=1.5.2,<2`). Use the lock instead: `uv export --frozen --no-dev` minus the two sibling path packages, installed from pinned git refs. Needs a test `docker compose build`.

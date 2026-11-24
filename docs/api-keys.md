@@ -151,3 +151,10 @@ The test:
    Excel**). The app log has every request that reached Strata:
    `docker logs strata-app 2>&1 | grep "auth probe"`.
 7. Untick `diag.auth_probe`.
+
+To test whether Excel can send a key in a request header instead of in the link:
+in step 3 choose **Advanced**, add the header `Authorization` with the value
+`Bearer test-123`, and choose **Anonymous**. The answer's `authorization` should
+show `scheme` `Bearer` and `length` 8, and `headers` should list `Authorization`.
+(Power Query sends an `Authorization` header only with Anonymous.) From the office
+this worked on 2026-11-24.
