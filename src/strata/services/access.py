@@ -80,7 +80,7 @@ def admin_group() -> str:
 
 
 def default_owners() -> list[str]:
-    """Owners of a datamodule with no list of its own: the setting, else the writers."""
+    """The owners a new datamodule starts with: the setting, else the writers."""
     return live_list("access.default_owners") or [f"@{writer_group()}"]
 
 
@@ -138,6 +138,26 @@ def owners_of(dm: Datamodule) -> list[str]:
 def viewers_of(dm: Datamodule) -> list[str]:
     """The viewers in force (owners view too, and are not repeated here)."""
     return dm.viewers if dm.viewers is not None else default_viewers()
+
+
+# Every datamodule names its owners and viewers (never blank, never "follow the
+# setting"): the form starts from these, and datamodule_service.freeze_lists writes
+# them into the datamodules made before lists were required.
+
+
+def form_owners(dm: Datamodule | None) -> list[str]:
+    """The owners the Access form shows: the datamodule's list; for a new one, or one
+    that followed the setting, the default owners. An empty list (the admins only, as
+    migration 0009 left older datamodules) is the admin group by name."""
+    owners = default_owners() if dm is None or dm.owners is None else dm.owners
+    return owners or [f"@{admin_group()}"]
+
+
+def form_viewers(dm: Datamodule | None) -> list[str]:
+    """The viewers the Access form shows; an empty list (the owners only) is the
+    owners by name, as owners view too."""
+    viewers = default_viewers() if dm is None or dm.viewers is None else dm.viewers
+    return viewers or form_owners(dm)
 
 
 def can_own(dm: Datamodule) -> bool:

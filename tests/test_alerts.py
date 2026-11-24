@@ -151,7 +151,7 @@ def _sweep(strata: Strata) -> list[str]:
 def test_stale_data_alerts_once_until_the_next_success(strata: Strata, mail: list[Any]) -> None:
     dm_uuid = strata.new_datamodule()
     strata.build(dm_uuid)
-    assert _alerts_form(strata, dm_uuid, "", "1").status_code == 302
+    assert _alerts_form(strata, dm_uuid, "@strata-admins", "1").status_code == 302
     assert strata.datamodule(dm_uuid).stale_alert_seconds == 3600
     _age_live_version(strata, dm_uuid, 0.5)
     assert _sweep(strata) == [] and mail == []  # within the hour

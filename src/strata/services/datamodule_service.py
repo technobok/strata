@@ -197,6 +197,30 @@ def version_path(dm_uuid: str, version_uuid: str) -> Path:
     return dm_dir(dm_uuid) / "versions" / f"{version_uuid}.duckdb"
 
 
+def freeze_lists(modified_by: str = "strata") -> int:
+    """Name the owners, viewers and alert list of datamodules made before every list
+    had to name someone: a list that followed the access.default_* setting (NULL) gets
+    the setting's value now; an empty owners list (the admins only) the admin group;
+    an empty viewers list (the owners only) the owners; an alert list that meant the
+    Strata admins (NULL) the admin group. What each list lets happen is unchanged.
+    Idempotent (``strata-admin init-db`` runs it at every start). Returns how many
+    datamodules changed."""
+    from strata.services import access
+
+    changed = 0
+    for dm in Datamodule.get_all():
+        owners, viewers = access.form_owners(dm), access.form_viewers(dm)
+        touched = False
+        if dm.owners != owners or dm.viewers != viewers:
+            dm.set_access(owners, viewers, modified_by=modified_by)
+            touched = True
+        if not dm.alert_recipients:
+            dm.set_alerts([f"@{access.admin_group()}"], dm.stale_alert_seconds)
+            touched = True
+        changed += touched
+    return changed
+
+
 def live_version(dm: Datamodule) -> DatamoduleVersion | None:
     """The current ready version pointed at by live_version_id, if any."""
     if dm.live_version_id is None:

@@ -70,7 +70,8 @@ between attempts. Meanwhile reads get the previous version, marked stale.
 
 Each datamodule has an **alert list**: the people who hear when its data stops
 refreshing. Set it in the **Alerts** section of the datamodule's page, one per line
-(a username, an `@group` or an email address). Blank means the Strata admins.
+(a username, an `@group` or an email address). It starts as the Strata admins' group
+(`@strata-admins`) and is never blank.
 
 | Event | Mail |
 |---|---|

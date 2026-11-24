@@ -82,8 +82,8 @@ has them, e.g. `asiap\jsmith`), `@groups`, and `*` for everyone signed in.
 | Setting | Default | Meaning |
 |---|---|---|
 | `auth.writer_group` | `strata-writers` | The Gatekeeper group whose members may create datamodules. Admins may too. |
-| `access.default_owners` | — | Owners of a datamodule with no owners list of its own; blank = the writers group (`@` + `auth.writer_group`). Owners edit the datamodule, its reports, schedules and access. |
-| `access.default_viewers` | `*` | Viewers of a datamodule with no viewers list of its own; `*` = everyone signed in. Viewers open its reports and runs. |
+| `access.default_owners` | — | The owners a new datamodule's form starts with; blank = the writers group (`@` + `auth.writer_group`). Owners edit the datamodule, its reports, schedules and access. Changing it does not change existing datamodules. |
+| `access.default_viewers` | `*` | The viewers a new datamodule's form starts with; `*` = everyone signed in. Viewers open its reports and runs. Changing it does not change existing datamodules. |
 
 ## Schedules and the worker
 

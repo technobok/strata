@@ -224,7 +224,7 @@ def test_new_owners_must_be_able_to_read_every_parent(
 def test_narrowing_a_parent_warns_about_its_dependants(
     strata: Strata, payroll: dict[str, Any]
 ) -> None:
-    resp = strata.set_access(payroll["parent"], owners="pam", viewers="")
+    resp = strata.set_access(payroll["parent"], owners="pam", viewers="pam")  # owners only
     assert resp.status_code == 302
     assert (
         "error",

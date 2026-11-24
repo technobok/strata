@@ -216,6 +216,18 @@ def init_db_command() -> None:
         init_db_at(db_path)
     except UnusableDatabase as exc:
         raise click.ClickException(str(exc)) from exc
+    # Every datamodule names its owners, viewers and alert list (2026-11-24): older
+    # ones that followed the defaults get them written in, once. Never fails a start.
+    try:
+        from strata import create_app
+        from strata.services import datamodule_service
+
+        with create_app().app_context():
+            frozen = datamodule_service.freeze_lists()
+        if frozen:
+            click.echo(f"Named the access and alert lists of {frozen} datamodule(s).")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"Could not name the datamodules' lists: {exc}", err=True)
     click.echo("Database initialized.")
 
 

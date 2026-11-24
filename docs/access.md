@@ -36,10 +36,12 @@ datamodule's alert list, a schedule's recipients and a connection's **May use**.
 any of these lists is saved, a user or group Gatekeeper does not know is refused, so a
 typo cannot quietly leave someone out.
 
-A ticked **Use the default** box makes a list follow a setting as it changes:
-`access.default_owners` (blank = the writers group) and `access.default_viewers`
-(default `*`). See [Settings](settings.md#access--apply-immediately). An empty
-Owners list means the admins only. An empty Viewers list means the owners only.
+Both lists always name someone: a blank list is refused. A new datamodule's form
+starts with the default lists, the `access.default_owners` (blank = the writers
+group) and `access.default_viewers` (default `*`) settings (see
+[Settings](settings.md#access--apply-immediately)); from then on the datamodule keeps
+its own lists, whatever the settings say later. For the admins only, name their
+group (`@strata-admins`); for the owners only, name the owners as viewers too.
 
 When you save, Strata checks the lists:
 

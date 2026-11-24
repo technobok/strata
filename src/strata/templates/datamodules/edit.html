@@ -20,37 +20,38 @@
 <article class="error-box">Last build error: {{ datamodule.last_build_error }}</article>
 {% endif %}
 
+{% if error %}<div class="error-box datamodule-error">Not saved: {{ error }}</div>{% endif %}
 <form method="post"
       action="{% if datamodule %}{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}{% else %}{{ url_for('datamodules.new') }}{% endif %}">
     <label>Path
-        <input type="text" name="path" value="{{ datamodule.path if datamodule else '' }}"
+        <input type="text" name="path" value="{{ draft.path }}"
                placeholder="finance/monthly" required>
     </label>
     <label>Description
-        <input type="text" name="description" value="{{ datamodule.description if datamodule else '' }}">
+        <input type="text" name="description" value="{{ draft.description }}">
     </label>
     <label>TTL (seconds; blank = never auto-expire, 0 = always rebuild){{ help_link('freshness', 'ttl') }}
         <input type="number" name="ttl_seconds" step="1" min="0"
-               value="{% if datamodule and datamodule.ttl_seconds is not none %}{{ datamodule.ttl_seconds }}{% endif %}">
+               value="{{ draft.ttl_seconds }}">
     </label>
     {% if datamodule %}
     <div class="grid">
         <label>Retention policy{{ help_link('freshness', 'versions-and-retention') }}
             <select name="retention_kind">
-                <option value="count" {% if datamodule.retention_kind == 'count' %}selected{% endif %}>count — keep newest N versions</option>
-                <option value="age" {% if datamodule.retention_kind == 'age' %}selected{% endif %}>age — keep versions younger than</option>
+                <option value="count" {% if draft.retention_kind == 'count' %}selected{% endif %}>count — keep newest N versions</option>
+                <option value="age" {% if draft.retention_kind == 'age' %}selected{% endif %}>age — keep versions younger than</option>
             </select>
         </label>
         <label>Keep count (count policy; live always kept)
             <input type="number" name="retention_count" step="1" min="1"
-                   value="{{ datamodule.retention_count }}">
+                   value="{{ draft.retention_count }}">
         </label>
         <label>Max age seconds (age policy; blank = keep all)
             <input type="number" name="retention_age_seconds" step="1" min="0"
-                   value="{% if datamodule.retention_age_seconds is not none %}{{ datamodule.retention_age_seconds }}{% endif %}">
+                   value="{{ draft.retention_age_seconds }}">
         </label>
         <label>Worker queue{{ help_link('freshness', 'builds-and-the-worker') }}
-            <input type="text" name="build_queue" value="{{ datamodule.build_queue }}"
+            <input type="text" name="build_queue" value="{{ draft.build_queue }}"
                    pattern="[a-z0-9_-]{1,32}" title="lowercase letters, digits, - and _">
         </label>
     </div>
@@ -58,12 +59,12 @@
         <legend>Alerts{{ help_link('freshness', 'alerts') }}</legend>
         <input type="hidden" name="alerts_present" value="1">
         <div class="grid">
-            <label>Alert list: one per line, a username, an <code>@group</code> or an email address (blank = the Strata admins)
-                <textarea name="alert_recipients" rows="2" data-people="{{ url_for('people.suggest') }}" data-people-emails="1" placeholder="@{{ config.get('AUTH_ADMIN_GROUP') or 'strata-admins' }}">{{ (datamodule.alert_recipients or []) | join('\n') }}</textarea>
+            <label>Alert list: one per line, a username, an <code>@group</code> or an email address
+                <textarea name="alert_recipients" rows="2" data-people="{{ url_for('people.suggest') }}" data-people-emails="1">{{ draft.alert_recipients }}</textarea>
             </label>
             <label>Stale alert after (hours without a successful build; blank = off)
                 <input type="number" name="stale_alert_hours" min="0.25" step="0.25"
-                       value="{% if datamodule.stale_alert_seconds %}{{ '%g' | format(datamodule.stale_alert_seconds / 3600) }}{% endif %}">
+                       value="{{ draft.stale_alert_hours }}">
             </label>
         </div>
         {% if datamodule.failure_alerted_at %}<p><small>"Build failing" was mailed {{ datamodule.failure_alerted_at | localdatetime }}; the next successful build mails "recovered".</small></p>{% endif %}
@@ -76,24 +77,20 @@
         <div class="grid">
             <div>
                 <label>Owners: one per line, a username or an <code>@group</code>. They edit this datamodule, its reports, schedules, keys and access.
-                    <textarea name="owners" rows="3" data-people="{{ url_for('people.suggest') }}" placeholder="(none: the Strata admins only)">{{ owners_text }}</textarea>
+                    <textarea name="owners" rows="3" data-people="{{ url_for('people.suggest') }}">{{ draft.owners }}</textarea>
                 </label>
-                <label><input type="checkbox" name="owners_default" value="1" {% if owners_default %}checked{% endif %}>
-                    Use the default owners ({{ default_owners | join(', ') }})</label>
             </div>
             <div>
                 <label>Viewers: one per line, a username, an <code>@group</code>, or <code>*</code> for everyone signed in. They open its reports and runs; owners view too.
-                    <textarea name="viewers" rows="3" data-people="{{ url_for('people.suggest') }}" data-people-everyone="1" placeholder="(none: the owners only)">{{ viewers_text }}</textarea>
+                    <textarea name="viewers" rows="3" data-people="{{ url_for('people.suggest') }}" data-people-everyone="1">{{ draft.viewers }}</textarea>
                 </label>
-                <label><input type="checkbox" name="viewers_default" value="1" {% if viewers_default %}checked{% endif %}>
-                    Use the default viewers ({% for v in default_viewers %}{{ 'everyone signed in' if v == '*' else v }}{% if not loop.last %}, {% endif %}{% endfor %})</label>
             </div>
         </div>
-        <p><small>The Strata admins can do everything on every datamodule. A ticked box follows the setting as it changes.</small></p>
+        <p><small>The Strata admins can do everything on every datamodule. A new datamodule starts with the default lists (the <code>access.default_owners</code> and <code>access.default_viewers</code> settings).</small></p>
     </fieldset>
     <label>Build script (DuckDB SQL){{ help_link('build-scripts') }}
         <textarea id="build_script" class="sql-editor" name="build_script" rows="10" style="font-family:monospace;"
-                  placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ datamodule.build_script if datamodule else '' }}</textarea>
+                  placeholder="CREATE TABLE t AS SELECT * FROM range(5) r(n);">{{ draft.build_script }}</textarea>
     </label>
     {% if datamodule %}
     <div class="actions">

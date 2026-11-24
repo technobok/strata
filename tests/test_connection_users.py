@@ -190,7 +190,7 @@ def test_a_datamodule_owned_by_the_admins_uses_an_admins_connection(
 ) -> None:
     """The datamodules made before access control (owners []) keep building."""
     _new_connection(strata, "ext_db", "sqlite", may_use="", path=source_db)
-    dm_uuid = _alices(strata, owners="")
+    dm_uuid = _alices(strata, owners="@strata-admins")
     assert _bind(strata, dm_uuid, "ext_db").status_code == 302
     strata.build(dm_uuid)
     assert strata.datamodule(dm_uuid).build_status == "ready"
@@ -232,11 +232,11 @@ def test_binding_and_owners_are_refused_when_they_cannot_be_checked(
     )
     assert _bindings(strata, dm_uuid) == []
     pinned = strata.new_datamodule(path="test/pinned", script=SCRIPT)
-    strata.set_access(pinned, owners="")
+    strata.set_access(pinned, owners="@strata-admins")
     assert _bind(strata, pinned, "ext_db").status_code == 302
     resp = strata.set_access(pinned, owners="@brs-finance")
     assert resp.status_code == 200
     assert "Access: the owners could not be checked: Gatekeeper is not configured" in (
         resp.get_data(as_text=True)
     )
-    assert strata.datamodule(pinned).owners == []
+    assert strata.datamodule(pinned).owners == ["@strata-admins"]

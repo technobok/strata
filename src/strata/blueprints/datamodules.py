@@ -234,22 +234,26 @@ def index() -> str:
 @bp.route("/new", methods=["GET", "POST"])
 @writer_required
 def new() -> str | Response:
+    error: str | None = None
     if request.method == "POST":
         path = request.form.get("path", "").strip()
         description = request.form.get("description", "").strip()
         build_script = request.form.get("build_script", "")
         ttl, ttl_error = _parse_ttl(request.form.get("ttl_seconds", ""))
         lists, access_error = _parse_access()
-        owners, viewers = lists if lists is not None else (None, None)
+        # A post without the Access fieldset (a script, a test) gets the default lists.
+        owners, viewers = (
+            lists if lists is not None else (access.form_owners(None), access.form_viewers(None))
+        )
 
         if not path:
-            flash("Path is required.", "error")
+            error = "Path is required."
         elif Datamodule.get_by_path(path) is not None:
-            flash(f"A datamodule with path '{path}' already exists.", "error")
+            error = f"A datamodule with path '{path}' already exists."
         elif ttl_error:
-            flash(ttl_error, "error")
+            error = ttl_error
         elif access_error or (access_error := _stays_owner(owners)):
-            flash(access_error, "error")
+            error = access_error
         else:
             dm = Datamodule.create(
                 path=path,
@@ -261,8 +265,9 @@ def new() -> str | Response:
                 viewers=viewers,
             )
             # Its Excel link exists from the start (the Reports table and every
-            # report's Use in Excel box show it).
+            # report's Use in Excel box show it), and its alert list names the admins.
             ApiKey.ensure_excel_link(dm.id, g.user.username)
+            dm.set_alerts([f"@{access.admin_group()}"], None)
             flash("Datamodule created. Build it to produce a live version.", "success")
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))
 
@@ -271,7 +276,8 @@ def new() -> str | Response:
         datamodule=None,
         reports=[],
         versions=[],
-        **_access_context(None),
+        draft=_form_draft(None, typed=error is not None),
+        error=error,
     )
 
 
@@ -282,6 +288,7 @@ def edit(uuid: str) -> str | Response:
     if dm is None:
         raise NotFound()
 
+    error: str | None = None
     if request.method == "POST":
         path = request.form.get("path", "").strip()
         description = request.form.get("description", "").strip()
@@ -296,19 +303,19 @@ def edit(uuid: str) -> str | Response:
 
         existing = Datamodule.get_by_path(path)
         if not path:
-            flash("Path is required.", "error")
+            error = "Path is required."
         elif existing is not None and existing.id != dm.id:
-            flash(f"A datamodule with path '{path}' already exists.", "error")
+            error = f"A datamodule with path '{path}' already exists."
         elif retention_error:
-            flash(retention_error, "error")
+            error = retention_error
         elif ttl_error:
-            flash(ttl_error, "error")
+            error = ttl_error
         elif build_queue_name is not None and not _QUEUE_RE.fullmatch(build_queue_name):
-            flash("Worker queue: lowercase letters, digits, '-' and '_' only.", "error")
+            error = "Worker queue: lowercase letters, digits, '-' and '_' only."
         elif alerts_error:
-            flash(alerts_error, "error")
+            error = alerts_error
         elif access_error:
-            flash(access_error, "error")
+            error = access_error
         else:
             dm.update(
                 modified_by=g.user.username,
@@ -321,10 +328,7 @@ def edit(uuid: str) -> str | Response:
                 retention_age_seconds=retention_age,
                 build_queue=build_queue_name,
             )
-            if alerts is not None and alerts != (
-                dm.alert_recipients or None,
-                dm.stale_alert_seconds,
-            ):
+            if alerts is not None and alerts != (dm.alert_recipients, dm.stale_alert_seconds):
                 dm.set_alerts(*alerts)
             if lists is not None and lists != (dm.owners, dm.viewers):
                 dm.set_access(*lists, modified_by=g.user.username)
@@ -387,7 +391,8 @@ def edit(uuid: str) -> str | Response:
         run_uuids=ReportRun.uuids_for([j.run_id for j in jobs if j.run_id is not None]),
         schedules=_schedule_rows(dm),
         **_status_context(dm),
-        **_access_context(dm),
+        draft=_form_draft(dm, typed=error is not None),
+        error=error,
     )
 
 
@@ -412,13 +417,19 @@ def _report_schedule_rows(report: Report, dm: Datamodule) -> list[dict[str, obje
 
 
 def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | None]:
-    """((alert list or None = admins, stale seconds or None), error); (None, None) when
-    the form has no Alerts section, so a partial post leaves them alone."""
+    """((alert list, stale seconds or None), error); (None, None) when the form has no
+    Alerts section, so a partial post leaves them alone. The list names someone: it is
+    never blank (the form starts from the Strata admins' group)."""
     from strata.services import notify_service
 
     if request.form.get("alerts_present") != "1":
         return None, None
     recipients = notify_service.recipient_lines(request.form.get("alert_recipients", ""))
+    if not recipients:
+        return None, (
+            f"Alert list: name at least one person, @group or email address (the Strata "
+            f"admins are @{access.admin_group()})."
+        )
     problem = notify_service.check_recipients(recipients) or notify_service.unknown_recipients(
         recipients
     )
@@ -431,26 +442,29 @@ def _parse_alerts() -> tuple[tuple[list[str] | None, int | None] | None, str | N
         return None, "Stale alert: a number of hours, or blank for none."
     if hours is not None and hours <= 0:
         return None, "Stale alert: a number of hours above zero, or blank for none."
-    return (recipients or None, round(hours * 3600) if hours else None), None
+    return (recipients, round(hours * 3600) if hours else None), None
 
 
 def _parse_access() -> tuple[tuple[list[str] | None, list[str] | None] | None, str | None]:
-    """((owners, viewers), error) from the Access fieldset; a list is None when its
-    "use the default" box is ticked. (None, None) when the form has no Access
-    fieldset, so a partial post (e.g. strata.set_script) leaves access alone."""
+    """((owners, viewers), error) from the Access fieldset; (None, None) when the form
+    has no Access fieldset, so a partial post (e.g. strata.set_script) leaves access
+    alone. Both lists name someone: neither is ever blank."""
     if request.form.get("access_present") != "1":
         return None, None
-    owners, viewers = (
-        None
-        if request.form.get(f"{name}_default") == "1"
-        else access.principal_lines(request.form.get(name, ""))
-        for name in ("owners", "viewers")
-    )
-    named = (owners or []) + (viewers or [])
+    owners = access.principal_lines(request.form.get("owners", ""))
+    viewers = access.principal_lines(request.form.get("viewers", ""))
+    if not owners:
+        return None, "Access: Owners must name at least one person or @group."
+    if not viewers:
+        return None, (
+            "Access: Viewers must name at least one person or @group, or * for everyone "
+            "signed in (owners view too: name them for an owners-only datamodule)."
+        )
+    named = owners + viewers
     problem = access.check_principals(named)
     if problem:
         return None, f"Access: {problem}"
-    if owners and access.EVERYONE in owners:
+    if access.EVERYONE in owners:
         return None, "Access: owners are people or groups; * (everyone signed in) can only view."
     try:
         unknown = access.Directory().unknown(named)
@@ -509,15 +523,50 @@ def _warn_dependants(dm: Datamodule) -> None:
         )
 
 
-def _access_context(dm: Datamodule | None) -> dict[str, object]:
-    """The Access fieldset: each list, or the default it follows."""
+_FORM_FIELDS = (
+    "path",
+    "description",
+    "ttl_seconds",
+    "retention_kind",
+    "retention_count",
+    "retention_age_seconds",
+    "build_queue",
+    "build_script",
+    "alert_recipients",
+    "stale_alert_hours",
+    "owners",
+    "viewers",
+)
+
+
+def _form_draft(dm: Datamodule | None, typed: bool) -> dict[str, str]:
+    """What the datamodule form shows: the saved datamodule (a new one: the default
+    lists), or with ``typed`` what was typed into a refused form, so a refused save
+    loses nothing (a build script included)."""
+    from strata.services import alert_service
+
+    if typed:
+        return {name: request.form.get(name, "") for name in _FORM_FIELDS}
+
+    def text(value: object) -> str:
+        return "" if value is None else str(value)
+
+    stale = dm.stale_alert_seconds if dm is not None else None
     return {
-        "default_owners": access.default_owners(),
-        "default_viewers": access.default_viewers(),
-        "owners_default": dm is None or dm.owners is None,
-        "viewers_default": dm is None or dm.viewers is None,
-        "owners_text": "\n".join(dm.owners or []) if dm is not None else "",
-        "viewers_text": "\n".join(dm.viewers or []) if dm is not None else "",
+        "path": dm.path if dm else "",
+        "description": dm.description if dm else "",
+        "ttl_seconds": text(dm.ttl_seconds) if dm else "",
+        "retention_kind": dm.retention_kind if dm else "count",
+        "retention_count": text(dm.retention_count) if dm else "",
+        "retention_age_seconds": text(dm.retention_age_seconds) if dm else "",
+        "build_queue": dm.build_queue if dm else "",
+        "build_script": dm.build_script if dm else "",
+        "alert_recipients": "\n".join(
+            alert_service.alert_list(dm) if dm else [f"@{access.admin_group()}"]
+        ),
+        "stale_alert_hours": f"{stale / 3600:g}" if stale else "",
+        "owners": "\n".join(access.form_owners(dm)),
+        "viewers": "\n".join(access.form_viewers(dm)),
     }
 
 

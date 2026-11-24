@@ -126,20 +126,22 @@ class Strata:
         headers: dict[str, str] | None = None,
     ) -> Any:
         """Post the datamodule form with its Access fieldset, as a browser would. A list
-        given as None ticks its "use the default" box; lines are newline-separated."""
+        given as None is posted as the form shows it (unchanged); lines are
+        newline-separated."""
+        from strata.services import access
+
         dm = self.datamodule(dm_uuid)
+        with self.app.app_context():
+            shown_owners = "\n".join(access.form_owners(dm))
+            shown_viewers = "\n".join(access.form_viewers(dm))
         data: dict[str, str] = {
             "path": dm.path,
             "build_script": dm.build_script,
             "ttl_seconds": "" if dm.ttl_seconds is None else str(dm.ttl_seconds),
             "access_present": "1",
-            "owners": owners or "",
-            "viewers": viewers or "",
+            "owners": shown_owners if owners is None else owners,
+            "viewers": shown_viewers if viewers is None else viewers,
         }
-        if owners is None:
-            data["owners_default"] = "1"
-        if viewers is None:
-            data["viewers_default"] = "1"
         return self.client.post(f"/datamodules/{dm_uuid}/edit", data=data, headers=headers or {})
 
     def add_dependency(self, dm_uuid: str, depends_on_uuid: str, local_name: str) -> None:
@@ -272,7 +274,11 @@ class FakeGatekeeper:
             "root": GkUser("root", "root@example.com"),
             "asiap\\jdoe": GkUser("asiap\\jdoe", "jdoe@example.com"),
         }
-        self.groups = {"brs-finance": ["alice", "bob", "carol", "jsmith"], ADMIN_GROUP: ["root"]}
+        self.groups = {
+            "brs-finance": ["alice", "bob", "carol", "jsmith"],
+            ADMIN_GROUP: ["root"],
+            "strata-writers": [],
+        }
 
     def get_user(self, username: str) -> GkUser | None:
         return self.users.get(username)

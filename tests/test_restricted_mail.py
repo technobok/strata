@@ -117,7 +117,9 @@ def _failing_gate(strata: Strata, viewers: str | None, ttl: str = "") -> str:
 def _scheduled_build_and_stale_sweep(strata: Strata, dm_uuid: str) -> None:
     from tests.test_alerts import _age_live_version, _alerts_form, _scheduled_build, _sweep
 
-    assert _alerts_form(strata, dm_uuid, "", "1").status_code == 302  # stale after 1 hour
+    assert (
+        _alerts_form(strata, dm_uuid, "@strata-admins", "1").status_code == 302
+    )  # stale after 1 hour
     _scheduled_build(strata, dm_uuid)  # fails on the gate: "build failing"
     _age_live_version(strata, dm_uuid, 2)
     assert _sweep(strata) == ["test/sales"]  # "data is stale", with the last build error

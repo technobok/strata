@@ -130,16 +130,16 @@ REGISTRY: list[ConfigEntry] = [
         "access.default_owners",
         ConfigType.STRING_LIST,
         [],
-        "Owners of a datamodule with no owners list of its own: usernames and @groups, "
-        "comma-separated; blank = the writers group (auth.writer_group)",
+        "The owners a new datamodule starts with: usernames and @groups, comma-separated; "
+        "blank = the writers group (auth.writer_group). Existing datamodules keep their own",
         applies=Applies.LIVE,
     ),
     ConfigEntry(
         "access.default_viewers",
         ConfigType.STRING_LIST,
         ["*"],
-        "Viewers of a datamodule with no viewers list of its own: usernames, @groups, "
-        "or * for everyone signed in, comma-separated",
+        "The viewers a new datamodule starts with: usernames, @groups, or * for everyone "
+        "signed in, comma-separated. Existing datamodules keep their own",
         applies=Applies.LIVE,
     ),
     # -- gatekeeper --
