@@ -347,3 +347,32 @@ def test_an_older_datamodule_without_a_key_gets_one_on_its_page(strata: Strata) 
     strata.client.get(f"/datamodules/{dm_uuid}/edit")  # no reports yet
     with strata.app.app_context():
         assert ApiKey.get_excel_link(dm.id) is not None
+
+
+def test_the_box_link_names_every_argument(strata: Strata) -> None:
+    dm_uuid = strata.new_datamodule()
+    strata.build(dm_uuid)
+    report = strata.new_report(
+        dm_uuid,
+        body="SELECT * FROM sales WHERE region = $region AND revenue >= $least",
+        args=[
+            {
+                "name": "region",
+                "type": "text",
+                "widget": "input",
+                "default": "North",
+                "required": "yes",
+            },
+            {"name": "least", "type": "number", "widget": "input", "required": "yes"},
+        ],
+    )
+    plain = _links(_box(strata, report))["CSV"]
+    pairs = parse_qsl(urlsplit(plain).query, keep_blank_values=True)
+    assert [k for k, _v in pairs] == ["region", "least", "key"]  # key last
+    assert dict(pairs)["region"] == "North" and dict(pairs)["least"] == ""
+    box = _box(strata, report)
+    assert "Fill in least" in box  # required, no default
+    viewed = _links(_box(strata, report, "?region=South&least=100&q=B"))["CSV"]
+    vpairs = parse_qsl(urlsplit(viewed).query)
+    assert vpairs[:3] == [("region", "South"), ("least", "100"), ("q", "B")]
+    assert "Fill in" not in _box(strata, report, "?region=South&least=100")

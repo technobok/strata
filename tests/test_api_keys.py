@@ -117,7 +117,7 @@ def _page(strata: Strata, dm_uuid: str) -> str:
 def test_a_keys_links_stay_on_its_datamodule_page(strata: Strata, dm: tuple[str, str]) -> None:
     dm_uuid, rpt = dm
     token = strata.new_api_key(dm_uuid, name="finance workbook")
-    link = f"http://localhost/r/{rpt}.xlsx?key={token}"
+    link = f"http://localhost/r/{rpt}.xlsx?region=North&amp;key={token}"  # its default
     copy = f'data-copy="{link}" title="{link}">Copy: Sales</button>'
     assert copy in _page(strata, dm_uuid)
     assert copy in _page(strata, dm_uuid)  # not once: every time
@@ -143,7 +143,7 @@ def test_an_old_key_says_to_rotate_and_then_shows_its_links(
     with strata.app.app_context():
         rotated = ApiKey.get_by_uuid(key.uuid)
         assert rotated is not None
-        assert f"/r/{rpt}.xlsx?key={rotated.link_token()}" in page
+        assert f"/r/{rpt}.xlsx?region=North&amp;key={rotated.link_token()}" in page
 
 
 def test_the_reports_table_has_each_reports_excel_link(strata: Strata, dm: tuple[str, str]) -> None:
@@ -156,9 +156,11 @@ def test_the_reports_table_has_each_reports_excel_link(strata: Strata, dm: tuple
         excel = ApiKey.get_excel_link(strata.datamodule(dm_uuid).id)
         assert excel is not None  # made for the page, and listed with the keys
         token = excel.link_token()
-    for report in (rpt, other):
-        link = f"/r/{report}.xlsx?key={token}"
-        assert f'class="outline small excel-link" data-copy="http://localhost{link}"' in page
+    # every argument is in the link, with its default, so it can be changed in Excel
+    for report, query in ((rpt, f"region=North&key={token}"), (other, f"key={token}")):
+        link = f"/r/{report}.xlsx?{query}"
+        shown = link.replace("&", "&amp;")
+        assert f'class="outline small excel-link" data-copy="http://localhost{shown}"' in page
         assert strata.client.get(link, headers=ANON).status_code == 200
     # the Excel link key has its own line (Replace, Disable, no Delete), not a Named keys row
     line = page.split('id="excel-link"')[1].split("</div>\n</div>")[0]
@@ -299,3 +301,10 @@ def test_named_keys_start_closed_and_a_key_action_opens_them(
     assert '<details id="named-keys" class="section-details">' in page  # closed
     resp = strata.client.post(f"/datamodules/{dm_uuid}/apikeys", data={"name": "finance"})
     assert resp.headers["Location"].endswith("#named-keys")  # app.js opens it
+
+
+def test_a_named_keys_links_leave_out_what_it_fixes(strata: Strata, dm: tuple[str, str]) -> None:
+    dm_uuid, rpt = dm
+    token = strata.new_api_key(dm_uuid, name="north only", fixed_args="region=North")
+    page = _page(strata, dm_uuid)
+    assert f'data-copy="http://localhost/r/{rpt}.xlsx?key={token}"' in page

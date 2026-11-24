@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from flask import (
     Blueprint,
@@ -359,7 +360,7 @@ def edit(uuid: str) -> str | Response:
     api_keys = ApiKey.get_for_datamodule(dm.id)
     key_links = {
         k.id: [
-            (r.name, _excel_url(r, k.link_token()))
+            (r.name, _excel_url(r, k.link_token(), k))
             for r in reports
             if k.scope_type == "datamodule" or r.id == k.report_id
         ]
@@ -397,9 +398,19 @@ def edit(uuid: str) -> str | Response:
     )
 
 
-def _excel_url(report: Report, token: str) -> str:
-    """A report's data link for Excel's From Web: xlsx (it cannot open Parquet)."""
-    return url_for("reports.serve", report_uuid=report.uuid, ext="xlsx", key=token, _external=True)
+def _excel_url(report: Report, token: str, key: ApiKey | None = None) -> str:
+    """A report's data link for Excel's From Web: xlsx (it cannot open Parquet),
+    naming every argument with its default (report_service.link_args) so it can be
+    changed in the link, the key last. A named key's link leaves out the arguments it
+    fixes or does not let a caller set (they would be ignored)."""
+    args: list[ReportArg] = ReportArg.get_for_report(report.id)
+    if key is not None:
+        fixed = set(key.fixed_args())
+        allowed = key.parameterised_args()
+        args = [a for a in args if a.name not in fixed and (allowed is None or a.name in allowed)]
+    base = url_for("reports.serve", report_uuid=report.uuid, ext="xlsx", _external=True)
+    pairs = [*report_service.link_args(args, []), ("key", token)]
+    return f"{base}?{urlencode(pairs)}"
 
 
 def _schedule_rows(dm: Datamodule) -> list[dict[str, object]]:

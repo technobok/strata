@@ -21,6 +21,14 @@ On a report page, open **Use in Excel** (next to the export links). It shows a l
 for exactly the view you are looking at: its arguments, filters, sort and search.
 Pick a format, **Copy**, and follow [Using a key in Excel](#using-a-key-in-excel).
 
+Every link names **every argument** of the report, in order: the value in your view,
+else the argument's default, else nothing (`least=`), and the key last. To see other
+rows in a workbook, change a value in the link (in Power Query: the query's
+**Source** step) and refresh. A required argument with no default must be filled in
+before the link returns anything; the box says which. The Copy links in the
+datamodule page's Reports table name every argument with its default too. A named
+key's links leave out the arguments the key fixes (or does not let a link set).
+
 - The link carries the **datamodule's Excel key**: one per datamodule, made with the
   datamodule, and the same for everyone. It reads every report on that datamodule,
   and nothing else.

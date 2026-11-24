@@ -287,6 +287,26 @@ def _register_macro(
     return f"{macro_name}({', '.join(placeholder(arg) for arg in args)})"
 
 
+def link_args(args: Sequence[ArgLike], given: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Every argument of a report as query pairs, in the report's order: the value(s)
+    ``given`` (a view's), else its default (a multiselect's comma-separated default
+    is one pair per value), else empty. An Excel link names every argument, so a
+    workbook's owner can change one in the link (in Power Query) without knowing its
+    name."""
+    pairs: list[tuple[str, str]] = []
+    for arg in args:
+        values = [v for k, v in given if k == arg.name]
+        if not values:
+            default = arg.default_value or ""
+            values = (
+                [v.strip() for v in default.split(",") if v.strip()]
+                if arg.widget == "multiselect" and default
+                else [default]
+            )
+        pairs.extend((arg.name, v) for v in values)
+    return pairs
+
+
 def problem_on(vpath: Path, macro_name: str, body_sql: str, args: Sequence[ArgLike]) -> str | None:
     """Why a report would not run on the version file ``vpath``; None when it would.
 

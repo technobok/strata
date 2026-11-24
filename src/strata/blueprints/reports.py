@@ -335,7 +335,13 @@ def _excel_box_url(report: Report, pairs: list[tuple[str, str]]) -> str:
 
 def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = False) -> str:
     view = _excel_view(list(request.args.items(multi=True)))
-    query = urlencode([*view, ("key", key.link_token())])
+    args = ReportArg.get_for_report(report.id)
+    names = {a.name for a in args}
+    # Every argument (the view's value, else its default, else empty), then the
+    # view's filters, sort and search; the key last.
+    pairs = [*report_service.link_args(args, view), *[(k, v) for k, v in view if k not in names]]
+    needed = [a.name for a in args if a.required and not any(k == a.name and v for k, v in pairs)]
+    query = urlencode([*pairs, ("key", key.link_token())])
     links = [
         (
             label,
@@ -351,6 +357,7 @@ def _excel_box(report: Report, dm: Datamodule, key: ApiKey, replaced: bool = Fal
         links=links,
         replaced=replaced,
         key_enabled=key.enabled,
+        needed=needed,
         # Replacing breaks every workbook on the report: its datamodule's owners only.
         can_replace=access.can_own(dm),
         replace_url=url_for("reports.excel_replace", report_uuid=report.uuid)

@@ -17,6 +17,9 @@ wherever Excel reaches this server directly.{{ help_link('api-keys', 'excel-link
     <li>Choose <strong>Anonymous</strong>, then <strong>Connect</strong>.</li>
 </ol>
 <p><small>To keep the key out of the link, a workbook can send it in a header instead.{{ help_link('api-keys', 'keeping-the-key-out-of-the-link') }}</small></p>
+{% if needed %}
+<p class="excel-needed"><small><strong>Fill in {{ needed | join(', ') }}</strong> in the link (after <code>=</code>): {{ 'it is' if needed | length == 1 else 'they are' }} required and {{ 'has' if needed | length == 1 else 'have' }} no default, so the link refreshes nothing until then.</small></p>
+{% endif %}
 {% if not key_enabled %}
 <p class="excel-disabled"><strong>This Excel key is disabled:</strong> workbooks with it do not refresh until the datamodule's owners enable it again.</p>
 {% endif %}
