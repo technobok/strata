@@ -84,6 +84,13 @@
                     return '<div class="no-results">No user or group matches.</div>';
                 }
             },
+            // Tom Select keeps what was typed after a suggestion is picked; left in the
+            // box, createOnBlur would add it as an entry of its own ("@strata" next to
+            // the "@strata-admins" picked from it). Clear it whenever an entry is added.
+            onItemAdd: function () {
+                this.setTextboxValue('');
+                this.close();
+            },
             onChange: function () {
                 area.value = ts.items.join('\n');
             }
