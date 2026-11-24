@@ -43,7 +43,7 @@ How to write build scripts and reports, the URL grammar, API keys for Excel, fre
 | Page | Covers |
 |---|---|
 | [How Strata fits together](docs/index.md) | Datamodules, versions, reports, the worker; a diagram |
-| [Build scripts](docs/build-scripts.md) | `source()`, dependencies, connections and `odbc_query`, session options, the sandbox |
+| [Build scripts](docs/build-scripts.md) | `source()`, dependencies, connections and `odbc()`, session options, the sandbox |
 | [Reports](docs/reports.md) | The single-SELECT body, `$arguments`, widgets, constraint queries |
 | [Checks and runs](docs/checks.md) | Checks and severity, gate checks inside builds, saved runs and their retention |
 | [Report URLs](docs/urls.md) | Filters (`col__op=v`), `q`, `sort`, `page`, `version`, `key`, response headers |
@@ -239,12 +239,11 @@ For SQL-native logins (no domain prefix), drop the NTLM fields:
 Driver=FreeTDS;Server=host;Port=1433;Database=mydb;UID=sqluser;PWD=...;TDS_Version=7.4
 ```
 
-The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Bind the connection to a datamodule with a local name (here `navi`), then query it in the build script; the local name is the connection handle:
+The string is Fernet-encrypted before it lands in the SQLite metadata DB; on Test, strata installs `odbc_scanner` (DuckDB core extension, v1.5.2+), runs `LOAD odbc_scanner`, and confirms the connection is reachable via `odbc_connect`. Bind the connection to a datamodule with a local name (here `navi`), then query it in the build script with `odbc('<local name>', '<query>')`:
 
 ```sql
 CREATE TABLE orders AS
-SELECT * FROM odbc_query(getvariable('navi'),
-                         'SELECT OrderID, CustID, Total FROM dbo.Orders');
+SELECT * FROM odbc('navi', 'SELECT OrderID, CustID, Total FROM dbo.Orders');
 ```
 
 The inner SELECT executes on the remote SQL Server and only the result comes back to DuckDB; the rest of the build (joins with dependencies, transformations) runs in DuckDB. For PostgreSQL there's no need for ODBC — the dedicated `postgres` driver ATTACHes via DuckDB's native postgres extension and is faster.

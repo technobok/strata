@@ -75,16 +75,34 @@ build, and reports never read connections (they read the built data):
   CREATE TABLE orders AS SELECT * FROM warehouse.public.orders;
   ```
 
-- **ODBC** (SQL Server through FreeTDS) gives the script a connection handle in a
-  variable named after the local name: bound as `navi`, it is `getvariable('navi')`.
+- **ODBC** (SQL Server through FreeTDS) is read with `odbc('<local name>', '<query>')`.
   Pass the remote query as text; it runs on the server, and only its result comes
   back:
 
   ```sql
   CREATE TABLE orders AS
-  SELECT * FROM odbc_query(getvariable('navi'),
-                           'SELECT OrderID, CustID, Total FROM dbo.Orders');
+  SELECT * FROM odbc('navi', 'SELECT OrderID, CustID, Total FROM dbo.Orders');
   ```
+
+  Decimal columns (NAV's amounts and quantities) arrive exact, with their own
+  precision. Three limits of SQL Server through FreeTDS:
+
+  - **One SELECT per query.** A `WITH … SELECT` is fine; several statements are
+    not (`DECLARE`, `SET NOCOUNT ON`, a temp table, `EXEC` of dynamic SQL): FreeTDS
+    cannot describe their result. Rewrite such a query as one SELECT: a CTE instead
+    of a temp table, an expression instead of a variable (`dateadd(day,
+    datediff(day, 0, getdate()), 0)` instead of `@today`), a Jinja `{% if %}` or loop
+    instead of dynamic SQL.
+  - **One read of a connection per statement.** Two `odbc()` calls on the same
+    connection in one statement (e.g. joined by `UNION ALL`) fail. Use a statement
+    each (`CREATE TABLE … AS`, then `INSERT INTO … BY NAME`), or put the `UNION ALL`
+    inside the SQL Server query.
+  - **Use `odbc()`, not `odbc_query()` itself.** `odbc()` reads decimals the way that
+    works; `odbc_query()` with its defaults fails on every decimal column, and a
+    script may not set its `decimal_columns_*` options (one combination returns wrong
+    numbers without an error).
+
+  The handle itself is the variable `getvariable('<local name>')`.
 
 Credentials are stored encrypted. The build script never sees them.
 
@@ -97,14 +115,17 @@ company, from a `ref/companies` datamodule (added as a dependency named
 `companies`):
 
 ```sql
-CREATE TABLE stock AS
 {% for c in rows('companies', "SELECT shortname, companynamesql FROM companies ORDER BY shortname") %}
-{% if not loop.first %}UNION ALL{% endif %}
+{% if loop.first %}CREATE TABLE stock AS{% else %}INSERT INTO stock BY NAME{% endif %}
 SELECT {{ c.shortname | sqlstr }} AS company, *
-FROM odbc_query(getvariable('navi'),
-                {{ ("SELECT ItemNo, Qty FROM " ~ c.companynamesql ~ ".dbo.Stock") | sqlstr }})
+FROM odbc('navi', {{ ("SELECT ItemNo, Qty FROM " ~ c.companynamesql ~ ".dbo.Stock") | sqlstr }});
 {% endfor %}
 ```
+
+Each company is a statement of its own because one connection can be read only once
+per statement (see [Connections](#connections)). When companies live on different
+servers, add the connection's local name to the companies' rows and read
+`odbc({{ c.connection | sqlstr }}, …)`, binding each of those connections.
 
 What a template can use:
 

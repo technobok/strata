@@ -430,28 +430,75 @@ def _require_something_built(conn: duckdb.DuckDBPyConnection) -> None:
         raise RuntimeError(NOTHING_BUILT)
 
 
-# DuckDB's words when a script's odbc_query() has no usable connection handle.
+# DuckDB's words when a script's odbc()/odbc_query() has no usable connection
+# handle, or no ODBC connection is bound at all (the macro is then undefined and
+# odbc_query's extension unloaded).
 _ODBC_NULL_HANDLE = "ODBC connection must be not NULL"
-_ODBC_NOT_LOADED = 'name "odbc_query" is not in the catalog'
+_ODBC_NOT_DEFINED = (
+    'name "odbc_query" is not in the catalog',
+    "Table Function with name odbc does not exist",
+)
+# odbc_query() called directly on a SQL Server decimal column (FreeTDS).
+_ODBC_DECIMAL = "'SQLSetDescField' for SQL_DESC_TYPE failed"
+# A query of several T-SQL statements: FreeTDS describes it as having no columns.
+_ODBC_BATCH = "Resulting columns from 'SQLPrepare' and 'SQLExecute' do not match"
+# One connection read twice in one DuckDB statement (e.g. a UNION ALL of two odbc()).
+_ODBC_REUSED = "ODBC connection not found on global init"
+
+ODBC_OPTIONS_REFUSED = (
+    "A build script may not set odbc_query's decimal_columns_* options: read SQL Server "
+    "with odbc('<local name>', '...'), which sets them (one combination of them returns "
+    "wrong numbers without an error)."
+)
+ODBC_DECIMAL_HINT = (
+    "odbc_query() cannot read a SQL Server decimal column through FreeTDS. Read the "
+    "connection with odbc('<local name>', '...') instead: it reads decimals exactly."
+)
+ODBC_BATCH_HINT = (
+    "Through ODBC a query must be one SELECT (a WITH ... SELECT is fine): several "
+    "statements (DECLARE, SET, a temp table, EXEC) cannot be read. Rewrite it as one "
+    "SELECT: a CTE instead of a temp table, an expression instead of a variable, a "
+    "Jinja {% if %} or loop instead of dynamic SQL (see Build scripts)."
+)
 
 
-def _connection_hint(error: str, attachments: list[tuple[str, Connection]]) -> str | None:
-    """What to add to a build error DuckDB words poorly: an odbc_query() whose
-    getvariable() names no bound ODBC connection, or odbc_query() in a datamodule
-    with no ODBC connection bound at all (DuckDB then suggests loading the
-    extension, which the sandbox does not allow)."""
-    if _ODBC_NULL_HANDLE not in error and _ODBC_NOT_LOADED not in error:
-        return None
+NO_ODBC_BOUND = (
+    "This datamodule has no ODBC connection bound, so its build script cannot use "
+    "odbc() or odbc_query(). Bind a connection under Connections on the datamodule's "
+    "page (Strata then loads ODBC for its builds); the script reads it as "
+    "odbc('<local name>', '...')."
+)
+
+ODBC_REUSED_HINT = (
+    "A connection can be read only once in one statement. Read each company in a "
+    "statement of its own (CREATE TABLE t AS SELECT * FROM odbc(...); then "
+    "INSERT INTO t BY NAME SELECT * FROM odbc(...);), or put the UNION ALL inside the "
+    "SQL Server query (see Build scripts)."
+)
+
+
+def _explain_build_error(error: str, attachments: list[tuple[str, Connection]]) -> str | None:
+    """A clearer text for a build error DuckDB words poorly, or None to keep its own:
+    a decimal column or a multi-statement query read through FreeTDS; one connection
+    read twice in one statement; an odbc() whose
+    name is no bound ODBC connection; or odbc() in a datamodule with no ODBC
+    connection bound at all (DuckDB then says to INSTALL and LOAD its extension,
+    which a build may not do: that advice is replaced, not added to)."""
+    if _ODBC_DECIMAL in error:
+        return f"{error}\n{ODBC_DECIMAL_HINT}"
+    if _ODBC_BATCH in error:
+        return f"{error}\n{ODBC_BATCH_HINT}"
+    if _ODBC_REUSED in error:
+        return f"{error}\n{ODBC_REUSED_HINT}"
     names = [name for name, crow in attachments if crow.driver == "odbc"]
-    if not names:
-        return (
-            "This datamodule has no ODBC connection bound. Bind one under Connections on "
-            "its page; the script then reads it as odbc_query(getvariable('<local name>'), '...')."
-        )
-    handles = ", ".join(f"getvariable('{name}')" for name in names)
+    if any(s in error for s in _ODBC_NOT_DEFINED) and not names:
+        return NO_ODBC_BOUND
+    if _ODBC_NULL_HANDLE not in error:
+        return None
+    bound = ", ".join(f"odbc('{name}', '...')" for name in names) or "none"
     return (
-        "getvariable() found no ODBC connection under that name. This datamodule's ODBC "
-        f"connections: {handles}. A connection is read by the local name it is bound under."
+        f"{error}\nNo ODBC connection is bound under that name. This datamodule's ODBC "
+        f"connections: {bound}. A connection is read by the local name it is bound under."
     )
 
 
@@ -521,6 +568,8 @@ def _build_leased(
         if script != dm.build_script:
             version.set_script_snapshot(script)
         rendered = _render_sources(script, source_map)
+        if "decimal_columns_" in rendered:
+            raise RuntimeError(ODBC_OPTIONS_REFUSED)
 
         tmp_file.unlink(missing_ok=True)
         conn = duckdb.connect(str(tmp_file))
@@ -546,9 +595,9 @@ def _build_leased(
                     f"build exceeded its time limit of {deadline.seconds}s "
                     "(the build.timeout_seconds setting)"
                 ) from exc
-            hint = _connection_hint(str(exc), conn_attachments)
-            if hint:
-                raise RuntimeError(f"{exc}\n{hint}") from exc
+            explained = _explain_build_error(str(exc), conn_attachments)
+            if explained:
+                raise RuntimeError(explained) from exc
             raise
         finally:
             deadline.cancel()

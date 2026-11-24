@@ -4,12 +4,14 @@ A build script that contains ``{{`` or ``{%`` is rendered with Jinja's sandboxed
 environment before it runs (after its dependencies are resolved), so one script
 can repeat a statement per company:
 
-    CREATE TABLE stock AS
     {% for c in rows('companies', "SELECT code, db FROM companies ORDER BY code") %}
-    {% if not loop.first %}UNION ALL{% endif %}
+    {% if loop.first %}CREATE TABLE stock AS{% else %}INSERT INTO stock BY NAME{% endif %}
     SELECT {{ c.code | sqlstr }} AS company, *
-    FROM odbc_query(getvariable('navi'), {{ ("SELECT * FROM " ~ c.db ~ ".dbo.Stock") | sqlstr }})
+    FROM odbc('navi', {{ ("SELECT * FROM " ~ c.db ~ ".dbo.Stock") | sqlstr }});
     {% endfor %}
+
+(One statement per company: one ODBC connection can be read only once per
+statement — see docs/build-scripts.md.)
 
 - ``rows(local_name, sql)``: the rows (as dicts) of one SELECT on a
   dependency's version, run through the serve sandbox. At most ``MAX_ROWS``.

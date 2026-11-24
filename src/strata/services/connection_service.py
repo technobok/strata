@@ -76,17 +76,39 @@ def _postgres_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) 
     conn.execute(f"ATTACH '{conn_str}' AS {alias} (TYPE postgres)")
 
 
+# How build scripts read an ODBC connection: odbc('<local name>', '<query>').
+# Through FreeTDS, odbc_query()'s SQL Server defaults fail on EVERY decimal
+# column ("'SQLSetDescField' for SQL_DESC_TYPE failed"): reading decimals as text,
+# parsed back into the exact DECIMAL(p,s), works. Measured 2026-11-24 on Debian's
+# tdsodbc 1.3.17 + DuckDB 1.5.6 against SQL Server 2022. Setting
+# decimal_columns_precision_through_ard=FALSE with decimal_columns_as_ard_type=FALSE
+# instead returns WRONG numbers without an error, so scripts may not set these
+# options themselves (datamodule_service refuses them). TEMP: the macro lives in
+# the build's session, never in the version file.
+ODBC_MACRO = (
+    "CREATE OR REPLACE TEMP MACRO odbc(name, query) AS TABLE "
+    "SELECT * FROM odbc_query(getvariable(name), query, "
+    "decimal_columns_precision_through_ard = FALSE, decimal_columns_as_chars = TRUE)"
+)
+
+
+def define_odbc_macro(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute(ODBC_MACRO)
+
+
 def _odbc_attach(conn: duckdb.DuckDBPyConnection, alias: str, params: dict) -> None:
-    """Create a SET VARIABLE <alias> holding the odbc_connect() handle.
+    """Create a SET VARIABLE <alias> holding the odbc_connect() handle, and the
+    ``odbc(name, query)`` macro that reads it.
 
     DuckDB's core odbc_scanner extension is a query-function extension, not a
     storage extension — there's no `ATTACH ... TYPE odbc_scanner`. Instead,
     you connect once and pass the handle to odbc_query() per SELECT. We stash
     the handle in a session variable named after the local name, so build
-    scripts reach it as `odbc_query(getvariable('<alias>'), '...')`.
+    scripts reach it as `odbc('<alias>', '...')` (see ODBC_MACRO).
     """
     cs = str(params["connection_string"]).replace("'", "''")
     conn.execute(f"SET VARIABLE {alias} = odbc_connect('{cs}')")
+    define_odbc_macro(conn)
 
 
 DRIVERS: dict[str, DriverSpec] = {
@@ -134,7 +156,7 @@ DRIVERS: dict[str, DriverSpec] = {
         # community/odbc_scanner which 404s.
         extensions=["odbc_scanner"],
         attach=_odbc_attach,
-        usage="odbc_query(getvariable('{name}'), '<SQL Server query>')",
+        usage="odbc('{name}', '<SQL Server query>')",
     ),
 }
 
