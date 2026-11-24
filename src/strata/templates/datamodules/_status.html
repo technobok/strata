@@ -2,6 +2,7 @@
 <p id="dm-status"{% if active_jobs %} hx-get="{{ url_for('datamodules.status', uuid=datamodule.uuid) }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
     Status: <strong>{{ datamodule.build_status }}</strong>
     {% if datamodule.live_version_id %} · live version set{% endif %}
+    {% if datamodule.live_version_id and datamodule.valid_until %} · <strong>stale</strong>: the build script changed after the live version was built; the next read or scheduled run rebuilds it, or press Build{% endif %}
     {% for job in active_jobs %} · {{ job.kind }} {{ job.status }} <small>({{ job.reason }})</small>{% endfor %}
     {% if worker_missing %}
     <br><mark>No strata-worker has checked in for 2 minutes: queued builds will not run until one does.</mark>

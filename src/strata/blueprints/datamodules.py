@@ -318,6 +318,7 @@ def edit(uuid: str) -> str | Response:
         elif access_error:
             error = access_error
         else:
+            script_changed = build_script != dm.build_script
             dm.update(
                 modified_by=g.user.username,
                 path=path,
@@ -333,7 +334,18 @@ def edit(uuid: str) -> str | Response:
                 dm.set_alerts(*alerts)
             if lists is not None and lists != (dm.owners, dm.viewers):
                 dm.set_access(*lists, modified_by=g.user.username)
-            flash("Datamodule saved.", "success")
+            if script_changed and dm.live_version_id is not None:
+                # The live data comes from the old script: stale from now, so the
+                # next read or scheduled run rebuilds it (or the Build button).
+                dm.mark_stale()
+                flash(
+                    "Datamodule saved. Its build script changed, so its data is stale: the "
+                    "next read or scheduled run rebuilds it with the new script (or press "
+                    "Build now).",
+                    "success",
+                )
+            else:
+                flash("Datamodule saved.", "success")
             if lists is not None:
                 _warn_dependants(dm)
             return redirect(url_for("datamodules.edit", uuid=dm.uuid))

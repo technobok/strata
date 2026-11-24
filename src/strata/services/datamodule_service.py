@@ -682,7 +682,8 @@ def _build_leased(
         cur.execute(
             "UPDATE datamodule SET live_version_id = ?, build_status = 'ready', "
             "storage_version = ?, last_build_error = NULL, consecutive_failures = 0, "
-            "retry_after = NULL, access_lock = NULL, modified_at = ? WHERE id = ?",
+            "retry_after = NULL, access_lock = NULL, valid_until = NULL, modified_at = ? "
+            "WHERE id = ?",
             (version.id, storage_version, ended_at, dm.id),
         )
 

@@ -223,6 +223,14 @@ class Datamodule:
             cursor.execute(f"UPDATE datamodule SET {', '.join(updates)} WHERE id = ?", params)
         return True
 
+    def mark_stale(self) -> None:
+        """Its live version no longer matches its build script: stale from now
+        (``valid_until``), until the next successful build clears it."""
+        now = datetime.now(UTC).isoformat()
+        with transaction() as cur:
+            cur.execute("UPDATE datamodule SET valid_until = ? WHERE id = ?", (now, self.id))
+        self.valid_until = now
+
     def set_alerts(self, recipients: list[str] | None, stale_alert_seconds: int | None) -> None:
         """Who hears about failures (None = the admins), and the stale-alert window."""
         with transaction() as cur:

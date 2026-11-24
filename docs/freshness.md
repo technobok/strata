@@ -18,6 +18,11 @@ get before it counts as stale:
 A schedule that rebuilds just before the TTL runs out keeps reads fresh without
 anyone waiting (see [Schedules](schedules.md)).
 
+**Changing the build script** makes the data stale at once, whatever the TTL: the
+live version came from the old script. The next read, or the refresh before a
+scheduled run, rebuilds it with the new script; **Build** does it now. The
+datamodule's status line says so until a build succeeds.
+
 ## Stale data
 
 When a report is read and its data is stale:

@@ -191,3 +191,27 @@ def test_a_dependency_in_backoff_fails_an_automatic_downstream_build(strata: Str
     [job] = _jobs(strata, down)
     assert job.status == "skipped"
     assert "core/sales" in (job.error or "") and "no automatic retry" in (job.error or "")
+
+
+def _json(strata: Strata, rpt: str) -> list[dict]:
+    resp = strata.client.get(f"/r/{rpt}.json")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return json.loads(resp.get_data(as_text=True))
+
+
+def test_a_changed_build_script_makes_the_data_stale_until_rebuilt(strata: Strata) -> None:
+    """The live version came from the old script: a script change marks it stale, so
+    the next read rebuilds it with the new one; a successful build clears the mark."""
+    dm_uuid = strata.new_datamodule()  # no TTL: it would never go stale by age
+    strata.build(dm_uuid)
+    rpt = strata.new_report(dm_uuid, body="SELECT count(*) AS n FROM sales")
+    assert _json(strata, rpt) == [{"n": 3}]
+    strata.set_script(dm_uuid, "CREATE TABLE sales AS SELECT 1 AS id")  # one row now
+    dm = strata.datamodule(dm_uuid)
+    assert dm.valid_until is not None and dm.build_status == "ready"  # not built yet
+    page = strata.client.get(f"/datamodules/{dm_uuid}/edit").get_data(as_text=True)
+    assert "the build script changed after the live version was built" in page
+    assert _json(strata, rpt) == [{"n": 1}]  # this read rebuilt it first
+    assert strata.datamodule(dm_uuid).valid_until is None
+    strata.set_script(dm_uuid, "CREATE TABLE sales AS SELECT 1 AS id")  # unchanged
+    assert strata.datamodule(dm_uuid).valid_until is None
