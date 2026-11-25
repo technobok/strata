@@ -32,7 +32,14 @@ from strata.models.datamodule import Datamodule
 from strata.models.datamodule_version import DatamoduleVersion
 from strata.models.report import Report
 from strata.models.report_arg import ReportArg
-from strata.services import datamodule_service, duck, query_filter, stream_service, template_service
+from strata.services import (
+    datamodule_service,
+    duck,
+    query_filter,
+    stream_service,
+    table_view,
+    template_service,
+)
 
 log = logging.getLogger(__name__)
 
@@ -143,6 +150,7 @@ class TableResult:
     error: str | None = None
     applied_filters: list[query_filter.AppliedFilter] = field(default_factory=list)
     applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
+    view: table_view.TableView | None = None  # the shown cells (None on an error)
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -433,6 +441,7 @@ def page_of(
     return TableResult(
         columns=col_names,
         rows=rows,
+        view=table_view.render(columns, rows),
         row_count=len(rows),
         total_rows=total,
         page=page,

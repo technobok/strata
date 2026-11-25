@@ -23,7 +23,6 @@ import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 from zoneinfo import ZoneInfo
 
 from flask import current_app
@@ -35,7 +34,7 @@ from strata.models.report import Report
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.schedule import Schedule
-from strata.services import text_format
+from strata.services import table_view, text_format
 
 log = logging.getLogger(__name__)
 
@@ -246,30 +245,34 @@ def run_link(run: ReportRun) -> str | None:
     return f"{base}/runs/{run.uuid}" if base else None
 
 
-def _first_rows(run: ReportRun, dm: Datamodule) -> tuple[list[str], list[tuple[Any, ...]]]:
+def _first_rows(run: ReportRun, dm: Datamodule) -> table_view.TableView:
+    """The run's first INLINE_ROWS rows as the mail shows them."""
     from strata.services import duck, run_service
 
     path = run_service.snapshot_file(dm.uuid, run)
     if path is None or not path.exists():
-        return [], []
+        return table_view.TableView()
     conn = duck.snapshot_conn(path)
     try:
-        cursor = conn.execute(f"SELECT * FROM snapshot LIMIT {INLINE_ROWS}")
-        rows = cursor.fetchall()
-        columns = [str(d[0]) for d in cursor.description or []]
+        sql = f"SELECT * FROM snapshot LIMIT {INLINE_ROWS}"
+        columns = [(str(r[0]), str(r[1])) for r in conn.execute(f"DESCRIBE {sql}").fetchall()]
+        rows = conn.execute(sql).fetchall()
     finally:
         conn.close()
-    return columns, rows
+    return table_view.render(columns, rows)
 
 
-def _table(columns: list[str], rows: list[tuple[Any, ...]]) -> Markup:
-    cell = "border:1px solid #ccc;padding:3px 6px;text-align:left;"
-    head = "".join(f'<th style="{cell}background:#f3f3f3;">{escape(c)}</th>' for c in columns)
+def _table(view: table_view.TableView) -> Markup:
+    cell = "border:1px solid #ccc;padding:3px 6px;"
+    head = "".join(
+        f'<th style="{cell}text-align:{c.align};background:#f3f3f3;">{escape(c.name)}</th>'
+        for c in view.columns
+    )
     body = "".join(
         "<tr>"
-        + "".join(f'<td style="{cell}">{escape("" if v is None else v)}</td>' for v in row)
+        + "".join(f'<td style="{cell}text-align:{c.align};">{escape(c.text)}</td>' for c in row)
         + "</tr>"
-        for row in rows
+        for row in view.rows
     )
     return Markup(
         f'<table style="border-collapse:collapse;font-size:13px;"><thead><tr>{head}</tr></thead>'
@@ -299,16 +302,16 @@ def build_run_mail(
     if access.is_restricted(dm):
         # Mail bodies sit in Outbox's shared database: rows of restricted data stay in
         # Strata, behind its viewers list (user decision 2026-11-23).
-        columns, rows = [], []
+        view = table_view.TableView()
         shown = (
             f"{_rows_word(count)}. Who may read {dm.path} is restricted, so the rows are "
             "not in this mail: open the run in Strata."
         )
     else:
-        columns, rows = _first_rows(run, dm)
+        view = _first_rows(run, dm)
         shown = (
-            f"The first {len(rows)} of {_rows_word(count)}:"
-            if count > len(rows)
+            f"The first {len(view.rows)} of {_rows_word(count)}:"
+            if count > len(view.rows)
             else f"{_rows_word(count)}:"
         )
     link = run_link(run)
@@ -329,7 +332,7 @@ def build_run_mail(
         about=text_format.markdown(report.description),
         first=first,
         shown=shown,
-        table=_table(columns, rows) if rows else "",
+        table=_table(view) if view.rows else "",
         more=more,
         footer=footer,
     )

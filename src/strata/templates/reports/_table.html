@@ -38,7 +38,7 @@
 </div>
 {% endif %}
 
-{% if result and not result.error and result.columns %}
+{% if result and not result.error and result.view and result.columns %}
 <div class="run-info">
     <span>{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}</span>
     {% if result.page_count > 1 %}<span>Page {{ result.page }} of {{ result.page_count }}</span>{% endif %}
@@ -47,17 +47,17 @@
     <table>
         <thead>
             <tr>
-                {% for col in result.columns %}
-                <th class="{% if ui.sort_state.get(col) %}sort-{{ ui.sort_state[col] }}{% endif %}"><a
-                    href="{{ ui.sort_urls[col] }}" hx-get="{{ ui.sort_urls[col] }}"
-                    hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col }}</a></th>
+                {% for col in result.view.columns %}
+                <th class="align-{{ col.align }}{% if ui.sort_state.get(col.name) %} sort-{{ ui.sort_state[col.name] }}{% endif %}"><a
+                    href="{{ ui.sort_urls[col.name] }}" hx-get="{{ ui.sort_urls[col.name] }}"
+                    hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col.name }}</a></th>
                 {% endfor %}
             </tr>
         </thead>
         <tbody>
-            {% for row in result.rows %}
+            {% for row in result.view.rows %}
             <tr>
-                {% for cell in row %}<td>{{ cell if cell is not none else '' }}</td>{% endfor %}
+                {% for cell in row %}<td{% if cell.align != 'left' %} class="align-{{ cell.align }}"{% endif %}>{{ cell.text }}</td>{% endfor %}
             </tr>
             {% else %}
             <tr><td colspan="{{ result.columns | length }}">No rows match.</td></tr>

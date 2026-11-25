@@ -478,6 +478,17 @@ table.reads td code {
     display: block;
 }
 
+/* A column's alignment (services/cell_format: numbers, dates and times right). A
+   number or date never wraps at its '-' (2026-11-25): the table scrolls instead. */
+.results-container .align-right {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.results-container .align-center {
+    text-align: center;
+}
+
 /* Pinned-version banner (not .flash: app.js auto-dismisses those) */
 .version-banner {
     padding: 0.5rem 1rem;

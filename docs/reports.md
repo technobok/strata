@@ -127,6 +127,10 @@ list empty and is logged.
   has the same table, with its values fixed: open **View current** to change them.
 - The table has sortable headers, a search box, filter chips and a pager. Every
   change is kept in the URL, so a link reproduces the same view.
+- Values show exactly as they are stored: decimals keep every place their type has
+  (a `DECIMAL(38,20)` shows 20), with no rounding and no thousands separators; dates
+  and times are ISO (`2026-11-25`, `14:30:00`, `2026-11-25 14:30:00`); booleans are
+  `true`/`false`. Numbers, dates and times line up on the right. Mail shows the same.
 - The export links download the same rows as Parquet, CSV, JSON or XLSX.
 
 See [Report URLs](urls.md) for everything a URL can carry, and
