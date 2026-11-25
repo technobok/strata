@@ -38,6 +38,51 @@ _TOTAL_NEEDS = {
 }
 
 
+# The Format page offers these first, by the column's kind (cell_format.kind).
+PRESETS: dict[str, tuple[str, ...]] = {
+    cell_format.INTEGER: ("0", "#,##0"),
+    cell_format.DECIMAL: (
+        "#,##0.00",
+        "#,##0.00;[Red]-#,##0.00",
+        "0.00",
+        "#,##0",
+        "0.0000",
+        "0.000000",
+        "0.0%",
+        "0.00%",
+    ),
+    cell_format.DATE: ("yyyy-mm-dd", "d mmm yyyy", "dd/mm/yyyy", "ddd d mmm yyyy"),
+    cell_format.TIMESTAMP: (
+        "yyyy-mm-dd hh:mm",
+        "yyyy-mm-dd hh:mm:ss",
+        "d mmm yyyy h:mm AM/PM",
+        "yyyy-mm-dd",
+    ),
+    cell_format.TIME: ("hh:mm", "hh:mm:ss", "h:mm AM/PM"),
+    cell_format.TEXT: ("@",),
+}
+PRESETS[cell_format.FLOAT] = PRESETS[cell_format.DECIMAL]
+
+
+def codes_for(duck_type: str, documents: Sequence[str]) -> list[str]:
+    """Format codes for a column of ``duck_type``: the presets for its kind, then the
+    codes other reports use (``documents``: their stored JSON) that fit it."""
+    codes = list(PRESETS.get(cell_format.kind(duck_type), ()))
+    for document in documents:
+        try:
+            used = from_json(document)
+        except PresentationError:
+            continue
+        for c in used.columns:
+            if c.format and c.format not in codes:
+                try:
+                    excel_format.compile(c.format, duck_type)
+                except excel_format.FormatError:
+                    continue
+                codes.append(c.format)
+    return codes
+
+
 class PresentationError(ValueError):
     """A presentation document (JSON, or a definition file's keys) of the wrong shape."""
 

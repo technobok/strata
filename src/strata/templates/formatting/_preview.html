@@ -1,0 +1,11 @@
+{# The Format page's preview: the report's first page with the draft settings
+   (view: blueprints/formatting._View). Also sent as JSON by the preview endpoint. #}
+{% if view.missing_args and not view.result %}
+<p class="preview-note">The preview needs a value for {% for a in view.missing_args %}<code>{{ a.name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}: give one above.</p>
+{% elif view.result and view.result.error %}
+<div class="error-box">{{ view.result.error }}</div>
+{% elif view.result and view.result.view %}
+<p class="preview-note"><small>The first {{ view.result.row_count }} of {{ view.result.total_rows }} row{{ 's' if view.result.total_rows != 1 else '' }}, as the report page will show them.</small></p>
+{% set result = view.result %}{% set sortable = false %}
+{% include "reports/_grid.html" %}
+{% endif %}

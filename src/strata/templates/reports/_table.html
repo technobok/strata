@@ -43,28 +43,7 @@
     <span>{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}</span>
     {% if result.page_count > 1 %}<span>Page {{ result.page }} of {{ result.page_count }}</span>{% endif %}
 </div>
-<div class="results-container">
-    <table>
-        <thead>
-            <tr>
-                {% for col in result.view.columns %}
-                <th class="align-{{ col.align }}{% if ui.sort_state.get(col.name) %} sort-{{ ui.sort_state[col.name] }}{% endif %}"><a
-                    href="{{ ui.sort_urls[col.name] }}" hx-get="{{ ui.sort_urls[col.name] }}"
-                    hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col.name }}</a></th>
-                {% endfor %}
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in result.view.rows %}
-            <tr>
-                {% for cell in row %}<td{% if cell.align != 'left' %} class="align-{{ cell.align }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
-            </tr>
-            {% else %}
-            <tr><td colspan="{{ result.view.columns | length }}">No rows match.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+{% set sortable = true %}{% include "reports/_grid.html" %}
 {% if result.page_count > 1 or result.page > 1 %}
 <nav class="pager">
     {% if ui.pager.prev_url %}<a href="{{ ui.pager.prev_url }}" hx-get="{{ ui.pager.prev_url }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">&lsaquo; Prev</a>{% endif %}

@@ -1135,3 +1135,63 @@ td .severity {
 .report-description > :last-child {
     margin-bottom: 0;
 }
+
+/* The Format page (templates/formatting/page.html) */
+.cheat-sheets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 2rem;
+}
+
+.cheat-sheets details {
+    flex: 1 1 20rem;
+}
+
+.format-columns td {
+    vertical-align: top;
+}
+
+.format-columns th {
+    white-space: nowrap;
+}
+
+.format-link details {
+    margin: 0;
+}
+
+.format-link summary {
+    padding-top: 0.5rem;
+}
+
+.format-columns input[type="text"],
+.format-columns select {
+    margin-bottom: 0.25rem;
+    min-width: 11rem;
+}
+
+.format-column-name small {
+    display: block;
+}
+
+.format-columns .sample,
+.format-columns output {
+    display: block;
+    color: var(--pico-muted-color);
+    font-size: 0.85em;
+    overflow-wrap: anywhere;
+}
+
+.format-columns .field-message:empty {
+    display: none;
+}
+
+.format-link {
+    min-width: 16rem;
+}
+
+label.inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+}

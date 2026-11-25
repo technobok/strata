@@ -280,6 +280,51 @@ def save_report(
     return saved
 
 
+class PresentationRefused(AuthoringError):
+    """Settings with problems: ``problems`` says which field each is about."""
+
+    def __init__(self, problems: list[Problem]) -> None:
+        self.problems = problems
+        super().__init__(
+            "Not saved: the report's formatting has problems.\n" + presentation.describe(problems)
+        )
+
+
+def check_presentation(
+    dm: Datamodule, report: Report, look: Presentation
+) -> tuple[report_service.Described | None, list[Problem]]:
+    """The report described on ``dm``'s live data (None: no data yet) and every
+    problem of ``look`` for it."""
+    live = _live_version_file(dm)
+    described = None
+    if live is not None:
+        described = report_service.describe_on(
+            live,
+            report.macro_name,
+            report.body_sql,
+            ReportArg.get_for_report(report.id),
+            [rule.when for rule in look.styles],
+        )
+    return described, presentation_problems(look, described)
+
+
+def save_presentation(dm: Datamodule, report: Report, look: Presentation, actor: str) -> None:
+    """Set a report's settings (the Format page); PresentationRefused lists every
+    problem, AuthoringError when the report itself does not run."""
+    look = look.normalised()
+    described, problems = check_presentation(dm, report, look)
+    if described is not None and described.problem is not None:
+        raise AuthoringError(
+            f"Not saved: the report does not run on the data of {dm.path}: fix it first.\n"
+            f"{described.problem}"
+        )
+    if problems:
+        raise PresentationRefused(problems)
+    Report.set_presentation(report.id, look.to_json(), actor)
+    if described is not None:
+        Report.set_presentation_problem(report.id, None)
+
+
 def presentation_problems(
     shown: Presentation, described: report_service.Described | None
 ) -> list[Problem]:

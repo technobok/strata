@@ -157,6 +157,7 @@ def _build_app(app: Flask) -> Flask:
         connections,
         datamodules,
         diag,
+        formatting,
         help,
         people,
         reports,
@@ -167,6 +168,7 @@ def _build_app(app: Flask) -> Flask:
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(datamodules.bp)
+    app.register_blueprint(formatting.bp)
     app.register_blueprint(reports.bp)
     app.register_blueprint(tags.bp)
     app.register_blueprint(admin.bp)

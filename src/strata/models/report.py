@@ -90,6 +90,16 @@ class Report:
             )
 
     @staticmethod
+    def presentations() -> list[str]:
+        """Every report's stored presentation JSON (for codes used in other reports)."""
+        rows = (
+            get_db()
+            .execute("SELECT presentation FROM report WHERE presentation IS NOT NULL")
+            .fetchall()
+        )
+        return [str(r[0]) for r in rows]
+
+    @staticmethod
     def get_by_id(report_id: int) -> Report | None:
         db = get_db()
         row = db.execute(

@@ -14,6 +14,7 @@
 <div class="actions">
     {% if can_own(datamodule) %}
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit</a>
+    <a href="{{ url_for('formatting.page', report_uuid=report.uuid) }}" role="button" class="outline small">Format</a>
     {% endif %}
     {% if can_own(datamodule) and not pinned_version %}
     <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}"

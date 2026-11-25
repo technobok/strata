@@ -95,6 +95,7 @@
 {% if report %}
 <div class="actions">
     <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Open</a>
+    <a href="{{ url_for('formatting.page', report_uuid=report.uuid) }}" role="button" class="outline small">Format</a>
     <form method="post" action="{{ url_for('runs.run_now', report_uuid=report.uuid) }}"
           title="Run with the default arguments and save the rows">
         <button type="submit" class="outline small">Run now</button>

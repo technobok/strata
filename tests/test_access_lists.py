@@ -79,7 +79,10 @@ def _authoring_urls(strata: Strata) -> list[tuple[str, str]]:
     urls: list[tuple[str, str]] = []
     for rule in strata.app.url_map.iter_rules():
         blueprint = rule.endpoint.partition(".")[0]
-        if blueprint not in ("datamodules", "schedules") and rule.endpoint != "runs.run_now":
+        if (
+            blueprint not in ("datamodules", "schedules", "formatting")
+            and rule.endpoint != "runs.run_now"
+        ):
             continue
         if rule.endpoint in ("datamodules.index", "datamodules.new", "schedules.preview"):
             continue  # they name no datamodule

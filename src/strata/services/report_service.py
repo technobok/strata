@@ -153,6 +153,7 @@ class TableResult:
     applied_filters: list[query_filter.AppliedFilter] = field(default_factory=list)
     applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
     view: table_view.TableView | None = None  # the shown cells (None on an error)
+    types: list[str] = field(default_factory=list)  # DuckDB type per column
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -459,6 +460,23 @@ def run_table(
     )
 
 
+def preview_table(
+    report: Report,
+    dm: Datamodule,
+    arg_values: dict[str, list[str]],
+    version: DatamoduleVersion,
+    look: Presentation,
+) -> TableResult:
+    """The first page of the report on ``version`` shown with ``look`` (a draft of its
+    settings, for the Format page). ArgError propagates."""
+    try:
+        conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
+    except duckdb.Error as exc:
+        return TableResult(error=f"Query error: {exc}")
+    _, spec = query_filter.parse_params([], set())
+    return page_of(conn, final_sql, binds, columns, spec, look, table_view.Links.here())
+
+
 def page_of(
     conn: duckdb.DuckDBPyConnection,
     final_sql: str,
@@ -509,6 +527,7 @@ def page_of(
         columns=col_names,
         rows=rows,
         view=table_view.render(columns, rows, look, links),
+        types=[t for _, t in columns],
         row_count=len(rows),
         total_rows=total,
         page=page,

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% macro message(field) -%}
+<small class="field-message" data-message-for="{{ field }}">{{ marks.get(field, '') }}</small>
+{%- endmacro %}
+
+{% macro invalid(field) -%}
+data-field="{{ field }}"{% if field in marks %} aria-invalid="true"{% endif %}
+{%- endmacro %}
+
+{% block title %}Format: {{ report.name }} — Strata{% endblock %}
+
+{% block content %}
+<hgroup>
+    <h1>Format: {{ report.name }}</h1>
+    <p>Datamodule: <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">{{ datamodule.path }}</a></p>
+</hgroup>
+<div class="actions">
+    <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Open the report</a>
+    <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit the report</a>
+</div>
+<p>How the report's rows are shown: formats, alignment, hidden columns and links. Its data
+never changes.{{ help_link('formatting', 'the-format-page') }}</p>
+
+{% if datamodule.access_lock %}
+<div class="error-box">{{ datamodule.path }} is locked: {{ datamodule.access_lock }}</div>
+{% elif view.no_data %}
+<article class="format-no-data">Build the datamodule to see the report's columns: the settings
+are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodule.uuid) }}">Open {{ datamodule.path }}</a></article>
+{% elif view.report_problem %}
+<div class="error-box report-problem"><strong>The report does not run on the data of {{ datamodule.path }}</strong>: fix it before formatting it.
+{{ view.report_problem }}</div>
+{% else %}
+{% if error %}<div class="error-box format-error">{{ error }}</div>{% endif %}
+
+<form method="post" id="format-form" data-preview="{{ url_for('formatting.preview', report_uuid=report.uuid) }}">
+    <div class="cheat-sheets">
+        <details>
+            <summary>Format codes</summary>
+            <ul>
+                <li><code>0</code> a digit, <code>#</code> a digit only when needed, <code>.</code> the decimal point, <code>,</code> thousands: <code>#,##0.00</code> → 1,234.50</li>
+                <li><code>%</code> percent: <code>0.0%</code> → 25.6%; <code>"text"</code> in quotes: <code>0.00" kg"</code></li>
+                <li>Sections <code>positive;negative;zero</code>: <code>#,##0.00;(#,##0.00)</code> → (5.00)</li>
+                <li>Dates: <code>yyyy-mm-dd</code>, <code>d mmm yyyy</code> → 5 Nov 2026, <code>hh:mm:ss</code>, <code>h:mm AM/PM</code></li>
+                <li>Text: <code>@</code> is the text: <code>"Item "@</code></li>
+            </ul>
+            <p>{{ help_link('formatting', 'formats') }} Every code and what is not supported.</p>
+        </details>
+        <details>
+            <summary>Link templates</summary>
+            <ul>
+                <li><code>{Column}</code> the row's value, encoded; <code>{+Column}</code> as it is (a column holding an address)</li>
+                <li><code>https://…?item={Item}</code> an address; <code>/nav?item={Item}</code> this site; <code>r/&lt;report id&gt;.html?item={Item}</code> another report</li>
+                <li>An empty value in the template: that cell has no link</li>
+            </ul>
+            <p>{{ help_link('formatting', 'links') }} Where links go and which are allowed.</p>
+        </details>
+    </div>
+
+    <div class="table-scroll">
+    <table class="format-columns">
+        <thead><tr>
+            <th>Column</th>
+            <th>Format{{ help_link('formatting', 'formats') }}</th>
+            <th>Align{{ help_link('formatting', 'alignment') }}</th>
+            <th>Hide{{ help_link('formatting', 'hidden-columns') }}</th>
+            <th>Link{{ help_link('formatting', 'links') }}</th>
+        </tr></thead>
+        <tbody>
+        {% for row in view.rows %}{% set s = row.setting %}{% set col = 'column:' ~ row.name ~ ':' %}
+        <tr>
+            <td class="format-column-name">
+                <input type="hidden" name="{{ row.key }}-name" value="{{ row.name }}">
+                <input type="hidden" name="{{ row.key }}-total" value="{{ s.total }}">
+                <strong>{{ row.name }}</strong>
+                <small><code>{{ row.duck_type }}</code></small>
+                {% if row.sample %}<small class="sample" title="Its first value, plain">{{ row.sample }}</small>{% endif %}
+            </td>
+            <td>
+                {% if row.kind in formattable %}
+                <input type="text" name="{{ row.key }}-format" value="{{ s.format }}" list="{{ row.key }}-codes"
+                       placeholder="plain" autocomplete="off" spellcheck="false"
+                       aria-label="Format of {{ row.name }}" {{ invalid(col ~ 'format') }}>
+                {{ message(col ~ 'format') }}
+                <datalist id="{{ row.key }}-codes">{% for code in row.codes %}<option value="{{ code }}"></option>{% endfor %}</datalist>
+                <output data-sample="{{ row.key }}-format" title="Its first value with this format">{{ row.shown if s.format else '' }}</output>
+                {% else %}
+                <small>No formats for {{ row.duck_type }}</small>
+                {% endif %}
+            </td>
+            <td>
+                <select name="{{ row.key }}-align" aria-label="Alignment of {{ row.name }}" {{ invalid(col ~ 'align') }}>
+                    {% for a in aligns %}<option value="{{ a }}" {% if s.align == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+                </select>
+                {{ message(col ~ 'align') }}
+            </td>
+            <td>
+                <input type="checkbox" name="{{ row.key }}-hidden" {% if s.hidden %}checked{% endif %}
+                       aria-label="Hide {{ row.name }} on the page and in mail" {{ invalid(col ~ 'hidden') }}>
+                {{ message(col ~ 'hidden') }}
+            </td>
+            <td class="format-link">
+                {% set link_marked = (col ~ 'link') in marks or (col ~ 'link_text') in marks or (col ~ 'new_tab') in marks %}
+                <details {% if s.link or s.link_text or s.new_tab or link_marked %}open{% endif %}>
+                <summary>{% if s.link %}Link{% else %}Add a link{% endif %}</summary>
+                <input type="text" id="{{ row.key }}-link" name="{{ row.key }}-link" value="{{ s.link }}"
+                       placeholder="no link" autocomplete="off" spellcheck="false"
+                       aria-label="Link of {{ row.name }}" {{ invalid(col ~ 'link') }}>
+                {{ message(col ~ 'link') }}
+                <select data-insert-into="{{ row.key }}-link" aria-label="Insert a column into the link of {{ row.name }}">
+                    <option value="">Insert a column…</option>
+                    {% for r in view.rows %}<option value="{{ r.name }}">{{ r.name }}</option>{% endfor %}
+                </select>
+                <input type="text" name="{{ row.key }}-link_text" value="{{ s.link_text }}"
+                       placeholder="link text: the value" autocomplete="off"
+                       aria-label="Link text of {{ row.name }}" {{ invalid(col ~ 'link_text') }}>
+                {{ message(col ~ 'link_text') }}
+                <label class="inline-check">
+                    <input type="checkbox" name="{{ row.key }}-new_tab" {% if s.new_tab %}checked{% endif %} {{ invalid(col ~ 'new_tab') }}>
+                    New tab
+                </label>
+                {{ message(col ~ 'new_tab') }}
+                <output data-sample="{{ row.key }}-link">{{ row.link }}</output>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    {% if view.stale %}
+    <fieldset class="format-stale">
+        <legend>No longer in the result</legend>
+        <p><small>These columns have settings but the report no longer has them (its SQL
+        changed, or a rebuild dropped them). Tick Remove to drop their settings, or bring
+        the column back.</small></p>
+        {% for c in view.stale %}{% set field = 'column:' ~ c.name ~ ':name' %}
+        <input type="hidden" name="s-{{ loop.index0 }}-json" value="{{ stale_json(c) }}">
+        <label class="inline-check">
+            <input type="checkbox" name="s-{{ loop.index0 }}-remove" {{ invalid(field) }}>
+            Remove the settings of <strong>{{ c.name }}</strong>
+        </label>
+        {{ message(field) }}
+        {% endfor %}
+    </fieldset>
+    {% endif %}
+
+    {# Live: format.js fills it as the settings are typed (a refused save shows them above). #}
+    <div id="format-problems" class="error-box" {% if not marks or error %}hidden{% endif %}>
+        {% for m in view.problems %}<div>{{ m.message }}</div>{% endfor %}
+    </div>
+
+    <div class="actions">
+        <button type="submit">Save</button>
+        <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline secondary">Cancel</a>
+    </div>
+
+    <h2 id="preview">Preview</h2>
+    {% if view.missing_args %}
+    <div class="inline-form">
+        {% for a in view.missing_args %}
+        <label>{{ a.name }} <input type="text" name="arg-{{ a.name }}" value="{{ view.arg_values.get(a.name, '') }}"></label>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div id="format-preview">{% include "formatting/_preview.html" %}</div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/format.js') }}"></script>
+{% endblock %}

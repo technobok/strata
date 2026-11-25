@@ -1,0 +1,29 @@
+{# The results table itself (result.view: services/table_view). `sortable` = headers
+   link to sorted views (the report and run pages); the Format page's preview has
+   plain headers. #}
+<div class="results-container">
+    <table>
+        <thead>
+            <tr>
+                {% for col in result.view.columns %}
+                {% if sortable %}
+                <th class="align-{{ col.align }}{% if ui.sort_state.get(col.name) %} sort-{{ ui.sort_state[col.name] }}{% endif %}"><a
+                    href="{{ ui.sort_urls[col.name] }}" hx-get="{{ ui.sort_urls[col.name] }}"
+                    hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col.name }}</a></th>
+                {% else %}
+                <th class="align-{{ col.align }}">{{ col.name }}</th>
+                {% endif %}
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in result.view.rows %}
+            <tr>
+                {% for cell in row %}<td{% if cell.align != 'left' %} class="align-{{ cell.align }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ result.view.columns | length }}">No rows match.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

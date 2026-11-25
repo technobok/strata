@@ -4,8 +4,33 @@ A report is plain data: its SQL decides the rows. How those rows are shown is a
 separate set of settings per report: number and date formats, alignment, hidden
 columns and links. They never change the data, and they never come from the SQL.
 
-The settings are part of the report's [definition file](import-export.md#formatting)
-(`[[report.column]]`).
+A report's owners set them on its **Format page** (the **Format** button on the
+report and on its edit page); they are also part of the report's
+[definition file](import-export.md#formatting) (`[[report.column]]`).
+
+## The Format page
+
+The page lists the report's columns as they come out of its SQL on the datamodule's
+live data, so the datamodule must have been built. For each column:
+
+- **Format**: an Excel format code. The box offers codes that suit the column (the
+  common ones, then those other reports use), and you can type any other. Beside it,
+  the column's first value with that format.
+- **Align**, **Hide**: see [Alignment](#alignment) and [Hidden columns](#hidden-columns).
+- **Link**: a link template, with **Insert a column…** to add `{Column}` where the
+  cursor is; the link text (blank = the cell's value); **New tab**. Beside it, the
+  link the first row gets.
+
+Each change is checked as you type: a field with a problem turns red with the reason
+beside it (e.g. a date format on a number column, or a column name that does not
+exist, with "did you mean …?"). **Save** refuses while anything is wrong and lists
+every problem. The **Preview** shows the report's first page with the settings as
+they stand, before you save; a required argument without a default asks for a value
+first.
+
+Settings of a column the report no longer has (its SQL changed, or a rebuild dropped
+it) are listed under **No longer in the result**: they are never dropped quietly.
+Tick **Remove** to drop them, or bring the column back.
 
 ## Without settings
 
