@@ -315,8 +315,31 @@ def link_args(args: Sequence[ArgLike], given: list[tuple[str, str]]) -> list[tup
     return pairs
 
 
+@dataclass
+class Described:
+    """A report described on a version file: its (name, DuckDB type) columns, or
+    ``problem`` when it does not run; ``rule_problems`` = style rule number (from 1) →
+    why its condition does not bind."""
+
+    columns: list[tuple[str, str]] = field(default_factory=list)
+    problem: str | None = None
+    rule_problems: dict[int, str] = field(default_factory=dict)
+
+
 def problem_on(vpath: Path, macro_name: str, body_sql: str, args: Sequence[ArgLike]) -> str | None:
-    """Why a report would not run on the version file ``vpath``; None when it would.
+    """Why a report would not run on the version file ``vpath``; None when it would."""
+    return describe_on(vpath, macro_name, body_sql, args).problem
+
+
+def describe_on(
+    vpath: Path,
+    macro_name: str,
+    body_sql: str,
+    args: Sequence[ArgLike],
+    rules: Sequence[str] = (),
+) -> Described:
+    """Describe a report on the version file ``vpath``, and bind its style ``rules``
+    (DuckDB conditions on a row) against its columns.
 
     DuckDB describes the report without reading any rows, so this is cheap and
     finds what a read would hit first: a missing table or column, a type error, an
@@ -335,24 +358,61 @@ def problem_on(vpath: Path, macro_name: str, body_sql: str, args: Sequence[ArgLi
             else:
                 binds.extend(_bind_args([arg], {}))
     except ArgError as exc:
-        return str(exc)
+        return Described(problem=str(exc))
     try:
         conn = duck.serve_conn(vpath)
     except duckdb.Error as exc:
-        return str(exc)
+        return Described(problem=str(exc))
     try:
         call = _register_macro(conn, macro_name, body_sql, args, frozenset(typed))
-        conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
+        described = conn.execute(f"DESCRIBE SELECT * FROM {call}", binds).fetchall()
+        out = Described(columns=[(str(r[0]), str(r[1])) for r in described])
         for arg in args:
             if arg.constraint_query:
                 try:
                     conn.execute(f"DESCRIBE {arg.constraint_query}").fetchall()
                 except duckdb.Error as exc:
-                    return f"The constraint query of '{arg.name}': {exc}"
+                    return Described(problem=f"The constraint query of '{arg.name}': {exc}")
+        for n, when in enumerate(rules, 1):
+            if not when.strip():
+                continue  # presentation.validate says a rule needs a condition
+            problem = _rule_problem(conn, call, binds, when)
+            if problem is not None:
+                out.rule_problems[n] = problem
+        return out
     except duckdb.Error as exc:
-        return str(exc)
+        return Described(problem=str(exc))
     finally:
         conn.close()
+
+
+def rule_sql(when: str) -> str:
+    """A style rule's condition as the flag column the page query selects: true or
+    false for every row (NULL counts as false)."""
+    return f"coalesce(({when}), false)"
+
+
+def _rule_problem(
+    conn: duckdb.DuckDBPyConnection, call: str, binds: list[Any], when: str
+) -> str | None:
+    """Why a style rule's condition does not bind on the report's rows, or is not a
+    true/false condition; None when it is one. Same trust as the report body: an
+    owner's SQL on the read-only, locked-down serve connection."""
+    sql = f"SELECT ({when}) AS __rule FROM (SELECT * FROM {call}) AS _q"
+    try:
+        duck.validate_select(sql, "The condition")
+    except duck.SqlShapeError as exc:
+        if "does not parse" in str(exc):
+            return str(exc)
+        return 'a rule is one condition on the row, e.g. "Amount" < 0'
+    try:
+        rows = conn.execute(f"DESCRIBE {sql}", binds).fetchall()
+    except duckdb.Error as exc:
+        return str(exc)
+    if len(rows) != 1:
+        return 'a rule is one condition on the row, e.g. "Amount" < 0'
+    if str(rows[0][1]) != "BOOLEAN":
+        return f'a rule must be true or false, e.g. "Amount" < 0 (this one gives {rows[0][1]})'
     return None
 
 

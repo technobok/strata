@@ -41,6 +41,14 @@ No item may have a DEPARTMENT default dimension. Remove it on the item card.
 body = "SELECT * FROM result"
 check = "error"        # info, warning or error; leave it out for a plain report
 gate = false
+subtotals_by = []      # how it is shown: see "Formatting" below
+total_row = false
+style = []
+
+[[report.column]]      # one per column with settings
+name = "No_"
+link = "/nav?co=BRS&item={No_}"
+new_tab = true
 
 [[report.arg]]         # one per argument, in order
 name = "company"
@@ -75,6 +83,9 @@ recipients = ['asiap\pawe', 'masterdataau']
 | `[[report]]` | A report: `name` and `body` are required. `macro` is used when the report is made and must match after that. |
 | `[[report.arg]]` | An argument: `name`, `type`, `widget`, `required`, `default`, `constraint` (a SELECT), `description`. |
 | `[[report.schedule]]` | A run-and-mail schedule: `name`, `kind`, `fields`, `timezone`, `enabled`, `recipients`, `parameters`. |
+| `[[report.column]]` | How one result column is shown: `name` (required), `format` (an Excel format code), `align` (`auto`, `left`, `center`, `right`), `total` (`sum`, `avg`, `min`, `max`, `count`, `count_distinct`), `hidden`, `link` (a template such as `https://…?p={Item}`), `link_text`, `new_tab`. A key left out of one is its default. `column = []`: no column has settings. |
+| `[[report.style]]` | A style rule: `when` (a condition on the row, e.g. `"Amount" < 0`), `columns` (`[]` = the whole row), `style` (e.g. `"red bold"`). `style = []`: none. |
+| `subtotals_by`, `total_row` | Subtotal rows per value of these columns, in order; a total row at the end. Both need a column with a `total`. |
 
 A schedule's `kind` and `fields` are the schedule form's, so it supports exactly what
 the form does ([Schedules](schedules.md)):
@@ -95,6 +106,16 @@ to the first of the `schedule.timezones` setting.
 A key that is left out is left alone: a new datamodule gets the defaults, as the
 form gives them, and an existing one keeps what it has. A key Strata does not know
 refuses the file, so a typo is never silently ignored.
+
+### Formatting
+
+A report's `column`, `style`, `subtotals_by` and `total_row` keys are how its rows are
+shown; they never change its data. Each one the file gives replaces that part of the
+report's settings, and each one it leaves out is kept: a file of only reports' SQL
+leaves their formatting alone. A setting that does not fit the report refuses the
+file, saying what and where, e.g. a format for dates on a number column, or a column
+the report does not have. Before the datamodule has data (a new one, not built yet)
+only what needs no data is checked: the column names and types are not known yet.
 
 ## Importing
 

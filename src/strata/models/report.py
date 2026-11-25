@@ -1,8 +1,8 @@
 """Report model — a DuckDB macro layered on a datamodule.
 
 kind='query' is a parameterised data report whose ``body_sql`` is an author
-SELECT; kind='view' is reserved and unused (formatting is per-column metadata
-rendered by the server — ROADMAP Phase F). The macro
+SELECT; kind='view' is reserved and unused (how rows are shown is the report's
+``presentation``, rendered by the server). The macro
 body is the source of truth in SQLite and is registered as a TEMP macro over the
 read-only live version at serve time (see report_service), so editing a body is
 an instant UPDATE with no rebuild.
@@ -32,10 +32,16 @@ class Report:
     modified_at: str
     # Why it does not run on the live data (migration 0014); None = it does, or unchecked.
     problem: str | None = None
+    # How its rows are shown (migration 0015): Presentation JSON, None = no settings;
+    # read it with services/presentation.of(report).
+    presentation: str | None = None
+    # What in those settings no longer fits the live columns; None = it all fits.
+    presentation_problem: str | None = None
 
     _COLUMNS = (
         "id, uuid, datamodule_id, name, macro_name, kind, description, body_sql, "
-        "created_by, modified_by, created_at, modified_at, problem"
+        "created_by, modified_by, created_at, modified_at, problem, presentation, "
+        "presentation_problem"
     )
 
     @staticmethod
@@ -54,6 +60,8 @@ class Report:
             created_at=str(row[10]),
             modified_at=str(row[11]),
             problem=str(row[12]) if row[12] is not None else None,
+            presentation=str(row[13]) if row[13] is not None else None,
+            presentation_problem=str(row[14]) if row[14] is not None else None,
         )
 
     @staticmethod
@@ -61,6 +69,25 @@ class Report:
         """Record why the report does not run on the live data (None: it does)."""
         with transaction() as cur:
             cur.execute("UPDATE report SET problem = ? WHERE id = ?", (problem, report_id))
+
+    @staticmethod
+    def set_presentation(report_id: int, document: str | None, modified_by: str) -> None:
+        """Store the report's presentation JSON (None: no settings); a change of look is
+        a change of the report."""
+        now = datetime.now(UTC).isoformat()
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE report SET presentation = ?, modified_by = ?, modified_at = ? WHERE id = ?",
+                (document, modified_by, now, report_id),
+            )
+
+    @staticmethod
+    def set_presentation_problem(report_id: int, problem: str | None) -> None:
+        """Record what in the settings no longer fits the live columns (None: it fits)."""
+        with transaction() as cur:
+            cur.execute(
+                "UPDATE report SET presentation_problem = ? WHERE id = ?", (problem, report_id)
+            )
 
     @staticmethod
     def get_by_id(report_id: int) -> Report | None:

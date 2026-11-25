@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -38,7 +38,7 @@ from strata.models.report_arg import ReportArg
 from strata.models.report_check import ReportCheck
 from strata.models.schedule import Schedule
 from strata.models.tag import Tag
-from strata.services import access, authoring, schedule_service
+from strata.services import access, authoring, presentation, schedule_service
 from strata.services.authoring import AuthoringError
 from strata.services.schedule_service import Definition, ScheduleError
 
@@ -100,6 +100,28 @@ class ReportDef:
     gate: bool = False
     args: list[ArgDef] = field(default_factory=list)
     schedules: list[ScheduleDef] = field(default_factory=list)
+    # How it is shown; each None = the file leaves it out (kept as it is).
+    columns: list[presentation.ColumnSetting] | None = None
+    styles: list[presentation.StyleRule] | None = None
+    subtotals_by: list[str] | None = None
+    total_row: bool | None = None
+
+    def presentation_over(self, current: presentation.Presentation) -> presentation.Presentation:
+        """``current`` with what this file sets replaced."""
+        return presentation.Presentation(
+            columns=current.columns if self.columns is None else self.columns,
+            styles=current.styles if self.styles is None else self.styles,
+            subtotals_by=current.subtotals_by if self.subtotals_by is None else self.subtotals_by,
+            total_row=current.total_row if self.total_row is None else self.total_row,
+        ).normalised()
+
+    def sets_presentation(self) -> bool:
+        return not (
+            self.columns is None
+            and self.styles is None
+            and self.subtotals_by is None
+            and self.total_row is None
+        )
 
 
 @dataclass
@@ -278,6 +300,14 @@ def parse(text: str, source: str = "") -> DatamoduleDef:
                 )
             )
             a.done()
+        total_row = t._get("total_row", False)
+        if total_row is not None and not isinstance(total_row, bool):
+            raise DefinitionError(f"{t.where}: 'total_row' must be true or false.")
+        try:
+            columns = _entries(t, "column", presentation.column_from_dict)
+            styles = _entries(t, "style", presentation.style_from_dict)
+        except presentation.PresentationError as exc:
+            raise DefinitionError(str(exc)) from exc
         defn.reports.append(
             ReportDef(
                 name=name,
@@ -288,11 +318,25 @@ def parse(text: str, source: str = "") -> DatamoduleDef:
                 gate=t.flag("gate", False),
                 args=args,
                 schedules=[_schedule(s, report=True) for s in t.tables("schedule")],
+                columns=columns,
+                styles=styles,
+                subtotals_by=t.texts("subtotals_by"),
+                total_row=total_row,
             )
         )
         t.done()
     top.done()
     return defn
+
+
+def _entries[T](t: _Table, key: str, read: Callable[[Any, str], T]) -> list[T] | None:
+    """A report's [[report.<key>]] tables (``<key> = []`` for none); None when left out."""
+    value = t._get(key, False)
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise DefinitionError(f"{t.where}: '{key}' must be [[report.{key}]] tables.")
+    return [read(v, f"{t.where}, {key} {i + 1}") for i, v in enumerate(value)]
 
 
 def _count(top: _Table) -> int | None:
@@ -624,6 +668,13 @@ def _apply_reports(
             args=[a.as_row() for a in rdef.args],
             severity=rdef.check,
             gate=rdef.gate,
+            presentation=(
+                rdef.presentation_over(
+                    presentation.of(report) if report else presentation.Presentation()
+                )
+                if rdef.sets_presentation()
+                else None
+            ),
         )
         where = f"Report '{rdef.name}'"
         if report is None or _report_differs(report, rdef, fields):
@@ -656,6 +707,10 @@ def _report_differs(report: Report, rdef: ReportDef, fields: authoring.ReportFie
         or _arg_rows(ReportArg.get_for_report(report.id)) != fields.args
         or (check.severity if check else None) != rdef.check
         or (bool(check and check.gate) != (rdef.check is not None and rdef.gate))
+        or (
+            fields.presentation is not None
+            and fields.presentation.to_dict() != presentation.of(report).to_dict()
+        )
     )
 
 
@@ -860,6 +915,7 @@ def export_datamodule(dm: Datamodule) -> str:
         if check is not None:
             out.append(f"check = {_value(check.severity)}")
             out.append(f"gate = {_value(check.gate)}")
+        out += _presentation_lines(presentation.of(report))
         for arg in ReportArg.get_for_report(report.id):
             out += ["", "[[report.arg]]", f"name = {_value(arg.name)}"]
             out.append(f"type = {_value(arg.data_type)}")
@@ -874,6 +930,24 @@ def export_datamodule(dm: Datamodule) -> str:
         for schedule in Schedule.for_report(report.id):
             out += _schedule_lines("report.schedule", schedule, report=True)
     return "\n".join(out) + "\n"
+
+
+def _presentation_lines(look: presentation.Presentation) -> list[str]:
+    """A report's settings: every report-level key; in a [[report.column]] its name and
+    the keys that are not their default (a key left out of one is its default)."""
+    look = look.normalised()
+    out = [f"subtotals_by = {_value(look.subtotals_by)}", f"total_row = {_value(look.total_row)}"]
+    if not look.columns:
+        out.append("column = []")
+    if not look.styles:
+        out.append("style = []")
+    for col in look.columns:
+        out += ["", "[[report.column]]"]
+        out += [f"{k} = {_value(v)}" for k, v in presentation.column_dict(col).items()]
+    for rule in look.styles:
+        out += ["", "[[report.style]]", f"when = {_value(rule.when)}"]
+        out += [f"columns = {_value(rule.columns)}", f"style = {_value(rule.style)}"]
+    return out
 
 
 def export_path(out_dir: Path, dm: Datamodule) -> Path:

@@ -561,6 +561,14 @@ def _as_datetime(value: date | time) -> datetime:
     return datetime.combine(date(1899, 12, 30), value)  # Excel's day 0, for a TIME
 
 
+def check_syntax(code: str) -> None:
+    """Check what ``code`` can be checked for without its column's type: its syntax and
+    what is not supported. FormatError as ``compile``."""
+    if not code.strip():
+        raise FormatError("A format cannot be empty")
+    _lex(code)
+
+
 def compile(code: str, duck_type: str) -> Formatter:  # noqa: A001 - the module's verb
     """Check ``code`` against a column of ``duck_type`` and compile it; FormatError
     says what is wrong and where."""

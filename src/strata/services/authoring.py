@@ -21,7 +21,15 @@ from strata.models.report import Report
 from strata.models.report_arg import DATA_TYPES, WIDGETS, ReportArg
 from strata.models.report_check import SEVERITIES, ReportCheck
 from strata.models.schedule import Schedule
-from strata.services import access, datamodule_service, duck, report_service, schedule_service
+from strata.services import (
+    access,
+    datamodule_service,
+    duck,
+    presentation,
+    report_service,
+    schedule_service,
+)
+from strata.services.presentation import Presentation, Problem
 from strata.services.query_filter import RESERVED_KEYS
 from strata.services.schedule_service import Definition, ScheduleError
 from strata.services.template_service import ALIAS_RE
@@ -109,7 +117,8 @@ def arg_problem(name: str, data_type: str, widget: str) -> str | None:
 @dataclass
 class ReportFields:
     """A report as an author gives it. ``args`` are ReportArg.replace_all dicts;
-    ``severity`` None = a plain report, else a check."""
+    ``severity`` None = a plain report, else a check; ``presentation`` None = keep the
+    report's (the report form never sends it, so a body edit cannot clobber it)."""
 
     name: str
     description: str
@@ -117,6 +126,7 @@ class ReportFields:
     args: list[dict[str, Any]] = field(default_factory=list)
     severity: str | None = None
     gate: bool = False
+    presentation: Presentation | None = None
 
 
 def _live_version_file(dm: Datamodule) -> Path | None:
@@ -192,11 +202,19 @@ def save_report(
     except duck.SqlShapeError as exc:
         raise AuthoringError(str(exc)) from exc
 
+    # How it will look: the settings given, else the ones it has.
+    if fields.presentation is not None:
+        shown = fields.presentation.normalised()
+    else:
+        shown = presentation.of(report) if report is not None else Presentation()
+
     # It must run on the data it will read (when there is any yet): DuckDB
-    # describes it without reading rows (report_service.problem_on).
+    # describes it without reading rows (report_service.describe_on), and binds its
+    # style rules' conditions on its columns.
     live = _live_version_file(dm) if check_live else None
+    described = None
     if live is not None:
-        problem = report_service.problem_on(
+        described = report_service.describe_on(
             live,
             macro,
             fields.body_sql,
@@ -211,11 +229,18 @@ def save_report(
                 )
                 for a in fields.args
             ],
+            [rule.when for rule in shown.styles],
         )
-        if problem is not None:
+        if described.problem is not None:
             raise AuthoringError(
-                f"Not saved: the report does not run on the data of {dm.path}.\n{problem}"
+                f"Not saved: the report does not run on the data of {dm.path}.\n{described.problem}"
             )
+    look_problems = presentation_problems(shown, described)
+    if fields.presentation is not None and look_problems:
+        raise AuthoringError(
+            "Not saved: the report's formatting has problems.\n"
+            + presentation.describe(look_problems)
+        )
 
     existing = Report.get_by_uuid(report.uuid) if report else None
     try:
@@ -240,14 +265,32 @@ def save_report(
         raise AuthoringError(f"Could not save report: {exc}") from exc
 
     ReportArg.replace_all(saved.id, fields.args)
+    if fields.presentation is not None:
+        Report.set_presentation(saved.id, shown.to_json(), actor)
     if check_live:
         Report.set_problem(saved.id, None)  # it runs on the live data (or there is none yet)
+        # Kept settings a body edit no longer fits are recorded, not refused.
+        found = presentation.describe(look_problems) if described is not None else ""
+        Report.set_presentation_problem(saved.id, found or None)
     if is_check:
         assert fields.severity is not None
         ReportCheck.save(saved.id, fields.severity, gate)
     else:
         ReportCheck.clear(saved.id)
     return saved
+
+
+def presentation_problems(
+    shown: Presentation, described: report_service.Described | None
+) -> list[Problem]:
+    """Every problem of a report's settings: against its live columns, and its style
+    rules' conditions as DuckDB binds them (``described`` None: no live data yet, so
+    only what needs no columns is checked)."""
+    problems = presentation.validate(shown, described.columns if described else None)
+    if described is not None:
+        for n, why in sorted(described.rule_problems.items()):
+            problems.append(Problem(f"style:{n}:when", f"Style {n}: condition: {why}"))
+    return problems
 
 
 # ---------------------------------------------------------------------------

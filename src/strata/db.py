@@ -14,7 +14,7 @@ _savepoints = itertools.count(1)  # names for nested transaction() savepoints
 # run `strata-admin init-db` before starting, so a lower value on disk means the
 # migration step did not run; the runtime then aborts with a clear message. Bump
 # this when adding a new migration file.
-EXPECTED_SCHEMA_VERSION = 14
+EXPECTED_SCHEMA_VERSION = 15
 
 # Tables only the Strata from before datamodules had (its database/schema.sql,
 # removed in 9953905). Its schema cannot be migrated: the baseline's
