@@ -53,6 +53,11 @@ data-field="{{ field }}"{% if field in marks %} aria-invalid="true"{% endif %}
 <p>How the report's rows are shown: formats, alignment, hidden columns, links and styles.
 Its data never changes.{{ help_link('formatting', 'the-format-page') }}</p>
 
+{% if report.presentation_problem and not error %}
+<div class="rule-notice presentation-problem">Found after the report's last build or SQL change: some of its formatting no longer fits its data, so the report shows that part plain. The fields concerned are marked below.
+{{ report.presentation_problem }}</div>
+{% endif %}
+
 {% if datamodule.access_lock %}
 <div class="error-box">{{ datamodule.path }} is locked: {{ datamodule.access_lock }}</div>
 {% elif view.no_data %}

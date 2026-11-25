@@ -115,7 +115,9 @@ report's settings, and each one it leaves out is kept: a file of only reports' S
 leaves their formatting alone. A setting that does not fit the report refuses the
 file, saying what and where, e.g. a format for dates on a number column, or a column
 the report does not have. Before the datamodule has data (a new one, not built yet)
-only what needs no data is checked: the column names and types are not known yet.
+only what needs no data is checked; the column names and types are checked after its
+first build, and a setting that does not fit is shown to the owners (see
+[Formatting reports](formatting.md#where-each-setting-applies)).
 
 ## Importing
 

@@ -214,7 +214,7 @@
     <tbody>
         {% for r in reports %}
         <tr>
-            <td><a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a>{% if r.problem %}<br><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}" class="report-broken" title="{{ r.problem }}">does not run on this data</a>{% endif %}</td>
+            <td><a href="{{ url_for('reports.serve', report_uuid=r.uuid, ext='html') }}">{{ r.name }}</a>{% if r.problem %}<br><a href="{{ url_for('datamodules.report_edit', report_uuid=r.uuid) }}" class="report-broken" title="{{ r.problem }}">does not run on this data</a>{% elif r.presentation_problem %}<br><a href="{{ url_for('formatting.page', report_uuid=r.uuid) }}" class="report-broken" title="{{ r.presentation_problem }}">formatting no longer fits</a>{% endif %}</td>
             <td><code>{{ r.macro_name }}</code></td>
             <td>{% set c = checks.get(r.id) %}{% if c %}<span class="severity severity-{{ c.severity }}">{{ c.severity }}</span>{% if c.gate %} <span class="severity severity-gate" title="Runs inside each build; rows fail the build">gate</span>{% endif %}{% endif %}</td>
             <td>{% if r.id in excel_links %}<button type="button" class="outline small excel-link" data-copy="{{ excel_links[r.id] }}" title="{{ excel_links[r.id] }}">Copy link</button>{% endif %}</td>

@@ -35,6 +35,7 @@ from strata.models.report_arg import ReportArg
 from strata.services import (
     datamodule_service,
     duck,
+    link_template,
     presentation,
     query_filter,
     stream_service,
@@ -434,20 +435,42 @@ def _rule_problem(
 
 def check_reports(dm: Datamodule, version: DatamoduleVersion) -> list[tuple[Report, str]]:
     """Describe every report of ``dm`` against ``version`` (its new live data) and
-    record each one's problem. Returns the reports that ran before and do not now
-    (newly broken), with their problems."""
+    record each one's problem, and what in its formatting no longer fits
+    (``presentation_problem``: never a failure, never mailed; owners see it). Returns
+    the reports that ran before and do not now (newly broken), with their problems."""
     vpath = datamodule_service.version_path(dm.uuid, version.uuid)
     newly: list[tuple[Report, str]] = []
     for report in Report.get_for_datamodule(dm.id):
         if report.kind != "query":
             continue
         args = ReportArg.get_for_report(report.id)
-        problem = problem_on(vpath, report.macro_name, report.body_sql, args)
+        look = presentation.of(report)
+        described = describe_on(
+            vpath, report.macro_name, report.body_sql, args, [r.when for r in look.styles]
+        )
+        problem = described.problem
         if problem != report.problem:
             Report.set_problem(report.id, problem)
             if problem is not None and report.problem is None:
                 newly.append((report, problem))
+        # A report that does not run has that problem shown; its look waits for it.
+        found = None if problem else presentation.describe(look_problems(look, described))
+        if (found or None) != report.presentation_problem:
+            Report.set_presentation_problem(report.id, found or None)
     return newly
+
+
+def look_problems(look: Presentation, described: Described | None) -> list[presentation.Problem]:
+    """Every problem of a report's settings: against its columns, and its style rules'
+    conditions as DuckDB binds them (``described`` None: no live data yet, so only what
+    needs no columns is checked)."""
+    problems = presentation.validate(
+        look, described.columns if described else None, link_template.allowed_schemes()
+    )
+    if described is not None:
+        for n, why in sorted(described.rule_problems.items()):
+            problems.append(presentation.Problem(f"style:{n}:when", f"Style {n}: condition: {why}"))
+    return problems
 
 
 def run_table(

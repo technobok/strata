@@ -28,6 +28,12 @@
         <button type="submit" class="outline small">Build now</button>
     </form>
 </div>
+{% if can_own(datamodule) and report.presentation_problem %}
+{# Owners only: what in the formatting no longer fits the data (found after a build or
+   a change to the SQL). Those parts are skipped; the report still shows. #}
+<div class="rule-notice presentation-problem">Some of this report's formatting no longer fits its data, so that part is skipped: {{ report.presentation_problem }}
+<a href="{{ url_for('formatting.page', report_uuid=report.uuid) }}">Fix it on the Format page</a>.</div>
+{% endif %}
 
 {% if served and served.stale %}
 <article class="freshness-banner{% if served.failure %} freshness-failed{% endif %}">

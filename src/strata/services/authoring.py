@@ -328,14 +328,8 @@ def save_presentation(dm: Datamodule, report: Report, look: Presentation, actor:
 def presentation_problems(
     shown: Presentation, described: report_service.Described | None
 ) -> list[Problem]:
-    """Every problem of a report's settings: against its live columns, and its style
-    rules' conditions as DuckDB binds them (``described`` None: no live data yet, so
-    only what needs no columns is checked)."""
-    problems = presentation.validate(shown, described.columns if described else None)
-    if described is not None:
-        for n, why in sorted(described.rule_problems.items()):
-            problems.append(Problem(f"style:{n}:when", f"Style {n}: condition: {why}"))
-    return problems
+    """Every problem of a report's settings (report_service.look_problems)."""
+    return report_service.look_problems(shown, described)
 
 
 # ---------------------------------------------------------------------------

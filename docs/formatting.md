@@ -265,4 +265,8 @@ rows, not its look. Settings for a column the run does not have are skipped.
 
 When a setting no longer fits a report (after a change to its SQL, or a rebuild that
 dropped a column), that part is skipped and the cell shows plain: a report never
-fails to show because of its formatting.
+fails to show because of its formatting. Strata checks every report's formatting after
+each build and each change to its SQL; when something no longer fits, the report's
+owners see what on the report page, the datamodule's Reports table ("formatting no
+longer fits") and the Format page, where the fields concerned are marked. Nobody is
+mailed about it.
