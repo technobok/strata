@@ -7,6 +7,7 @@ datamodule's live data: without it the report's columns are not known.
 """
 
 import json
+import re
 from dataclasses import dataclass
 
 from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, url_for
@@ -24,9 +25,10 @@ from strata.services import (
     presentation,
     read_audit,
     report_service,
+    styles,
     table_view,
 )
-from strata.services.presentation import ColumnSetting, Presentation, Problem
+from strata.services.presentation import ColumnSetting, Presentation, Problem, StyleRule
 from strata.services.query_filter import parse_params
 from strata.services.report_service import ArgError, TableResult
 
@@ -88,8 +90,8 @@ def preview(report_uuid: str) -> Response:
 
 
 def _draft(stored: Presentation) -> Presentation:
-    """The settings the form gives. Parts of the settings this page does not edit
-    (yet) are kept as stored."""
+    """The settings the form gives. A part the form does not carry (its ``*_present``
+    marker missing) is kept as stored."""
     form = request.form
     columns: list[ColumnSetting] = []
     n = 0
@@ -117,7 +119,28 @@ def _draft(stored: Presentation) -> Presentation:
             except (ValueError, presentation.PresentationError) as exc:
                 raise BadRequest(f"a column's settings could not be read: {exc}") from exc
         k += 1
-    return Presentation(columns, stored.styles, stored.subtotals_by, stored.total_row)
+    rules = _rules() if form.get("styles_present") else stored.styles
+    return Presentation(columns, rules, stored.subtotals_by, stored.total_row)
+
+
+_RULE_RE = re.compile(r"r-(\w+)-when")
+
+
+def _rules() -> list[StyleRule]:
+    """The style rule rows in the order the page has them (r-<id>-when/style/columns;
+    ids only tell rows apart). A row with neither a condition nor a style is left out."""
+    form = request.form
+    rules: list[StyleRule] = []
+    for key in form:
+        match = _RULE_RE.fullmatch(key)
+        if not match:
+            continue
+        rid = match.group(1)
+        when = form.get(key, "").strip()
+        style = form.get(f"r-{rid}-style", "").strip()
+        if when or style:
+            rules.append(StyleRule(when, style, form.getlist(f"r-{rid}-columns")))
+    return rules
 
 
 @dataclass
@@ -233,4 +256,8 @@ def _render(report: Report, dm: Datamodule, look: Presentation, error: str | Non
         aligns=presentation.ALIGNS,
         formattable=cell_format.NUMBER_KINDS | cell_format.DATE_TIME_KINDS | {cell_format.TEXT},
         stale_json=lambda c: json.dumps(presentation.column_dict(c)),
+        look=look,
+        style_words=json.dumps(
+            [*styles.WORDS, *styles.FAMILIES, *(f"bg-{f}" for f in styles.FAMILIES)]
+        ),
     )

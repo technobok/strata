@@ -58,13 +58,79 @@
         timer = setTimeout(check, 400);
     }
 
-    // "Insert a column…": put {Column} at the cursor of its link field.
+    // A swatch for a style word: "Aa" in its class (static/css/styles.css), or in the
+    // exact shade, inside a neutral frame so it reads on any chip.
+    function swatch(word, esc) {
+        var shade = /^(bg-)?([a-z]+)-(\d+)$/.exec(word);
+        var inner;
+        if (shade) {
+            var prop = shade[1] ? 'background-color' : 'color';
+            inner = '<span style="' + prop + ':var(--pico-color-' + esc(shade[2]) + '-' +
+                esc(shade[3]) + ')">Aa</span>';
+        } else {
+            inner = '<span class="st-' + esc(word) + '">Aa</span>';
+        }
+        return '<span class="st-swatch">' + inner + '</span>';
+    }
+
+    function attach(root) {
+        if (typeof TomSelect === 'undefined') { return; }
+        var words = JSON.parse(form.dataset.styleWords || '[]');
+        root.querySelectorAll('input[data-styles]').forEach(function (input) {
+            if (input.tomselect) { return; }
+            new TomSelect(input, {
+                delimiter: ' ',
+                persist: false,
+                maxOptions: null,
+                options: words.map(function (w) { return { value: w, text: w }; }),
+                create: function (text) { return { value: text.toLowerCase(), text: text.toLowerCase() }; },
+                createFilter: /^[A-Za-z0-9-]+$/,
+                hidePlaceholder: true,
+                render: {
+                    option: function (d, esc) { return '<div>' + swatch(d.value, esc) + ' ' + esc(d.text) + '</div>'; },
+                    item: function (d, esc) { return '<div>' + swatch(d.value, esc) + ' ' + esc(d.text) + '</div>'; }
+                }
+            });
+        });
+        root.querySelectorAll('select[multiple][data-rule-key="columns"]').forEach(function (sel) {
+            if (sel.tomselect) { return; }
+            new TomSelect(sel, {
+                maxOptions: null,
+                placeholder: sel.dataset.placeholder,
+                hidePlaceholder: true
+            });
+        });
+    }
+
+    // Rule rows are numbered in page order (style:1:when …), as the server numbers them.
+    function renumber() {
+        form.querySelectorAll('tr[data-rule]').forEach(function (tr, i) {
+            tr.querySelectorAll('[data-rule-key]').forEach(function (el) {
+                el.dataset.field = 'style:' + (i + 1) + ':' + el.dataset.ruleKey;
+            });
+            tr.querySelectorAll('[data-rule-msg]').forEach(function (el) {
+                el.dataset.messageFor = 'style:' + (i + 1) + ':' + el.dataset.ruleMsg;
+            });
+        });
+    }
+
+    form.addEventListener('rows-changed', function () {
+        renumber();
+        attach(form);
+        later();
+    });
+    attach(form);
+
+    // "Insert a column…": put {Column} at the cursor of its link field, or "Column" (a
+    // quoted SQL name) in a rule's condition.
     form.addEventListener('change', function (e) {
         var pick = e.target.closest('select[data-insert-into]');
         if (!pick) { later(); return; }
         if (!pick.value) { return; }
         var input = document.getElementById(pick.dataset.insertInto);
-        var text = '{' + pick.value + '}';
+        var text = 'quote' in pick.dataset
+            ? '"' + pick.value.replace(/"/g, '""') + '"'
+            : '{' + pick.value + '}';
         // Where the cursor was when the field was left; at the end if it never had one.
         var caret = (input.dataset.caret || '').split(':');
         var at = caret.length === 2 ? Number(caret[0]) : input.value.length;

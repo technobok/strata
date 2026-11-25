@@ -162,15 +162,27 @@ document.addEventListener('change', function (e) {
 
 // Rows added and removed by buttons (the report form's arguments):
 // <button data-add-row="<template id>" data-into="<tbody id>"> appends a copy of the
-// template's row; a [data-remove-row] button removes its own row.
+// template's row; a [data-remove-row] button removes its own row. A template whose
+// field names hold __N__ gets a number no other row of that body has had (the body's
+// data-next, set by the server to its row count). The body then fires "rows-changed".
 document.addEventListener('click', function (e) {
     var add = e.target.closest && e.target.closest('[data-add-row]');
     if (add) {
         var tpl = document.getElementById(add.dataset.addRow);
         var body = document.getElementById(add.dataset.into);
         if (tpl && body) {
-            var row = tpl.content.firstElementChild.cloneNode(true);
+            var row;
+            if (tpl.innerHTML.indexOf('__N__') >= 0) {
+                var n = Number(body.dataset.next || body.children.length);
+                body.dataset.next = String(n + 1);
+                var holder = document.createElement('tbody');
+                holder.innerHTML = tpl.innerHTML.replace(/__N__/g, 'n' + n);
+                row = holder.firstElementChild;
+            } else {
+                row = tpl.content.firstElementChild.cloneNode(true);
+            }
             body.appendChild(row);
+            body.dispatchEvent(new CustomEvent('rows-changed', { bubbles: true }));
             var first = row.querySelector('input');
             if (first) { first.focus(); }
         }
@@ -179,6 +191,10 @@ document.addEventListener('click', function (e) {
     var remove = e.target.closest && e.target.closest('[data-remove-row]');
     if (remove) {
         var tr = remove.closest('tr');
-        if (tr) { tr.remove(); }
+        if (tr) {
+            var parent = tr.parentElement;
+            tr.remove();
+            if (parent) { parent.dispatchEvent(new CustomEvent('rows-changed', { bubbles: true })); }
+        }
     }
 });

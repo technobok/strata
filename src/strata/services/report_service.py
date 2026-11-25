@@ -154,6 +154,7 @@ class TableResult:
     applied_sort: list[query_filter.SortTerm] = field(default_factory=list)
     view: table_view.TableView | None = None  # the shown cells (None on an error)
     types: list[str] = field(default_factory=list)  # DuckDB type per column
+    rule_error: str | None = None  # why the style rules were skipped on this page
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -505,13 +506,15 @@ def page_of(
         count_sql, count_binds = query_filter.wrap_count(final_sql, clauses)
         count_row = conn.execute(count_sql, binds + count_binds).fetchone()
         total = int(count_row[0]) if count_row else 0
-        select_sql, extra = query_filter.wrap_select(
+        rows, flags, rule_error = rows_with_rules(
+            conn,
             final_sql,
+            binds,
             clauses,
+            look,
             limit=query_filter.PAGE_SIZE,
             offset=(page - 1) * query_filter.PAGE_SIZE,
         )
-        rows = conn.execute(select_sql, binds + extra).fetchall()
     except duckdb.Error as exc:
         return TableResult(
             error=f"Query error: {exc}",
@@ -526,8 +529,9 @@ def page_of(
     return TableResult(
         columns=col_names,
         rows=rows,
-        view=table_view.render(columns, rows, look, links),
+        view=table_view.render(columns, rows, look, links, flags),
         types=[t for _, t in columns],
+        rule_error=rule_error,
         row_count=len(rows),
         total_rows=total,
         page=page,
@@ -535,6 +539,93 @@ def page_of(
         applied_filters=clauses.filters,
         applied_sort=clauses.sort,
     )
+
+
+def rule_flags(look: Presentation | None) -> list[str]:
+    """Each style rule as a flag column of the query that fetches the rows."""
+    rules = look.styles if look else []
+    return [f'{rule_sql(r.when)} AS "__rule_{n}"' for n, r in enumerate(rules, 1)]
+
+
+def rows_with_rules(
+    conn: duckdb.DuckDBPyConnection,
+    final_sql: str,
+    binds: list[Any],
+    clauses: query_filter.Clauses,
+    look: Presentation | None,
+    limit: int | None,
+    offset: int | None,
+) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]] | None, str | None]:
+    """(rows, each row's flag per style rule, why rules were skipped). The rules are
+    flag columns of the same query (no second pass). A page never fails because of a
+    rule: when the query fails with them, each rule is described on its own, the
+    broken ones are skipped (their flag is false) and named for the owners to see."""
+    rules = look.styles if look else []
+    if rules:
+        flags_sql = rule_flags(look)
+        try:
+            rows, flags = _fetch_flagged(conn, final_sql, binds, clauses, limit, offset, flags_sql)
+            return rows, flags, None
+        except duckdb.Error:
+            pass
+        broken: dict[int, str] = {}
+        for n, rule in enumerate(rules, 1):
+            try:
+                sql = f"DESCRIBE SELECT {rule_sql(rule.when)} FROM ({final_sql}) AS _q"
+                conn.execute(sql, binds).fetchall()
+            except duckdb.Error as exc:
+                broken[n] = _first_line(exc)
+        if broken:
+            why = "; ".join(f"style rule {n}: {msg}" for n, msg in broken.items())
+            kept = [n for n in range(1, len(rules) + 1) if n not in broken]
+            if kept:
+                try:
+                    rows, some = _fetch_flagged(
+                        conn,
+                        final_sql,
+                        binds,
+                        clauses,
+                        limit,
+                        offset,
+                        [flags_sql[n - 1] for n in kept],
+                    )
+                except duckdb.Error:
+                    pass
+                else:
+                    assert some is not None
+                    full = [
+                        tuple(
+                            dict(zip(kept, row_flags, strict=True)).get(n, False)
+                            for n in range(1, len(rules) + 1)
+                        )
+                        for row_flags in some
+                    ]
+                    return rows, full, why
+            sql, extra = query_filter.wrap_select(final_sql, clauses, limit, offset)
+            return conn.execute(sql, binds + extra).fetchall(), None, why
+    sql, extra = query_filter.wrap_select(final_sql, clauses, limit, offset)
+    return conn.execute(sql, binds + extra).fetchall(), None, None
+
+
+def _fetch_flagged(
+    conn: duckdb.DuckDBPyConnection,
+    final_sql: str,
+    binds: list[Any],
+    clauses: query_filter.Clauses,
+    limit: int | None,
+    offset: int | None,
+    flags_sql: list[str],
+) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]] | None]:
+    sql, extra = query_filter.wrap_select(final_sql, clauses, limit, offset, flags_sql)
+    fetched = conn.execute(sql, binds + extra).fetchall()
+    n = len(fetched[0]) - len(flags_sql) if fetched else 0
+    return [r[:n] for r in fetched], [r[n:] for r in fetched]
+
+
+def _first_line(exc: Exception) -> str:
+    """DuckDB's message without its kind ("Binder Error: ") or the SQL it quotes."""
+    line = str(exc).strip().splitlines()[0] if str(exc).strip() else "it does not run"
+    return re.sub(r"^[A-Za-z ]+ Error: ", "", line)
 
 
 def hidden_columns(look: Presentation | None) -> frozenset[str]:

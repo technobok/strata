@@ -38,6 +38,10 @@
 </div>
 {% endif %}
 
+{% if result and result.rule_error and can_own(datamodule) %}
+{# Owners only: the reason names columns and quotes the rule. #}
+<div class="rule-notice">Some style rules were skipped on this page: they no longer run on the data ({{ result.rule_error }}). Fix them on the report's Format page.</div>
+{% endif %}
 {% if result and not result.error and result.view and result.columns %}
 <div class="run-info">
     <span>{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}</span>

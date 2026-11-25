@@ -11,6 +11,7 @@ tests check every such link's page and anchor exist.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -63,6 +64,16 @@ def slugify(text: str, seen: dict[str, int]) -> str:
     return base if n == 0 else f"{base}-{n}"
 
 
+def _palette() -> str:
+    from strata.services import styles
+
+    return styles.palette_grid_html()
+
+
+# A line of raw HTML in a docs page that Strata replaces with what it generates.
+GENERATED: dict[str, Callable[[], str]] = {"<div data-palette></div>": _palette}
+
+
 def docs_dir() -> Path:
     return repo_dir("docs")
 
@@ -82,6 +93,8 @@ def _render(name: str, path: str, _mtime_ns: int) -> HelpPage:
     md = mistune.create_markdown(escape=False, plugins=["table", "strikethrough"])
     add_toc_hook(md, min_level=1, max_level=6, heading_id=heading_id)
     html, state = md.parse(Path(path).read_text())
+    for marker, make in GENERATED.items():
+        html = str(html).replace(marker, make())
     items = state.env.get("toc_items", [])
     return HelpPage(
         name=name,

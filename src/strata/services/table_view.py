@@ -1,19 +1,21 @@
-"""The cells a results table shows: each value's text, alignment, link and colour,
+"""The cells a results table shows: each value's text, alignment, link and style,
 worked out once in Python for the rows actually shown (a page, or a mail's rows). The
 page and run page (``templates/reports/_table.html``) and the mail table
 (``notify_service``) all draw from a ``TableView``; a new table surface does the same
 rather than printing raw values.
 
 A report's presentation (``services/presentation``) decides formats, alignment, hidden
-columns and links. Rendering never fails because of it: a setting that no longer fits
-(a column gone, a format for another type) is skipped and that cell shows plain.
+columns, links and styles. Rendering never fails because of it: a setting that no longer
+fits (a column gone, a format for another type) is skipped and that cell shows plain.
+Style rules are evaluated by DuckDB in the query that fetches the rows (one true/false
+flag per rule per row: ``report_service.page_of``); this module applies them.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from strata.services import cell_format, excel_format, link_template
+from strata.services import cell_format, excel_format, link_template, styles
 from strata.services.presentation import ColumnSetting, Presentation
 
 
@@ -30,7 +32,21 @@ class Cell:
     align: str
     href: str | None = None
     new_tab: bool = False
-    colour: str | None = None  # a format's colour: a Pico family (or black/white)
+    # Style words (services/styles): the rules that apply, and a format's colour.
+    words: tuple[str, ...] = ()
+
+    @property
+    def css_class(self) -> str:
+        """The page's classes: alignment, then the style words."""
+        own = styles.page_attrs(self.words)[0]
+        return " ".join(
+            c for c in (f"align-{self.align}" if self.align != "left" else "", own) if c
+        )
+
+    @property
+    def css_style(self) -> str:
+        """An inline colour for an exact shade (red-550), else empty."""
+        return styles.page_attrs(self.words)[1]
 
 
 @dataclass
@@ -86,14 +102,29 @@ def _template(source: str, names: set[str]) -> link_template.Template | None:
     return template if set(template.columns()) <= names else None
 
 
+def _rules(look: Presentation, names: set[str]) -> list[tuple[list[str], set[str] | None]]:
+    """Each style rule's words and the columns it styles (None = the whole row); a
+    rule whose words no longer parse styles nothing."""
+    out: list[tuple[list[str], set[str] | None]] = []
+    for rule in look.styles:
+        try:
+            words = styles.parse(rule.style)
+        except styles.StyleError:
+            words = []
+        out.append((words, set(rule.columns) & names if rule.columns else None))
+    return out
+
+
 def render(
     columns: Sequence[tuple[str, str]],
     rows: Sequence[Sequence[Any]],
     look: Presentation | None = None,
     links: Links | None = None,
+    flags: Sequence[Sequence[Any]] | None = None,
 ) -> TableView:
     """``columns`` = (name, DuckDB type) as DESCRIBE gives them; ``rows`` = the values;
-    ``look`` = the report's settings; ``links`` None = no links (mail)."""
+    ``look`` = the report's settings; ``links`` None = no links (mail); ``flags`` = per
+    row, whether each of ``look.styles`` holds for it (None: rules not evaluated)."""
     look = look or Presentation()
     names = {name for name, _ in columns}
     formatters: list[excel_format.Formatter | None] = []
@@ -108,8 +139,10 @@ def render(
         text = _template(setting.link_text, names) if link and setting.link_text else None
         plans.append(_Plan(i, Column(name, duck_type, align), link, text, setting.new_tab))
     any_links = any(p.link for p in plans)
+    rules = _rules(look, names) if flags is not None else []
     body: list[list[Cell]] = []
-    for row in rows:
+    for r, row in enumerate(rows):
+        holds = [rule for rule, flag in zip(rules, flags[r], strict=True) if flag] if flags else []
         shown = [
             fmt.render(value) if fmt else (cell_format.plain(value, duck_type), None)
             for (_name, duck_type), fmt, value in zip(columns, formatters, row, strict=True)
@@ -123,12 +156,14 @@ def render(
         cells: list[Cell] = []
         for p in plans:
             text, colour = shown[p.index]
+            name = p.column.name
+            words = styles.merge([w for w, cols in holds if cols is None or name in cols], colour)
             href = _href(p, raw, links) if links is not None else None
             if href is not None and p.link_text is not None:
                 text = link_template.fill(p.link_text, texts, encode=False) or text
             if not text:
                 href = None  # nothing to click
-            cells.append(Cell(text, p.column.align, href, p.new_tab and href is not None, colour))
+            cells.append(Cell(text, p.column.align, href, p.new_tab and href is not None, words))
         body.append(cells)
     return TableView(columns=[p.column for p in plans], rows=body)
 

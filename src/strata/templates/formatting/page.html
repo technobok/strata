@@ -8,6 +8,37 @@
 data-field="{{ field }}"{% if field in marks %} aria-invalid="true"{% endif %}
 {%- endmacro %}
 
+{% macro rule_row(rid, pos, rule, names) -%}
+{% set f = 'style:' ~ pos ~ ':' %}
+<tr data-rule>
+    <td>
+        <input type="text" id="r-{{ rid }}-when" name="r-{{ rid }}-when" value="{{ rule.when if rule else '' }}"
+               class="mono" placeholder='"Amount" &lt; 0' autocomplete="off" spellcheck="false"
+               aria-label="Condition" data-rule-key="when" {{ invalid(f ~ 'when') }}>
+        <small class="field-message" data-rule-msg="when" data-message-for="{{ f }}when">{{ marks.get(f ~ 'when', '') }}</small>
+        <select data-insert-into="r-{{ rid }}-when" data-quote aria-label="Insert a column into the condition">
+            <option value="">Insert a column…</option>
+            {% for name in names %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+    </td>
+    <td>
+        <select multiple name="r-{{ rid }}-columns" aria-label="Columns it styles (none = the whole row)"
+                data-placeholder="the whole row" data-rule-key="columns" {{ invalid(f ~ 'columns') }}>
+            {% for name in names %}<option value="{{ name }}" {% if rule and name in rule.columns %}selected{% endif %}>{{ name }}</option>{% endfor %}
+            {% for name in (rule.columns if rule else []) if name not in names %}<option value="{{ name }}" selected>{{ name }}</option>{% endfor %}
+        </select>
+        <small class="field-message" data-rule-msg="columns" data-message-for="{{ f }}columns">{{ marks.get(f ~ 'columns', '') }}</small>
+    </td>
+    <td>
+        <input type="text" name="r-{{ rid }}-style" value="{{ rule.style if rule else '' }}" data-styles
+               placeholder="red bold" autocomplete="off" aria-label="Style"
+               data-rule-key="style" {{ invalid(f ~ 'style') }}>
+        <small class="field-message" data-rule-msg="style" data-message-for="{{ f }}style">{{ marks.get(f ~ 'style', '') }}</small>
+    </td>
+    <td><button type="button" class="outline secondary small" data-remove-row title="Remove this rule">Remove</button></td>
+</tr>
+{%- endmacro %}
+
 {% block title %}Format: {{ report.name }} — Strata{% endblock %}
 
 {% block content %}
@@ -19,8 +50,8 @@ data-field="{{ field }}"{% if field in marks %} aria-invalid="true"{% endif %}
     <a href="{{ url_for('reports.serve', report_uuid=report.uuid, ext='html') }}" role="button" class="outline small">Open the report</a>
     <a href="{{ url_for('datamodules.report_edit', report_uuid=report.uuid) }}" role="button" class="outline small">Edit the report</a>
 </div>
-<p>How the report's rows are shown: formats, alignment, hidden columns and links. Its data
-never changes.{{ help_link('formatting', 'the-format-page') }}</p>
+<p>How the report's rows are shown: formats, alignment, hidden columns, links and styles.
+Its data never changes.{{ help_link('formatting', 'the-format-page') }}</p>
 
 {% if datamodule.access_lock %}
 <div class="error-box">{{ datamodule.path }} is locked: {{ datamodule.access_lock }}</div>
@@ -33,7 +64,8 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
 {% else %}
 {% if error %}<div class="error-box format-error">{{ error }}</div>{% endif %}
 
-<form method="post" id="format-form" data-preview="{{ url_for('formatting.preview', report_uuid=report.uuid) }}">
+<form method="post" id="format-form" data-preview="{{ url_for('formatting.preview', report_uuid=report.uuid) }}"
+      data-style-words="{{ style_words }}">
     <div class="cheat-sheets">
         <details>
             <summary>Format codes</summary>
@@ -128,6 +160,28 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
         </tbody>
     </table>
     </div>
+
+    {% set names = view.rows | map(attribute='name') | list %}
+    <fieldset class="format-styles">
+        <legend>Styles{{ help_link('formatting', 'styles') }}</legend>
+        <input type="hidden" name="styles_present" value="1">
+        <p><small>A rule styles the rows its condition is true for: the whole row, or the
+        columns you pick. The condition is SQL on the row, e.g. <code>"Status" = 'Blocked'</code>
+        or <code>"Amount" &lt; 0</code>. A style is words: <code>bold</code> <code>italic</code>
+        <code>underline</code> <code>strike</code>, a colour (<code>red</code>), a background
+        (<code>bg-amber</code>), or an exact shade (<code>red-550</code>). A later rule's colour
+        wins.</small></p>
+        <div class="table-scroll">
+        <table class="format-rules">
+            <thead><tr><th>When</th><th>Apply to</th><th>Style</th><th></th></tr></thead>
+            <tbody id="rule-rows" data-next="{{ look.styles | length }}">
+                {% for rule in look.styles %}{{ rule_row(loop.index0, loop.index, rule, names) }}{% endfor %}
+            </tbody>
+        </table>
+        </div>
+        <template id="rule-row-template">{{ rule_row('__N__', '', none, names) }}</template>
+        <button type="button" class="outline small" data-add-row="rule-row-template" data-into="rule-rows">Add a rule</button>
+    </fieldset>
 
     {% if view.stale %}
     <fieldset class="format-stale">

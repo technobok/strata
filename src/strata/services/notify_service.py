@@ -34,7 +34,7 @@ from strata.models.report import Report
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.schedule import Schedule
-from strata.services import presentation, table_view, text_format
+from strata.services import presentation, styles, table_view, text_format
 
 log = logging.getLogger(__name__)
 
@@ -253,14 +253,19 @@ def _first_rows(run: ReportRun, dm: Datamodule, report: Report) -> table_view.Ta
     path = run_service.snapshot_file(dm.uuid, run)
     if path is None or not path.exists():
         return table_view.TableView()
+    from strata.services import query_filter, report_service
+
+    look = presentation.of(report)
     conn = duck.snapshot_conn(path)
     try:
-        sql = f"SELECT * FROM snapshot LIMIT {INLINE_ROWS}"
+        sql = "SELECT * FROM snapshot"
         columns = [(str(r[0]), str(r[1])) for r in conn.execute(f"DESCRIBE {sql}").fetchall()]
-        rows = conn.execute(sql).fetchall()
+        rows, flags, _ = report_service.rows_with_rules(
+            conn, sql, [], query_filter.Clauses(), look, limit=INLINE_ROWS, offset=0
+        )
     finally:
         conn.close()
-    return table_view.render(columns, rows, presentation.of(report), links=None)
+    return table_view.render(columns, rows, look, links=None, flags=flags)
 
 
 def _table(view: table_view.TableView) -> Markup:
@@ -271,7 +276,11 @@ def _table(view: table_view.TableView) -> Markup:
     )
     body = "".join(
         "<tr>"
-        + "".join(f'<td style="{cell}text-align:{c.align};">{escape(c.text)}</td>' for c in row)
+        + "".join(
+            f'<td style="{cell}text-align:{c.align};{styles.mail_css(c.words)}">'
+            f"{escape(c.text)}</td>"
+            for c in row
+        )
         + "</tr>"
         for row in view.rows
     )

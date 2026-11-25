@@ -498,6 +498,16 @@ table.reads td code {
     font-size: 0.9rem;
 }
 
+/* A report's style rules were skipped (owners only; not .flash: it must stay) */
+.rule-notice {
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--pico-del-color);
+    border-radius: var(--pico-border-radius);
+    font-size: 0.9rem;
+    white-space: pre-line;
+}
+
 /* Report freshness: stale / failed-refresh notice (not .flash: those auto-dismiss) */
 .freshness-banner {
     padding: 0.5rem 1rem;
@@ -1194,4 +1204,64 @@ label.inline-check {
     align-items: center;
     gap: 0.35rem;
     margin: 0;
+}
+
+input.mono {
+    font-family: var(--pico-font-family-monospace);
+}
+
+.format-rules td {
+    vertical-align: top;
+    min-width: 12rem;
+}
+
+.format-rules td:first-child {
+    min-width: 20rem;
+}
+
+/* A style word's sample (the Format page's style box): a neutral frame, the style
+   on the "Aa" inside it */
+.st-swatch {
+    display: inline-block;
+    padding: 0 0.15em;
+    border-radius: 3px;
+    color: var(--pico-color);
+    background-color: var(--pico-background-color);
+}
+
+.st-swatch > span {
+    padding: 0 0.15em;
+}
+
+/* The help page's palette (styles.palette_grid_html): each panel is one theme */
+.palette-panel {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    color: var(--pico-color);
+    background-color: var(--pico-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+}
+
+.palette-families {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+
+.palette-bg {
+    padding: 0 0.3em;
+}
+
+.palette-shades th,
+.palette-shades td {
+    padding: 0.1rem 0.25rem;
+    font-size: 0.7rem;
+}
+
+.palette-shades td {
+    width: 1.5rem;
+    height: 1.25rem;
 }

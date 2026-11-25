@@ -2,7 +2,7 @@
 
 A report is plain data: its SQL decides the rows. How those rows are shown is a
 separate set of settings per report: number and date formats, alignment, hidden
-columns and links. They never change the data, and they never come from the SQL.
+columns, links and styles. They never change the data, and they never come from the SQL.
 
 A report's owners set them on its **Format page** (the **Format** button on the
 report and on its edit page); they are also part of the report's
@@ -20,6 +20,9 @@ live data, so the datamodule must have been built. For each column:
 - **Link**: a link template, with **Insert a column…** to add `{Column}` where the
   cursor is; the link text (blank = the cell's value); **New tab**. Beside it, the
   link the first row gets.
+
+Below the columns, **Styles** holds the [style rules](#styles): **Add a rule**, then
+its condition, the columns it styles (none = the whole row) and its words.
 
 Each change is checked as you type: a field with a problem turns red with the reason
 beside it (e.g. a date format on a number column, or a column name that does not
@@ -82,6 +85,12 @@ are saved, saying what and where (it is never quietly ignored).
   or brackets yourself (`0.00;(0.00)`). An empty section shows nothing (`0;;` hides
   negatives and zeros). With one section, a negative number gets a `-`.
 - `General` shows the value plain, as without a format.
+- A colour at the start of a section: `[Red]`, `[Blue]`, `[Green]`, `[Yellow]`,
+  `[Cyan]`, `[Magenta]`, `[Black]`, `[White]`. `#,##0.00;[Red]-#,##0.00` shows negative
+  amounts in red. Strata shows them as the [style colours](#styles) of the same names
+  (Magenta is `fuchsia`; Black and White are the page's own text and background), so
+  they read in dark mode too; an xlsx download keeps Excel's own. A style rule's colour
+  wins over a format's.
 
 ### Dates and times
 
@@ -108,6 +117,7 @@ A text column takes `@`, the text itself, with words around it: `"Item "@`.
 
 Scientific notation (`0.00E+00`), fractions (`# ?/?`), conditions (`[>100]`),
 elapsed time (`[h]:mm`) and numbered colours (`[Color10]`) are refused for now.
+For a colour that depends on the value, use a [style rule](#styles).
 
 A format must suit its column: number codes on numbers, date codes on dates, times
 and timestamps, `@` on text. A format that does not fit is refused when saved.
@@ -150,6 +160,42 @@ The link's text is the cell's (formatted) value; `link_text` replaces it with a
 template of its own, e.g. `Open {Item}`. `new_tab = true` opens the link in a new
 tab.
 
+## Styles
+
+A style rule colours or emphasises the rows its condition is true for: the whole row,
+or only the columns it names.
+
+| When | Apply to | Style |
+|---|---|---|
+| `"Status" = 'Blocked'` | the whole row | `grey italic` |
+| `"Amount" < 0` | Amount | `red bold` |
+| `"Due" < current_date AND NOT "Paid"` | Due | `bg-amber` |
+
+**When** is a condition in SQL (DuckDB), written as in a `WHERE` clause over the
+report's columns: put a column name in double quotes (`"Amount"`), text in single
+quotes (`'Blocked'`). A row where it is NULL counts as false. **Insert a column…**
+adds a quoted name. It is checked against the report's data when saved.
+
+**Style** is one or more words:
+
+- `bold`, `italic`, `underline`, `strike`;
+- a colour for the text: `red` `pink` `fuchsia` `purple` `violet` `indigo` `blue`
+  `azure` `cyan` `jade` `green` `lime` `yellow` `amber` `pumpkin` `orange` `sand`
+  `grey` `zinc` `slate`. Each is a shade Strata picks for the light theme and another
+  for the dark one, both easy to read on the page's background;
+- `bg-` and a colour for the background: `bg-amber`, also theme-aware;
+- an exact shade, the same in both themes: `red-550`, `bg-red-100` (shades 50 to 950,
+  in steps of 50; check it reads in both themes below).
+
+A cell takes every rule that is true for its row, in order: words add up, and a later
+rule's colour or background replaces an earlier one's. Styles show on the page and the
+run page, and in mail (as the light theme).
+
+When a rule no longer runs on the data (a column it names was dropped), the page shows
+without styles and tells the owners why; the Format page marks the rule.
+
+<div data-palette></div>
+
 ## Hidden columns
 
 `hidden = true` hides a column on the page and in mail. It is still there for link
@@ -162,6 +208,7 @@ download, so a row never matches because of something nobody can see.
 | | page and run page | mail | xlsx download | CSV, JSON, Parquet |
 |---|---|---|---|---|
 | formats, alignment | yes | yes | the cell's number format | raw values |
+| styles | yes | yes | no | no |
 | links | yes | no | no | no |
 | hidden | hidden | hidden | kept | kept |
 

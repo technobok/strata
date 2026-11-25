@@ -16,7 +16,7 @@ type. Nothing user-supplied is ever interpolated into SQL text.
 """
 
 import logging
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -206,16 +206,22 @@ def build_clauses(
 
 
 def wrap_select(
-    final_sql: str, clauses: Clauses, limit: int | None = None, offset: int | None = None
+    final_sql: str,
+    clauses: Clauses,
+    limit: int | None = None,
+    offset: int | None = None,
+    extra: Sequence[str] = (),
 ) -> tuple[str, list[Any]]:
-    """Wrap the macro call with WHERE/ORDER BY/LIMIT.
+    """Wrap the macro call with WHERE/ORDER BY/LIMIT; ``extra`` = more columns after
+    the result's own (``expr AS "name"``: a style rule's flag).
 
     Returned binds EXCLUDE the macro's own binds — callers prepend them
     (positional ``?`` placeholders bind in textual order).
     """
-    if not clauses.where_sql and not clauses.order_sql and limit is None:
+    if not clauses.where_sql and not clauses.order_sql and limit is None and not extra:
         return final_sql, []
-    sql = f"SELECT * FROM ({final_sql}) AS _q{clauses.where_sql}{clauses.order_sql}"
+    more = "".join(f", {e}" for e in extra)
+    sql = f"SELECT _q.*{more} FROM ({final_sql}) AS _q{clauses.where_sql}{clauses.order_sql}"
     extra: list[Any] = list(clauses.binds)
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"
