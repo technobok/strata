@@ -149,3 +149,25 @@ def fill(
             for t in grand:
                 t.values = dict(zip(names[:-1], got[:-1], strict=True))
                 t.rows = int(got[-1])
+
+
+def grouped_sql(final_sql: str, where_sql: str, s: Shape, level: int) -> str:
+    """The totals view at ``level``: one row per group of the first ``level`` group
+    columns over the view's rows (its WHERE), with each total and the row count."""
+    groups = ", ".join(_quote(g) for g in s.groups[:level])
+    return (
+        f"SELECT {groups}, {_aggregates(s)} FROM ({final_sql}) AS _q{where_sql} GROUP BY {groups}"
+    )
+
+
+def group_row(row: Sequence[Any], s: Shape, level: int, after: int) -> TotalRow:
+    """A row of grouped_sql as the subtotal row of its group."""
+    names = [*s.totals, _ROWS]
+    values = row[level : level + len(names)]
+    return TotalRow(
+        after=after,
+        level=level,
+        key=tuple(row[:level]),
+        values=dict(zip(names[:-1], values[:-1], strict=True)),
+        rows=int(values[-1]),
+    )

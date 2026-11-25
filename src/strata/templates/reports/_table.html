@@ -46,8 +46,16 @@
 <div class="rule-notice">The totals were skipped on this page: they no longer run on the data ({{ result.total_error }}). Fix them on the report's Format page.</div>
 {% endif %}
 {% if result and not result.error and result.view and result.columns %}
+{% if ui and ui.show_links %}
+<nav class="show-control" aria-label="Show">
+    <span>Show:</span>
+    {% for label, href, current in ui.show_links %}
+    <a href="{{ href }}" hx-get="{{ href }}" hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true"{% if current %} aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</nav>
+{% endif %}
 <div class="run-info">
-    <span>{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}</span>
+    <span>{% if result.show %}{{ result.total_rows }} group{{ 's' if result.total_rows != 1 else '' }}{% else %}{{ result.total_rows }} row{{ 's' if result.total_rows != 1 else '' }}{% endif %}</span>
     {% if result.page_count > 1 %}<span>Page {{ result.page }} of {{ result.page_count }}</span>{% endif %}
 </div>
 {% set sortable = true %}{% include "reports/_grid.html" %}

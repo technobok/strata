@@ -230,6 +230,19 @@ a column with a total, and a group column cannot have one itself: it shows the l
 In mail, subtotals and the total row show when every row fits in the mail (20 rows);
 otherwise there is one row, "Total of all N rows".
 
+### Showing only the totals
+
+A report with subtotals has a **Show** control above its table: **Rows** (every row,
+with the subtotals), or **Company totals**, **Branch totals** … for each subtotal group.
+A totals view lists one row per group at that level, with the outer groups' subtotals
+and the total row as usual; it pages and sorts like rows (sort a total's column to rank
+the groups, e.g. the companies by amount). The URL carries it as `show=Company`.
+
+- In a totals view, **▸** on a group shows its rows under it (up to a page of them,
+  then a link to all of them); **▾** hides them again.
+- In the rows view, **▾** on a subtotal row hides that group's rows on this page;
+  **▸** shows them again. It is not remembered when the page changes.
+
 ## Hidden columns
 
 `hidden = true` hides a column on the page and in mail. It is still there for link

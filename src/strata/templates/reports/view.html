@@ -46,7 +46,7 @@
     <tbody>
         <tr><th>Data as of</th><td>{{ served_version.build_ended_at|localdatetime }}</td></tr>
         {% if arg_summary %}<tr><th>Arguments</th><td>{% for name, value, source in arg_summary %}<code>{{ name }}={{ value }}</code>{% if source == 'default' %} <small>(default)</small>{% elif source == 'needed' %} <small>(needed)</small>{% endif %}{% if not loop.last %} {% endif %}{% endfor %}</td></tr>{% endif %}
-        <tr><th>Result</th><td>{% if result %}{{ result.total_rows }} row{{ '' if result.total_rows == 1 else 's' }}{% elif arg_error %}not run: see below{% else %}not run yet: fill in the arguments marked <em>needed</em>, then <strong>Run</strong>{% endif %}</td></tr>
+        <tr><th>Result</th><td>{% if result %}{{ result.rows_matched }} row{{ '' if result.rows_matched == 1 else 's' }}{% elif arg_error %}not run: see below{% else %}not run yet: fill in the arguments marked <em>needed</em>, then <strong>Run</strong>{% endif %}</td></tr>
     </tbody>
 </table>
 {% endif %}

@@ -6,7 +6,7 @@
         <thead>
             <tr>
                 {% for col in result.view.columns %}
-                {% if sortable %}
+                {% if sortable and col.name in ui.sort_urls %}
                 <th class="align-{{ col.align }}{% if ui.sort_state.get(col.name) %} sort-{{ ui.sort_state[col.name] }}{% endif %}"><a
                     href="{{ ui.sort_urls[col.name] }}" hx-get="{{ ui.sort_urls[col.name] }}"
                     hx-target="#report-container" hx-swap="innerHTML" hx-push-url="true">{{ col.name }}</a></th>
@@ -18,8 +18,8 @@
         </thead>
         <tbody>
             {% for row in result.view.rows %}
-            <tr{% if row.kind != 'data' %} class="{{ row.kind }} level-{{ row.level }}"{% endif %}>
-                {% for cell in row.cells %}<td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.css_style %} style="{{ cell.css_style }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
+            <tr{% if row.kind != 'data' %} class="{{ row.kind }} level-{{ row.level }}" data-level="{{ row.level }}"{% endif %}>
+                {% for cell in row.cells %}<td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.css_style %} style="{{ cell.css_style }}"{% endif %}>{% if loop.first and row.kind == 'subtotal' and sortable %}{% if row.rows_url %}<button type="button" class="group-toggle" data-rows="{{ row.rows_url }}" data-count="{{ row.group_rows }}" aria-expanded="false" title="Show this group's rows">▸</button>{% else %}<button type="button" class="group-toggle" aria-expanded="true" title="Hide this group's rows on this page">▾</button>{% endif %} {% endif %}{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
             </tr>
             {% else %}
             <tr><td colspan="{{ result.view.columns | length }}">No rows match.</td></tr>

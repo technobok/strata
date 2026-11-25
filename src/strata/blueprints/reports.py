@@ -324,8 +324,9 @@ EXCEL_FORMATS = (
 
 def _excel_view(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """The view an Excel link keeps: arguments, filters, sort and search. Never a
-    page, a pinned version (a workbook refreshes to live data) or a key."""
-    return [(k, v) for k, v in pairs if k not in (*_DROP_KEYS, "version")]
+    page, a pinned version (a workbook refreshes to live data), a key, or the totals
+    view (data is rows)."""
+    return [(k, v) for k, v in pairs if k not in (*_DROP_KEYS, "version", "show")]
 
 
 def _excel_box_url(report: Report, pairs: list[tuple[str, str]]) -> str:
@@ -479,7 +480,11 @@ def build_ui(
         "search_action": url("html", []),
         "search_hidden": keep,
         "chips": chips,
-        "exports": [(fmt, url(fmt, keep)) for fmt in ("parquet", "csv", "json", "xlsx")],
+        "exports": [
+            (fmt, url(fmt, [(k, v) for k, v in keep if k != "show"]))
+            for fmt in ("parquet", "csv", "json", "xlsx")
+        ],
+        "show_links": [],
         "excel": excel(_excel_view(keep)) if excel is not None else None,
         "sort_state": {},
         "sort_urls": {},
@@ -494,7 +499,20 @@ def build_ui(
     sort_state = {t.field: ("desc" if t.desc else "asc") for t in result.applied_sort}
     ui["sort_state"] = sort_state
     base_no_sort = [(k, v) for k, v in keep if k != "sort"]
-    for col in result.columns:
+    # Rows, or the totals view at a group's level (a report with subtotals): the view
+    # changes, its own sort and page do not carry over.
+    plain = [(k, v) for k, v in keep if k not in ("show", "sort")]
+    if result.groups:
+        ui["show_links"] = [("Rows", url("html", plain), result.show is None)] + [
+            (f"{g} totals", url("html", plain + [("show", g)]), result.show == g)
+            for g in result.groups
+        ]
+    if result.view is not None and result.show is not None:
+        rows_of = [(k, v) for k, v in keep if k != "show"]
+        for row in result.view.rows:
+            if row.group_filters:
+                row.rows_url = url("html", rows_of + row.group_filters)
+    for col in result.sortable if result.sortable is not None else result.columns:
         # unsorted -> asc, asc -> desc, desc -> asc; a click replaces the whole
         # sort (multi-column stays URL-only).
         token = f"-{col}" if sort_state.get(col) == "asc" else col

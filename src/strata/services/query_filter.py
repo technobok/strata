@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 # Query keys that are never args or filters. `version` pins a historical
 # datamodule version; `format` and `key` are accepted and ignored for now
 # (the URL extension is canonical; API keys are Phase 6).
-RESERVED_KEYS = frozenset({"sort", "page", "q", "format", "key", "version"})
+RESERVED_KEYS = frozenset({"sort", "page", "q", "format", "key", "version", "show"})
 
 PAGE_SIZE = 200
 
@@ -62,6 +62,7 @@ class QuerySpec:
     sort_raw: list[str]
     page: int | None
     version: str | None = None  # pinned datamodule version uuid
+    show: str | None = None  # a subtotal group column: the totals view at its level
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ def parse_params(
     sort_raw: list[str] = []
     page: int | None = None
     version: str | None = None
+    show: str | None = None
     for key, value in pairs:
         if key in RESERVED_KEYS:
             if key == "q":
@@ -130,12 +132,15 @@ def parse_params(
             elif key == "version":
                 if version is None and value:
                     version = value
+            elif key == "show":
+                if show is None and value and value != "rows":
+                    show = value
         elif key in arg_names:
             arg_values.setdefault(key, []).append(value)
         else:
             filters.append(RawFilter(key, value))
     return arg_values, QuerySpec(
-        filters=filters, q=q, sort_raw=sort_raw, page=page, version=version
+        filters=filters, q=q, sort_raw=sort_raw, page=page, version=version, show=show
     )
 
 

@@ -54,6 +54,11 @@ class Row:
     cells: list[Cell]
     kind: str = "data"  # data | subtotal | total
     level: int = 0  # a subtotal's group level (1 = the outermost)
+    # A totals view's group row: the filters that select its rows, how many it has,
+    # and (set by reports.build_ui) the URL of its rows.
+    group_filters: list[tuple[str, str]] = field(default_factory=list)
+    group_rows: int = 0
+    rows_url: str | None = None
 
 
 @dataclass
@@ -185,6 +190,37 @@ def render(
         for tr in after.get(r, []):
             body.append(_total_row(tr, plans, look, formatters, columns))
     return TableView(columns=[p.column for p in plans], rows=body)
+
+
+def render_totals(
+    columns: Sequence[tuple[str, str]],
+    look: Presentation,
+    ordered: Sequence[totals.TotalRow],
+    level: int,
+) -> TableView:
+    """The totals view: only total rows, in order. A row of the view's own level can
+    load its group's rows (its ``group_filters``)."""
+    plans: list[_Plan] = []
+    formatters: list[excel_format.Formatter | None] = []
+    for i, (name, duck_type) in enumerate(columns):
+        setting = look.setting(name)
+        formatters.append(formatter_for(setting, duck_type))
+        if setting.hidden:
+            continue
+        align = setting.align if setting.align != "auto" else cell_format.default_align(duck_type)
+        plans.append(_Plan(i, Column(name, duck_type, align), None, None, False))
+    groups = [g for g in look.subtotals_by if g in {n for n, _ in columns}]
+    rows: list[Row] = []
+    for tr in ordered:
+        row = _total_row(tr, plans, look, formatters, columns)
+        if tr.level == level:
+            row.group_filters = [
+                (f"{g}__isnull", "true") if v is None else (f"{g}__eq", cell_format.plain(v))
+                for g, v in zip(groups, tr.key, strict=False)
+            ]
+            row.group_rows = tr.rows
+        rows.append(row)
+    return TableView(columns=[p.column for p in plans], rows=rows)
 
 
 def _total_row(

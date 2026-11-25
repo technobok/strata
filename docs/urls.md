@@ -52,6 +52,7 @@ type, so a URL can never change the SQL.
 | `q` | Rows where **any** shown column contains the text, ignoring case: the stored value, not its format, and not a [hidden column](formatting.md#hidden-columns). Repeat `q` to require several fragments. | `q=widget&q=north` |
 | `sort` | Columns to sort by, comma-separated; `-` for descending. Empty values sort last. | `sort=-revenue,region` |
 | `page` | 1-based page of 200 rows. The HTML page is always paged; the data formats return every row unless `page` is given. | `page=3` |
+| `show` | On the HTML page of a report with [subtotals](formatting.md#totals-and-subtotals): a group column, to show only the totals at that group's level; `rows` (the default) shows the rows. Data formats always return rows. | `show=Company` |
 
 ## Version pinning
 
@@ -70,6 +71,7 @@ with these names:
 | `page` | Page number (above). |
 | `q` | Search (above). |
 | `version` | Version pinning (above). |
+| `show` | Totals view (above). |
 | `key` | An API key token (see [API keys and Excel](api-keys.md)). |
 | `format` | Accepted and ignored: the extension in the path sets the format. |
 

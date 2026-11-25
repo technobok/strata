@@ -71,7 +71,8 @@ def _rows(page: str) -> list[tuple[str, list[str]]]:
     results = page.split('<div class="results-container">', 1)[1]
     body = results.split("<tbody>", 1)[1].split("</tbody>", 1)[0]
     out = []
-    for cls, inner in re.findall(r'<tr(?: class="([^"]*)")?>(.*?)</tr>', body, re.S):
+    for cls, inner in re.findall(r'<tr(?: class="([^"]*)")?[^>]*>(.*?)</tr>', body, re.S):
+        inner = re.sub(r"<button[^>]*>.*?</button>\s*", "", inner, flags=re.S)  # ▾ / ▸
         cells = [re.sub(r"<[^>]+>", "", c) for c in re.findall(r"<td[^>]*>(.*?)</td>", inner, re.S)]
         out.append((cls.split(" ")[0] if cls else "data", cells))
     return out
@@ -239,3 +240,122 @@ def test_a_count_shows_plain_whatever_its_columns_format(strata: Strata) -> None
     assert _import(strata, look).refused is None
     rpt = _report(strata, "Sales", "test/totals").uuid
     assert _page(strata, rpt)[-1][1][3] == "6"  # not "6.00"
+
+
+# ---------------------------------------------------------------------------
+# Showing only the totals (show=<group column>)
+# ---------------------------------------------------------------------------
+
+
+def _html(strata: Strata, rpt: str, query: str) -> str:
+    resp = strata.client.get(f"/r/{rpt}.html{query}")
+    assert resp.status_code == 200
+    return resp.get_data(as_text=True)
+
+
+def test_the_totals_view_lists_one_row_per_group(strata: Strata) -> None:
+    rpt = _setup(strata)
+    page = _html(strata, rpt, "?show=Company")
+    assert "3 groups" in page
+    assert "<tr><th>Result</th><td>6 rows</td></tr>" in page  # the rows it totals
+    assert _rows(page) == [AU_TOTAL, NZ_TOTAL, BLANK_TOTAL, GRAND]
+    # each group's row loads its rows; the outer level's rows are the only ones
+    assert re.findall(r'data-rows="([^"]*)"', page) == [
+        f"/r/{rpt}.html?Company__eq=AU",
+        f"/r/{rpt}.html?Company__eq=NZ",
+        f"/r/{rpt}.html?Company__isnull=true",
+    ]
+
+
+def test_a_groups_rows_url_shows_exactly_its_rows(strata: Strata) -> None:
+    rpt = _setup(strata)
+    rows = _page(strata, rpt, "?Company__eq=AU&sort=Item")
+    assert [r[1][2] for r in rows if r[0] == "data"] == ["a1", "a2", "a3"]
+    rows = _page(strata, rpt, "?Company__isnull=true")
+    assert [r[1][2] for r in rows if r[0] == "data"] == ["x1"]
+
+
+def test_an_inner_levels_totals_view_keeps_the_outer_subtotals(strata: Strata) -> None:
+    rpt = _setup(strata, '["Company", "Branch"]')
+    page = _html(strata, rpt, "?show=Branch")
+    assert [r[1][:2] for r in _rows(page)] == [
+        ["AU", "North total"],
+        ["AU", "South total"],
+        ["AU total", ""],
+        ["NZ", "North total"],
+        ["NZ", "South total"],
+        ["NZ total", ""],
+        ["(blank)", "North total"],
+        ["(blank) total", ""],
+        ["Total", ""],
+    ]
+    # only the view's own level loads rows; the outer level hides them on the page
+    assert page.count("data-rows=") == 5
+    assert f"/r/{rpt}.html?Company__eq=AU&amp;Branch__eq=North" in page
+
+
+def test_the_totals_view_sorts_by_a_total_and_pages(strata: Strata, small_pages: None) -> None:
+    rpt = _setup(strata)
+    labels = [r[1][0] for r in _rows(_html(strata, rpt, "?show=Company&sort=-Amount"))]
+    assert labels == ["AU total", "NZ total"]  # 60.00, 12.00 (page 1 of 2)
+    labels = [r[1][0] for r in _rows(_html(strata, rpt, "?show=Company&sort=-Amount&page=2"))]
+    assert labels == ["(blank) total", "Total"]
+    labels = [r[1][0] for r in _rows(_html(strata, rpt, "?show=Company&sort=Amount"))]
+    assert labels == ["(blank) total", "NZ total"]
+
+
+def test_the_totals_view_covers_the_filtered_rows(strata: Strata) -> None:
+    rpt = _setup(strata)
+    rows = _rows(_html(strata, rpt, "?show=Company&Branch=North"))
+    assert rows[0] == ("subtotal", ["AU total", "", "2", "30.00", "1.5", "2 Jan"])
+    assert rows[-1] == ("total", ["Total", "", "4", "36.00", "3.25", "6 Jan"])
+    page = _html(strata, rpt, "?show=Company&Branch=North")
+    assert f"/r/{rpt}.html?Branch=North&amp;Company__eq=AU" in page  # the filter carries
+
+
+def test_headers_sort_only_what_a_totals_view_has(strata: Strata) -> None:
+    rpt = _setup(strata)
+    page = _html(strata, rpt, "?show=Company")
+    head = page.split("<thead>", 1)[1].split("</thead>", 1)[0]
+    linked = re.findall(r"<th[^>]*><a\s[^>]*>([^<]+)</a></th>", head)
+    assert linked == ["Company", "Item", "Amount", "Qty", "Day"]  # not Branch
+
+
+def test_the_show_control(strata: Strata) -> None:
+    rpt = _setup(strata, '["Company", "Branch"]')
+    page = _html(strata, rpt, "?show=Company&sort=-Amount&page=1&Branch=North")
+    links = re.findall(
+        r'<a href="([^"]*)" hx-get[^>]*?( aria-current="true")?>([^<]+)</a>',
+        page.split('class="show-control"', 1)[1].split("</nav>", 1)[0],
+    )
+    assert links == [
+        (f"/r/{rpt}.html?Branch=North", "", "Rows"),
+        (f"/r/{rpt}.html?Branch=North&amp;show=Company", ' aria-current="true"', "Company totals"),
+        (f"/r/{rpt}.html?Branch=North&amp;show=Branch", "", "Branch totals"),
+    ]
+    assert "show=" not in page.split('class="export-links"', 1)[1].split("</div>", 1)[0]
+
+
+def test_no_show_control_without_subtotals(strata: Strata) -> None:
+    rpt = _setup(strata, "[]")
+    assert 'class="show-control"' not in _html(strata, rpt, "")
+
+
+def test_show_must_name_a_subtotal_group(strata: Strata) -> None:
+    rpt = _setup(strata)
+    page = _html(strata, rpt, "?show=Item")
+    assert "show: &#39;Item&#39; is not a subtotal group of this report" in page
+
+
+def test_data_formats_ignore_show(strata: Strata) -> None:
+    rpt = _setup(strata)
+    resp = strata.client.get(f"/r/{rpt}.csv?show=Company")
+    assert resp.status_code == 200 and resp.headers["X-Row-Count"] == "6"
+
+
+def test_the_rows_view_hides_a_group_client_side(strata: Strata) -> None:
+    """Rows view subtotals get ▾ (app.js hides the rows above them); no rows URL."""
+    rpt = _setup(strata)
+    page = _html(strata, rpt, "?sort=Item")
+    assert page.count('class="group-toggle" aria-expanded="true"') == 3
+    assert "data-rows=" not in page

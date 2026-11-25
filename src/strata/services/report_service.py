@@ -156,6 +156,16 @@ class TableResult:
     view: table_view.TableView | None = None  # the shown cells (None on an error)
     types: list[str] = field(default_factory=list)  # DuckDB type per column
     rule_error: str | None = None  # why the style rules were skipped on this page
+    sortable: list[str] | None = None  # the columns a header can sort by (None = all)
+    groups: list[str] = field(default_factory=list)  # subtotal groups: the Show control
+    matched: int | None = None  # a totals view: the rows it totals (total_rows = groups)
+
+    @property
+    def rows_matched(self) -> int:
+        """How many rows the view matches (in a totals view, not its groups)."""
+        return self.matched if self.matched is not None else self.total_rows
+
+    show: str | None = None  # the totals view's group column (None = the rows)
     total_error: str | None = None  # why the totals were skipped on this page
 
 
@@ -497,6 +507,13 @@ def page_of(
     """
     col_names = [name for name, _ in columns]
     sums = totals.shape(look, col_names)
+    if spec.show is not None:
+        if not (sums.active and spec.show in sums.groups):
+            conn.close()
+            raise query_filter.FilterError(
+                f"show: '{spec.show}' is not a subtotal group of this report"
+            )
+        return _totals_page(conn, final_sql, binds, columns, spec, look, sums)
     try:
         clauses = query_filter.build_clauses(
             spec, columns, hidden_columns(look), lead=sums.groups if sums.active else ()
@@ -556,6 +573,7 @@ def page_of(
         types=[t for _, t in columns],
         rule_error=rule_error,
         total_error=total_error,
+        groups=list(sums.groups) if sums.active else [],
         row_count=len(rows),
         total_rows=total,
         page=page,
@@ -650,6 +668,97 @@ def _first_line(exc: Exception) -> str:
     """DuckDB's message without its kind ("Binder Error: ") or the SQL it quotes."""
     line = str(exc).strip().splitlines()[0] if str(exc).strip() else "it does not run"
     return re.sub(r"^[A-Za-z ]+ Error: ", "", line)
+
+
+def _totals_page(
+    conn: duckdb.DuckDBPyConnection,
+    final_sql: str,
+    binds: list[Any],
+    columns: list[tuple[str, str]],
+    spec: query_filter.QuerySpec,
+    look: Presentation | None,
+    sums: totals.Shape,
+) -> TableResult:
+    """The totals view (``show=<group column>``): one row per group at that level,
+    paged and sortable on the group and total columns, the outer groups' subtotals
+    after their last group and the grand total after the last; every total over the
+    view's rows (its filters and search). Closes ``conn``."""
+    assert spec.show is not None
+    level = sums.groups.index(spec.show) + 1
+    col_names = [n for n, _ in columns]
+    page = spec.page or 1
+    offset = (page - 1) * query_filter.PAGE_SIZE
+    unsorted = query_filter.QuerySpec(filters=spec.filters, q=spec.q, sort_raw=[], page=None)
+    try:
+        where = query_filter.build_clauses(unsorted, columns, hidden_columns(look))
+    except query_filter.FilterError:
+        conn.close()
+        raise
+    grouped = totals.grouped_sql(final_sql, where.where_sql, sums, level)
+    grouped_binds = binds + where.binds
+    try:
+        described = conn.execute(f"DESCRIBE {grouped}", grouped_binds).fetchall()
+        grouped_cols = [(str(r[0]), str(r[1])) for r in described]
+        sortable = [n for n in col_names if n in {c for c, _ in grouped_cols}]
+        own = spec.sort_raw + (
+            [spec.show] if spec.show not in {s.lstrip("-") for s in spec.sort_raw} else []
+        )
+        order = query_filter.build_clauses(
+            query_filter.QuerySpec(filters=[], q=[], sort_raw=own, page=None),
+            [c for c in grouped_cols if c[0] in sortable],
+            lead=sums.groups[: level - 1],
+        )
+        count_row = conn.execute(
+            f"SELECT count(*) FROM ({grouped}) AS _g", grouped_binds
+        ).fetchone()
+        total = int(count_row[0]) if count_row else 0
+        count_sql, count_binds = query_filter.wrap_count(final_sql, where)
+        matched_row = conn.execute(count_sql, binds + count_binds).fetchone()
+        matched = int(matched_row[0]) if matched_row else 0
+        sql, extra = query_filter.wrap_select(
+            grouped, order, limit=query_filter.PAGE_SIZE + 1, offset=offset
+        )
+        rows = conn.execute(sql, grouped_binds + extra).fetchall()
+        after_last = rows[query_filter.PAGE_SIZE] if len(rows) > query_filter.PAGE_SIZE else None
+        rows = rows[: query_filter.PAGE_SIZE]
+        last = offset + len(rows) >= total
+        following = None if last else after_last
+        outer = totals.plan(rows, following, list(range(level - 1)), sums.total_row)
+        totals.fill(conn, final_sql, binds, where, sums, outer)
+    except duckdb.Error as exc:
+        conn.close()
+        return TableResult(
+            error=f"Query error: {exc}",
+            columns=col_names,
+            page=page,
+            applied_filters=where.filters,
+            show=spec.show,
+        )
+    conn.close()
+    ordered: list[totals.TotalRow] = []
+    after: dict[int, list[totals.TotalRow]] = {}
+    for tr in outer:
+        after.setdefault(tr.after, []).append(tr)
+    for i, row in enumerate(rows):
+        ordered.append(totals.group_row(row, sums, level, i))
+        ordered.extend(after.get(i, []))
+    page_count = max(1, (total + query_filter.PAGE_SIZE - 1) // query_filter.PAGE_SIZE)
+    return TableResult(
+        columns=col_names,
+        rows=[],
+        view=table_view.render_totals(columns, look or Presentation(), ordered, level),
+        types=[t for _, t in columns],
+        row_count=len(rows),
+        total_rows=total,
+        page=page,
+        page_count=page_count,
+        applied_filters=where.filters,
+        applied_sort=order.sort,
+        sortable=sortable,
+        show=spec.show,
+        groups=list(sums.groups),
+        matched=matched,
+    )
 
 
 def hidden_columns(look: Presentation | None) -> frozenset[str]:

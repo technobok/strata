@@ -198,3 +198,79 @@ document.addEventListener('click', function (e) {
         }
     }
 });
+
+// Subtotal rows (templates/reports/_grid.html). In the rows view, ▾ hides its group's
+// rows on this page: subtotals are footers, so they are the rows above it back to the
+// previous subtotal of its level or an outer one; ▸ shows them again (not remembered).
+// In a totals view, ▸ on a group's row loads that group's rows under it (its rows view,
+// up to a page, then a link to all of them) and ▾ removes them.
+(function () {
+    function isFooterAtOrAbove(row, level) {
+        return row.dataset.level !== undefined && Number(row.dataset.level) <= level &&
+            (row.classList.contains('subtotal') || row.classList.contains('total'));
+    }
+
+    function setOpen(btn, open) {
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.textContent = open ? '▾' : '▸';
+    }
+
+    function toggleBlock(tr, btn) {
+        var open = btn.getAttribute('aria-expanded') === 'true';
+        var level = Number(tr.dataset.level);
+        for (var row = tr.previousElementSibling; row && !isFooterAtOrAbove(row, level);
+             row = row.previousElementSibling) {
+            row.hidden = open;
+        }
+        setOpen(btn, !open);
+    }
+
+    function loadRows(tr, btn) {
+        if (tr.dataset.loaded) {
+            document.querySelectorAll('tr[data-of="' + tr.dataset.loaded + '"]').forEach(function (r) { r.remove(); });
+            delete tr.dataset.loaded;
+            setOpen(btn, false);
+            return;
+        }
+        btn.disabled = true;
+        fetch(btn.dataset.rows, { headers: { 'HX-Request': 'true' } })
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                var doc = new DOMParser().parseFromString(html, 'text/html');
+                var rows = doc.querySelectorAll('.results-container tbody tr:not(.subtotal):not(.total)');
+                var id = 'g' + Math.random().toString(36).slice(2);
+                var at = tr;
+                rows.forEach(function (r) {
+                    var copy = document.importNode(r, true);
+                    copy.dataset.of = id;
+                    copy.classList.add('group-rows');
+                    at.after(copy);
+                    at = copy;
+                });
+                var count = Number(btn.dataset.count || 0);
+                if (count > rows.length) {
+                    var more = document.createElement('tr');
+                    more.dataset.of = id;
+                    more.className = 'group-rows';
+                    var cell = document.createElement('td');
+                    cell.colSpan = tr.children.length;
+                    var link = document.createElement('a');
+                    link.href = btn.dataset.rows;
+                    link.textContent = 'All ' + count.toLocaleString() + ' rows';
+                    cell.appendChild(link);
+                    more.appendChild(cell);
+                    at.after(more);
+                }
+                tr.dataset.loaded = id;
+                setOpen(btn, true);
+            })
+            .finally(function () { btn.disabled = false; });
+    }
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('.group-toggle');
+        if (!btn) { return; }
+        var tr = btn.closest('tr');
+        if (btn.dataset.rows) { loadRows(tr, btn); } else { toggleBlock(tr, btn); }
+    });
+})();
