@@ -140,14 +140,19 @@ def parse_params(
 
 
 def build_clauses(
-    spec: QuerySpec, columns: list[tuple[str, str]], unsearched: frozenset[str] = frozenset()
+    spec: QuerySpec,
+    columns: list[tuple[str, str]],
+    unsearched: frozenset[str] = frozenset(),
+    lead: Sequence[str] = (),
 ) -> Clauses:
     """Validate the spec against the DESCRIBEd (name, type) columns and emit SQL.
 
     ``q=`` searches every column except ``unsearched`` (the report's hidden ones: a
     match only in a column nobody sees would look like a wrong result). The page, mail
     and every download search alike, so they all hold the same rows. Filters reach
-    every column."""
+    every column. ``lead`` = columns rows sort by first (a report's subtotal groups),
+    ascending unless the spec sorts one of them the other way; the spec's own sort
+    follows within them."""
     colmap: dict[str, str] = {}
     for name, ctype in columns:
         colmap.setdefault(name, ctype)  # keep-first on duplicate output names
@@ -190,6 +195,10 @@ def build_clauses(
             continue
         seen.add(col)
         sort_terms.append(SortTerm(field=col, desc=desc))
+    if lead:
+        given = {t.field: t for t in sort_terms}
+        first = [given.get(name, SortTerm(field=name, desc=False)) for name in lead]
+        sort_terms = first + [t for t in sort_terms if t.field not in lead]
 
     where_sql = " WHERE " + " AND ".join(where_parts) if where_parts else ""
     order_sql = (
@@ -295,6 +304,10 @@ def _label(col: str, op: str, raw: str) -> str:
 def _is_true(raw: str) -> bool:
     """Boolean-ish parse where bare/empty means true (``?col__isnull=``)."""
     return raw.lower() in ("", "true", "1", "yes", "on")
+
+
+def quote_ident(name: str) -> str:
+    return _quote_ident(name)
 
 
 def _quote_ident(name: str) -> str:

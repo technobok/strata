@@ -2,7 +2,7 @@
 
 A report is plain data: its SQL decides the rows. How those rows are shown is a
 separate set of settings per report: number and date formats, alignment, hidden
-columns, links and styles. They never change the data, and they never come from the SQL.
+columns, links, styles, totals and subtotals. They never change the data, and they never come from the SQL.
 
 A report's owners set them on its **Format page** (the **Format** button on the
 report and on its edit page); they are also part of the report's
@@ -21,8 +21,12 @@ live data, so the datamodule must have been built. For each column:
   cursor is; the link text (blank = the cell's value); **New tab**. Beside it, the
   link the first row gets.
 
-Below the columns, **Styles** holds the [style rules](#styles): **Add a rule**, then
-its condition, the columns it styles (none = the whole row) and its words.
+- **Total**: the function its [totals](#totals-and-subtotals) use (only those that
+  suit the column's type are offered).
+
+Below the columns, **Totals** chooses the subtotal groups and the total row, and
+**Styles** holds the [style rules](#styles): **Add a rule**, then its condition, the
+columns it styles (none = the whole row) and its words.
 
 Each change is checked as you type: a field with a problem turns red with the reason
 beside it (e.g. a date format on a number column, or a column name that does not
@@ -196,6 +200,36 @@ without styles and tells the owners why; the Format page marks the rule.
 
 <div data-palette></div>
 
+## Totals and subtotals
+
+Give a column a **Total**, then choose where totals show: **subtotal rows** after each
+group of rows, and a **total row** at the end.
+
+| Total | On | Shows |
+|---|---|---|
+| `sum`, `avg` | numbers | the sum; the average of the group's rows |
+| `min`, `max` | numbers, dates, times, text | the smallest, the largest |
+| `count` | any column | how many rows have a value in it |
+| `count_distinct` | any column | how many different values it has |
+
+**Subtotals by** names the columns that make the groups, outermost first:
+`Company`, then `Branch` gives a subtotal for each branch within each company, then
+one for each company. Rows sort by those columns first (click a group column's
+heading to reverse it), then by the view's own sort within each group. A subtotal row
+comes after its group's last row and shows `<value> total` in the group's column
+(`(blank) total` for an empty value), the outer groups' values in theirs, and each
+total in its column. A group that runs onto the next page gets its subtotal on the
+page where it ends. **A total row** comes after the last row of the last page, with
+`Total` in the first column without a total.
+
+Totals are worked out over every row that matches the view (its filters and search),
+not just the page; an average is the group's own average, never an average of
+averages. A total shows in its column's format; a count shows plain. Subtotals need
+a column with a total, and a group column cannot have one itself: it shows the labels.
+
+In mail, subtotals and the total row show when every row fits in the mail (20 rows);
+otherwise there is one row, "Total of all N rows".
+
 ## Hidden columns
 
 `hidden = true` hides a column on the page and in mail. It is still there for link
@@ -209,6 +243,7 @@ download, so a row never matches because of something nobody can see.
 |---|---|---|---|---|
 | formats, alignment | yes | yes | the cell's number format | raw values |
 | styles | yes | yes | no | no |
+| totals, subtotals | yes | when every row fits | no | no |
 | links | yes | no | no | no |
 | hidden | hidden | hidden | kept | kept |
 

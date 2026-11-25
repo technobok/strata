@@ -96,6 +96,7 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
             <th>Format{{ help_link('formatting', 'formats') }}</th>
             <th>Align{{ help_link('formatting', 'alignment') }}</th>
             <th>Hide{{ help_link('formatting', 'hidden-columns') }}</th>
+            <th>Total{{ help_link('formatting', 'totals-and-subtotals') }}</th>
             <th>Link{{ help_link('formatting', 'links') }}</th>
         </tr></thead>
         <tbody>
@@ -103,7 +104,6 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
         <tr>
             <td class="format-column-name">
                 <input type="hidden" name="{{ row.key }}-name" value="{{ row.name }}">
-                <input type="hidden" name="{{ row.key }}-total" value="{{ s.total }}">
                 <strong>{{ row.name }}</strong>
                 <small><code>{{ row.duck_type }}</code></small>
                 {% if row.sample %}<small class="sample" title="Its first value, plain">{{ row.sample }}</small>{% endif %}
@@ -130,6 +130,14 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
                 <input type="checkbox" name="{{ row.key }}-hidden" {% if s.hidden %}checked{% endif %}
                        aria-label="Hide {{ row.name }} on the page and in mail" {{ invalid(col ~ 'hidden') }}>
                 {{ message(col ~ 'hidden') }}
+            </td>
+            <td>
+                <select name="{{ row.key }}-total" aria-label="Total of {{ row.name }}" {{ invalid(col ~ 'total') }}>
+                    <option value="">none</option>
+                    {% for fn in row.totals %}<option value="{{ fn }}" {% if s.total == fn %}selected{% endif %}>{{ fn | replace('_', ' ') }}</option>{% endfor %}
+                    {% if s.total and s.total not in row.totals %}<option value="{{ s.total }}" selected>{{ s.total }}</option>{% endif %}
+                </select>
+                {{ message(col ~ 'total') }}
             </td>
             <td class="format-link">
                 {% set link_marked = (col ~ 'link') in marks or (col ~ 'link_text') in marks or (col ~ 'new_tab') in marks %}
@@ -162,6 +170,32 @@ are checked against them. <a href="{{ url_for('datamodules.edit', uuid=datamodul
     </div>
 
     {% set names = view.rows | map(attribute='name') | list %}
+    <fieldset class="format-totals">
+        <legend>Totals{{ help_link('formatting', 'totals-and-subtotals') }}</legend>
+        <input type="hidden" name="totals_present" value="1">
+        <p><small>Give columns a <strong>Total</strong> above, then choose where it shows:
+        subtotal rows after each group (rows sort by the groups first), and a total row
+        at the end. Totals cover every row that matches the view, not just the page.</small></p>
+        <div class="inline-form format-levels">
+            {% set levels = [3, look.subtotals_by | length + 1] | max %}
+            {% for i in range(levels) %}{% set chosen = look.subtotals_by[i] if i < look.subtotals_by | length else '' %}
+            <label>{% if i == 0 %}Subtotals by{% else %}then by{% endif %}
+                <select name="subtotals_by" {{ invalid('subtotals_by') }}>
+                    <option value="">—</option>
+                    {% for name in names %}<option value="{{ name }}" {% if chosen == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+                    {% if chosen and chosen not in names %}<option value="{{ chosen }}" selected>{{ chosen }}</option>{% endif %}
+                </select>
+            </label>
+            {% endfor %}
+        </div>
+        {{ message('subtotals_by') }}
+        <label class="inline-check">
+            <input type="checkbox" name="total_row" {% if look.total_row %}checked{% endif %} {{ invalid('total_row') }}>
+            A total row at the end
+        </label>
+        {{ message('total_row') }}
+    </fieldset>
+
     <fieldset class="format-styles">
         <legend>Styles{{ help_link('formatting', 'styles') }}</legend>
         <input type="hidden" name="styles_present" value="1">

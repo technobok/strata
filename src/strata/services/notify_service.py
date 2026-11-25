@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
+import duckdb
 from flask import current_app
 from markupsafe import Markup, escape
 
@@ -247,25 +248,45 @@ def run_link(run: ReportRun) -> str | None:
 
 def _first_rows(run: ReportRun, dm: Datamodule, report: Report) -> table_view.TableView:
     """The run's first INLINE_ROWS rows as the mail shows them: the report's formats,
-    alignment and hidden columns; never links (user decision 2026-11-25)."""
-    from strata.services import duck, run_service
+    alignment, hidden columns and styles; never links (user decision 2026-11-25).
+    Subtotals and the total row only when every row is in the mail; otherwise one
+    "Total of all N rows" row (when the report has totals)."""
+    from strata.services import duck, query_filter, report_service, run_service, totals
 
     path = run_service.snapshot_file(dm.uuid, run)
     if path is None or not path.exists():
         return table_view.TableView()
-    from strata.services import query_filter, report_service
-
     look = presentation.of(report)
     conn = duck.snapshot_conn(path)
     try:
         sql = "SELECT * FROM snapshot"
         columns = [(str(r[0]), str(r[1])) for r in conn.execute(f"DESCRIBE {sql}").fetchall()]
+        names = [n for n, _ in columns]
+        sums = totals.shape(look, names)
+        _, spec = query_filter.parse_params([], set())
+        clauses = query_filter.build_clauses(spec, columns, lead=sums.groups if sums.active else ())
         rows, flags, _ = report_service.rows_with_rules(
-            conn, sql, [], query_filter.Clauses(), look, limit=INLINE_ROWS, offset=0
+            conn, sql, [], clauses, look, limit=INLINE_ROWS + 1, offset=0
         )
+        every = len(rows) <= INLINE_ROWS
+        rows = rows[:INLINE_ROWS]
+        flags = flags[:INLINE_ROWS] if flags is not None else None
+        sum_rows: list[totals.TotalRow] = []
+        if sums.active and rows:
+            if every:
+                groups = [names.index(g) for g in sums.groups]
+                sum_rows = totals.plan(rows, None, groups, sums.total_row)
+            else:
+                count = run.row_count or 0
+                label = f"Total of all {_rows_word(count)}"
+                sum_rows = [totals.TotalRow(after=len(rows) - 1, level=0, key=(), label=label)]
+            try:
+                totals.fill(conn, sql, [], clauses, sums, sum_rows)
+            except duckdb.Error:
+                sum_rows = []  # the rows still go out; the run page says why
     finally:
         conn.close()
-    return table_view.render(columns, rows, look, links=None, flags=flags)
+    return table_view.render(columns, rows, look, links=None, flags=flags, total_rows=sum_rows)
 
 
 def _table(view: table_view.TableView) -> Markup:
@@ -277,9 +298,9 @@ def _table(view: table_view.TableView) -> Markup:
     body = "".join(
         "<tr>"
         + "".join(
-            f'<td style="{cell}text-align:{c.align};{styles.mail_css(c.words)}">'
-            f"{escape(c.text)}</td>"
-            for c in row
+            f'<td style="{cell}text-align:{c.align};{styles.mail_css(c.words)}'
+            f'{"" if row.kind == "data" else "font-weight:700;"}">{escape(c.text)}</td>'
+            for c in row.cells
         )
         + "</tr>"
         for row in view.rows
@@ -320,8 +341,8 @@ def build_run_mail(
     else:
         view = _first_rows(run, dm, report)
         shown = (
-            f"The first {len(view.rows)} of {_rows_word(count)}:"
-            if count > len(view.rows)
+            f"The first {view.data_count} of {_rows_word(count)}:"
+            if count > view.data_count
             else f"{_rows_word(count)}:"
         )
     link = run_link(run)

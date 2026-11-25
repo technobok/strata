@@ -462,12 +462,12 @@ table.reads td code {
     color: var(--pico-primary-inverse);
 }
 
-.sort-asc::after {
+.sort-asc > a::after {
     content: " \25B2";
     font-size: 0.7em;
 }
 
-.sort-desc::after {
+.sort-desc > a::after {
     content: " \25BC";
     font-size: 0.7em;
 }
@@ -476,6 +476,17 @@ table.reads td code {
     color: inherit;
     text-decoration: none;
     display: block;
+}
+
+/* Subtotal and total rows (services/totals): footers of their group */
+.results-container tr.subtotal td,
+.results-container tr.total td {
+    font-weight: 700;
+}
+
+.results-container tr.subtotal.level-1 td,
+.results-container tr.total td {
+    border-bottom-width: 2px;
 }
 
 /* A column's alignment (services/cell_format: numbers, dates and times right). A

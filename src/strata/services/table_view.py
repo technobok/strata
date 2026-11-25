@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from strata.services import cell_format, excel_format, link_template, styles
+from strata.services import cell_format, excel_format, link_template, styles, totals
 from strata.services.presentation import ColumnSetting, Presentation
 
 
@@ -50,9 +50,21 @@ class Cell:
 
 
 @dataclass
+class Row:
+    cells: list[Cell]
+    kind: str = "data"  # data | subtotal | total
+    level: int = 0  # a subtotal's group level (1 = the outermost)
+
+
+@dataclass
 class TableView:
     columns: list[Column] = field(default_factory=list)  # the shown ones
-    rows: list[list[Cell]] = field(default_factory=list)
+    rows: list[Row] = field(default_factory=list)
+
+    @property
+    def data_count(self) -> int:
+        """Rows of data (not subtotal or total rows)."""
+        return sum(1 for r in self.rows if r.kind == "data")
 
 
 @dataclass(frozen=True)
@@ -121,10 +133,12 @@ def render(
     look: Presentation | None = None,
     links: Links | None = None,
     flags: Sequence[Sequence[Any]] | None = None,
+    total_rows: Sequence[totals.TotalRow] = (),
 ) -> TableView:
     """``columns`` = (name, DuckDB type) as DESCRIBE gives them; ``rows`` = the values;
     ``look`` = the report's settings; ``links`` None = no links (mail); ``flags`` = per
-    row, whether each of ``look.styles`` holds for it (None: rules not evaluated)."""
+    row, whether each of ``look.styles`` holds for it (None: rules not evaluated);
+    ``total_rows`` = subtotal and total rows, each after the data row it follows."""
     look = look or Presentation()
     names = {name for name, _ in columns}
     formatters: list[excel_format.Formatter | None] = []
@@ -140,7 +154,10 @@ def render(
         plans.append(_Plan(i, Column(name, duck_type, align), link, text, setting.new_tab))
     any_links = any(p.link for p in plans)
     rules = _rules(look, names) if flags is not None else []
-    body: list[list[Cell]] = []
+    after: dict[int, list[totals.TotalRow]] = {}
+    for tr in total_rows:
+        after.setdefault(tr.after, []).append(tr)
+    body: list[Row] = []
     for r, row in enumerate(rows):
         holds = [rule for rule, flag in zip(rules, flags[r], strict=True) if flag] if flags else []
         shown = [
@@ -164,8 +181,57 @@ def render(
             if not text:
                 href = None  # nothing to click
             cells.append(Cell(text, p.column.align, href, p.new_tab and href is not None, words))
-        body.append(cells)
+        body.append(Row(cells))
+        for tr in after.get(r, []):
+            body.append(_total_row(tr, plans, look, formatters, columns))
     return TableView(columns=[p.column for p in plans], rows=body)
+
+
+def _total_row(
+    tr: totals.TotalRow,
+    plans: list[_Plan],
+    look: Presentation,
+    formatters: list[excel_format.Formatter | None],
+    columns: Sequence[tuple[str, str]],
+) -> Row:
+    """A subtotal row: its group's value and "total" in the group's column, the outer
+    groups' values in theirs, each column's total in its format (counts plain). The
+    grand total: "Total" in the first shown column without a total."""
+    index = {name: i for i, (name, _) in enumerate(columns)}
+    groups = [g for g in look.subtotals_by if g in index]
+    functions = {c.name: c.total for c in look.columns if c.total}
+
+    def shown(name: str, value: Any, plain_type: str) -> str:
+        fmt = formatters[index[name]]
+        if fmt is not None:
+            return fmt.render(value)[0]
+        return cell_format.plain(value, plain_type)
+
+    label_at = None
+    if tr.level == 0:
+        label_at = next((p.column.name for p in plans if p.column.name not in tr.values), None)
+    cells: list[Cell] = []
+    for p in plans:
+        name = p.column.name
+        text = ""
+        if name in tr.values:
+            fn = functions.get(name, "")
+            value = tr.values[name]
+            if value is not None:
+                if fn in ("count", "count_distinct"):
+                    text = cell_format.plain(value)
+                else:
+                    same_type = p.column.duck_type if fn in ("min", "max") else ""
+                    text = shown(name, value, same_type)
+        elif tr.level > 0 and name in groups[: tr.level]:
+            k = groups.index(name)
+            value = tr.key[k]
+            value_text = "(blank)" if value is None else shown(name, value, p.column.duck_type)
+            text = f"{value_text} total" if k == tr.level - 1 else value_text
+        elif name == label_at:
+            text = tr.label or "Total"
+        cells.append(Cell(text, p.column.align))
+    return Row(cells, "subtotal" if tr.level else "total", tr.level)
 
 
 def _href(plan: _Plan, raw: dict[str, str | None], links: Links) -> str | None:

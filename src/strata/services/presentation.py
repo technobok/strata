@@ -64,6 +64,12 @@ PRESETS: dict[str, tuple[str, ...]] = {
 PRESETS[cell_format.FLOAT] = PRESETS[cell_format.DECIMAL]
 
 
+def totals_for(duck_type: str) -> list[str]:
+    """The total functions a column of ``duck_type`` takes."""
+    kind = cell_format.kind(duck_type)
+    return [fn for fn in TOTALS if fn not in _TOTAL_KINDS or kind in _TOTAL_KINDS[fn]]
+
+
 def codes_for(duck_type: str, documents: Sequence[str]) -> list[str]:
     """Format codes for a column of ``duck_type``: the presets for its kind, then the
     codes other reports use (``documents``: their stored JSON) that fit it."""

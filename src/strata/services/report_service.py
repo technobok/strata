@@ -40,6 +40,7 @@ from strata.services import (
     stream_service,
     table_view,
     template_service,
+    totals,
 )
 from strata.services.presentation import Presentation
 
@@ -155,6 +156,7 @@ class TableResult:
     view: table_view.TableView | None = None  # the shown cells (None on an error)
     types: list[str] = field(default_factory=list)  # DuckDB type per column
     rule_error: str | None = None  # why the style rules were skipped on this page
+    total_error: str | None = None  # why the totals were skipped on this page
 
 
 def resolve(report_uuid: str) -> tuple[Report, Datamodule] | None:
@@ -493,28 +495,49 @@ def page_of(
     Closes ``conn``. FilterError propagates; DuckDB errors are captured into the
     result (it keeps the applied filters so a failing chip stays removable).
     """
+    col_names = [name for name, _ in columns]
+    sums = totals.shape(look, col_names)
     try:
-        clauses = query_filter.build_clauses(spec, columns, hidden_columns(look))
+        clauses = query_filter.build_clauses(
+            spec, columns, hidden_columns(look), lead=sums.groups if sums.active else ()
+        )
     except query_filter.FilterError:
         conn.close()
         raise
-    col_names = [name for name, _ in columns]
     page = spec.page or 1
+    offset = (page - 1) * query_filter.PAGE_SIZE
+    total_rows: list[totals.TotalRow] = []
+    total_error = None
     try:
         # One extra count execution per HTML view; the data is a local DuckDB or
         # Parquet file, so this is cheap relative to rendering.
         count_sql, count_binds = query_filter.wrap_count(final_sql, clauses)
         count_row = conn.execute(count_sql, binds + count_binds).fetchone()
         total = int(count_row[0]) if count_row else 0
+        # With subtotals, one row more than the page shows: where does its last group end?
+        ahead = 1 if sums.active and sums.groups else 0
         rows, flags, rule_error = rows_with_rules(
             conn,
             final_sql,
             binds,
             clauses,
             look,
-            limit=query_filter.PAGE_SIZE,
-            offset=(page - 1) * query_filter.PAGE_SIZE,
+            limit=query_filter.PAGE_SIZE + ahead,
+            offset=offset,
         )
+        after_last = rows[query_filter.PAGE_SIZE] if len(rows) > query_filter.PAGE_SIZE else None
+        rows = rows[: query_filter.PAGE_SIZE]
+        flags = flags[: query_filter.PAGE_SIZE] if flags is not None else None
+        if sums.active and rows:
+            last = offset + len(rows) >= total
+            # None = the data ends on this page; any row = more follow.
+            following = None if last else (after_last if after_last is not None else rows[-1])
+            groups = [col_names.index(g) for g in sums.groups]
+            total_rows = totals.plan(rows, following, groups, sums.total_row)
+            try:
+                totals.fill(conn, final_sql, binds, clauses, sums, total_rows)
+            except duckdb.Error as exc:
+                total_rows, total_error = [], _first_line(exc)
     except duckdb.Error as exc:
         return TableResult(
             error=f"Query error: {exc}",
@@ -529,9 +552,10 @@ def page_of(
     return TableResult(
         columns=col_names,
         rows=rows,
-        view=table_view.render(columns, rows, look, links, flags),
+        view=table_view.render(columns, rows, look, links, flags, total_rows),
         types=[t for _, t in columns],
         rule_error=rule_error,
+        total_error=total_error,
         row_count=len(rows),
         total_rows=total,
         page=page,

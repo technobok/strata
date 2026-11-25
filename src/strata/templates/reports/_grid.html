@@ -18,8 +18,8 @@
         </thead>
         <tbody>
             {% for row in result.view.rows %}
-            <tr>
-                {% for cell in row %}<td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.css_style %} style="{{ cell.css_style }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
+            <tr{% if row.kind != 'data' %} class="{{ row.kind }} level-{{ row.level }}"{% endif %}>
+                {% for cell in row.cells %}<td{% if cell.css_class %} class="{{ cell.css_class }}"{% endif %}{% if cell.css_style %} style="{{ cell.css_style }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
             </tr>
             {% else %}
             <tr><td colspan="{{ result.view.columns | length }}">No rows match.</td></tr>

@@ -120,7 +120,12 @@ def _draft(stored: Presentation) -> Presentation:
                 raise BadRequest(f"a column's settings could not be read: {exc}") from exc
         k += 1
     rules = _rules() if form.get("styles_present") else stored.styles
-    return Presentation(columns, rules, stored.subtotals_by, stored.total_row)
+    if form.get("totals_present"):
+        groups = [g for g in form.getlist("subtotals_by") if g]
+        total_row = form.get("total_row") == "on"
+    else:
+        groups, total_row = stored.subtotals_by, stored.total_row
+    return Presentation(columns, rules, groups, total_row)
 
 
 _RULE_RE = re.compile(r"r-(\w+)-when")
@@ -156,6 +161,7 @@ class _Row:
     shown: str  # that value with the draft's format
     link: str  # the first row's link, or why there is none
     codes: list[str]
+    totals: list[str]  # the total functions it takes
 
 
 @dataclass
@@ -208,6 +214,7 @@ def _view(report: Report, dm: Datamodule, look: Presentation) -> _View:
                 shown=shown,
                 link=_link_note(setting, name, first_hrefs),
                 codes=presentation.codes_for(duck_type, documents),
+                totals=presentation.totals_for(duck_type),
             )
         )
     return view
@@ -230,7 +237,7 @@ def _sample(
 def _first_hrefs(result: TableResult | None) -> dict[str, str | None]:
     if result is None or result.view is None or not result.view.rows:
         return {}
-    first = result.view.rows[0]
+    first = result.view.rows[0].cells
     return {col.name: cell.href for col, cell in zip(result.view.columns, first, strict=True)}
 
 
