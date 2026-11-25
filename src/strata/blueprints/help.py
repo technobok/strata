@@ -32,6 +32,7 @@ PAGES: dict[str, str] = {
     "index": "How Strata fits together",
     "build-scripts": "Build scripts",
     "reports": "Reports",
+    "formatting": "Formatting reports",
     "checks": "Checks and runs",
     "urls": "Report URLs",
     "api-keys": "API keys and Excel",

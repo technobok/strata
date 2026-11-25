@@ -272,6 +272,15 @@ REGISTRY: list[ConfigEntry] = [
         "sweep and strata-admin reconcile delete older ones",
         applies=Applies.LIVE,
     ),
+    # -- reports --
+    ConfigEntry(
+        "links.extra_schemes",
+        ConfigType.STRING_LIST,
+        [],
+        "Link schemes report links may use besides http, https and mailto (comma-separated, "
+        "e.g. navision); a link to any other scheme shows as plain text",
+        applies=Applies.LIVE,
+    ),
     # -- read audit --
     ConfigEntry(
         "audit.retention_days",

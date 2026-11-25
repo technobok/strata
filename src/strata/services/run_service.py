@@ -36,8 +36,10 @@ from strata.services import (
     build_queue,
     datamodule_service,
     duck,
+    presentation,
     query_filter,
     report_service,
+    table_view,
 )
 from strata.services.report_service import ArgError, TableResult
 
@@ -196,13 +198,19 @@ def _snapshot_query(
     return conn, "SELECT * FROM snapshot", [(str(r[0]), str(r[1])) for r in described]
 
 
-def snapshot_table(run: ReportRun, dm_uuid: str, spec: query_filter.QuerySpec) -> TableResult:
-    """One page of the run's saved rows (filters, search and sort as on a report)."""
+def snapshot_table(
+    run: ReportRun, dm_uuid: str, spec: query_filter.QuerySpec, report: Report
+) -> TableResult:
+    """One page of the run's saved rows (filters, search and sort as on a report),
+    shown with the report's CURRENT settings: a run keeps its rows, not its look (user
+    decision 2026-11-25); settings for columns the run lacks are skipped."""
     try:
         conn, final_sql, columns = _snapshot_query(run, dm_uuid)
     except (FileNotFoundError, duckdb.Error) as exc:
         return TableResult(error=str(exc))
-    return report_service.page_of(conn, final_sql, [], columns, spec)
+    return report_service.page_of(
+        conn, final_sql, [], columns, spec, presentation.of(report), table_view.Links.here()
+    )
 
 
 def snapshot_download(
@@ -220,6 +228,7 @@ def snapshot_download(
             fmt,
             f"{report.macro_name}-{run.uuid[:8]}",
             sheet=report.macro_name,
+            look=presentation.of(report),
         )
     except Exception:
         conn.close()

@@ -342,6 +342,8 @@ def _check_column(
             scheme = link_template.parse(c.link).scheme()
         except link_template.TemplateError:
             scheme = ""
+        if _has_blank(c.link):
+            bad(f"{here}:link", f"{c.name}: link: an address has no spaces: write %20 for one")
         if scheme and scheme not in schemes:
             bad(
                 f"{here}:link",
@@ -357,6 +359,15 @@ def _check_column(
             bad(f"{here}:new_tab", f"{c.name}: open in a new tab needs a link")
     if c.link_text:
         _check_template(c.name, "link_text", c.link_text, names, bad)
+
+
+def _has_blank(source: str) -> bool:
+    """A space or control character in the template's own text (values are encoded)."""
+    try:
+        parts = link_template.parse(source).parts
+    except link_template.TemplateError:
+        return False
+    return any(not p.column and any(ch <= " " or ch == "\x7f" for ch in p.text) for p in parts)
 
 
 def _check_template(

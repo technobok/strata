@@ -95,7 +95,7 @@ def view(run_uuid: UUID) -> str:
         # Every key is a filter/sort/search/page: a run's arguments are fixed.
         _args, spec = query_filter.parse_params(pairs, set())
         if run.snapshot_path:
-            result = run_service.snapshot_table(run, dm.uuid, spec)
+            result = run_service.snapshot_table(run, dm.uuid, spec, report)
             read_audit.update(row_count=result.row_count)
     except FilterError as exc:
         arg_error = str(exc)

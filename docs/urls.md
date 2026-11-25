@@ -49,7 +49,7 @@ type, so a URL can never change the SQL.
 
 | Key | Meaning | Example |
 |---|---|---|
-| `q` | Rows where **any** column contains the text, ignoring case. Repeat `q` to require several fragments. | `q=widget&q=north` |
+| `q` | Rows where **any** shown column contains the text, ignoring case: the stored value, not its format, and not a [hidden column](formatting.md#hidden-columns). Repeat `q` to require several fragments. | `q=widget&q=north` |
 | `sort` | Columns to sort by, comma-separated; `-` for descending. Empty values sort last. | `sort=-revenue,region` |
 | `page` | 1-based page of 200 rows. The HTML page is always paged; the data formats return every row unless `page` is given. | `page=3` |
 

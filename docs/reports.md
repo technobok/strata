@@ -131,6 +131,7 @@ list empty and is logged.
   (a `DECIMAL(38,20)` shows 20), with no rounding and no thousands separators; dates
   and times are ISO (`2026-11-25`, `14:30:00`, `2026-11-25 14:30:00`); booleans are
   `true`/`false`. Numbers, dates and times line up on the right. Mail shows the same.
+  A report's own settings change how it looks: see [Formatting reports](formatting.md).
 - The export links download the same rows as Parquet, CSV, JSON or XLSX.
 
 See [Report URLs](urls.md) for everything a URL can carry, and

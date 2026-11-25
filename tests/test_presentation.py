@@ -95,6 +95,8 @@ def _with(change: str) -> Presentation:
             col["Item"].link = "/nav?item={Itme}"
         case "link scheme":
             col["Item"].link = "javascript:alert({Item})"
+        case "space in a link":
+            col["Item"].link = "/nav?item={Item}&x=a b"
         case "hidden link":
             col["Item"].hidden = True
         case "link text without link":
@@ -185,6 +187,11 @@ REFUSALS = [
         "link scheme",
         "column:Item:link",
         "Item: link: links may go to http:, https:, mailto: addresses, not 'javascript:'",
+    ),
+    (
+        "space in a link",
+        "column:Item:link",
+        "Item: link: an address has no spaces: write %20 for one",
     ),
     ("hidden link", "column:Item:link", "Item is hidden, so its link never shows"),
     ("link text without link", "column:Item:link_text", "Item: link text needs a link"),
@@ -359,12 +366,12 @@ def _import(strata: Strata, text: str) -> Any:
         return out
 
 
-def _report(strata: Strata, name: str = "Sales") -> Any:
+def _report(strata: Strata, name: str = "Sales", path: str = "test/sales") -> Any:
     with strata.app.app_context():
         from strata.models.datamodule import Datamodule
         from strata.models.report import Report
 
-        dm = Datamodule.get_by_path("test/sales")
+        dm = Datamodule.get_by_path(path)
         assert dm is not None
         return next(r for r in Report.get_for_datamodule(dm.id) if r.name == name)
 

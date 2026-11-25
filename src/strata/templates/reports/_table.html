@@ -57,10 +57,10 @@
         <tbody>
             {% for row in result.view.rows %}
             <tr>
-                {% for cell in row %}<td{% if cell.align != 'left' %} class="align-{{ cell.align }}"{% endif %}>{{ cell.text }}</td>{% endfor %}
+                {% for cell in row %}<td{% if cell.align != 'left' %} class="align-{{ cell.align }}"{% endif %}>{% if cell.href %}<a href="{{ cell.href }}"{% if cell.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ cell.text }}</a>{% else %}{{ cell.text }}{% endif %}</td>{% endfor %}
             </tr>
             {% else %}
-            <tr><td colspan="{{ result.columns | length }}">No rows match.</td></tr>
+            <tr><td colspan="{{ result.view.columns | length }}">No rows match.</td></tr>
             {% endfor %}
         </tbody>
     </table>

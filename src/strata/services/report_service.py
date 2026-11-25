@@ -35,11 +35,13 @@ from strata.models.report_arg import ReportArg
 from strata.services import (
     datamodule_service,
     duck,
+    presentation,
     query_filter,
     stream_service,
     table_view,
     template_service,
 )
+from strata.services.presentation import Presentation
 
 log = logging.getLogger(__name__)
 
@@ -452,7 +454,9 @@ def run_table(
         conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     except duckdb.Error as exc:
         return TableResult(error=f"Query error: {exc}")
-    return page_of(conn, final_sql, binds, columns, spec)
+    return page_of(
+        conn, final_sql, binds, columns, spec, presentation.of(report), table_view.Links.here()
+    )
 
 
 def page_of(
@@ -461,14 +465,17 @@ def page_of(
     binds: list[Any],
     columns: list[tuple[str, str]],
     spec: query_filter.QuerySpec,
+    look: Presentation | None = None,
+    links: table_view.Links | None = None,
 ) -> TableResult:
-    """One page of ``final_sql`` with the spec's filters/search/sort applied.
+    """One page of ``final_sql`` with the spec's filters/search/sort applied, its
+    cells rendered with ``look`` (the report's settings) and ``links``.
 
     Closes ``conn``. FilterError propagates; DuckDB errors are captured into the
     result (it keeps the applied filters so a failing chip stays removable).
     """
     try:
-        clauses = query_filter.build_clauses(spec, columns)
+        clauses = query_filter.build_clauses(spec, columns, hidden_columns(look))
     except query_filter.FilterError:
         conn.close()
         raise
@@ -501,7 +508,7 @@ def page_of(
     return TableResult(
         columns=col_names,
         rows=rows,
-        view=table_view.render(columns, rows),
+        view=table_view.render(columns, rows, look, links),
         row_count=len(rows),
         total_rows=total,
         page=page,
@@ -509,6 +516,27 @@ def page_of(
         applied_filters=clauses.filters,
         applied_sort=clauses.sort,
     )
+
+
+def hidden_columns(look: Presentation | None) -> frozenset[str]:
+    return frozenset(c.name for c in look.columns if c.hidden) if look else frozenset()
+
+
+def xlsx_styles(
+    columns: list[tuple[str, str]], look: Presentation | None
+) -> list[stream_service.XlsxStyle]:
+    """Each column's Excel number format (the report's format code, when it fits the
+    column) and horizontal alignment (None = Excel's own)."""
+    out: list[stream_service.XlsxStyle] = []
+    for name, duck_type in columns:
+        setting = look.setting(name) if look else None
+        fits = setting is not None and table_view.formatter_for(setting, duck_type) is not None
+        code = setting.format if setting is not None and fits else None
+        if code is not None and code.strip().lower() == "general":
+            code = None
+        align = setting.align if setting is not None and setting.align != "auto" else None
+        out.append(stream_service.XlsxStyle(number_format=code, horizontal=align))
+    return out
 
 
 def stream(
@@ -526,7 +554,16 @@ def stream(
     """
     conn, final_sql, binds, columns = _prepare(report, dm, arg_values, version)
     try:
-        return stream_rows(conn, final_sql, binds, columns, spec, fmt, report.macro_name)
+        return stream_rows(
+            conn,
+            final_sql,
+            binds,
+            columns,
+            spec,
+            fmt,
+            report.macro_name,
+            look=presentation.of(report),
+        )
     except Exception:
         conn.close()  # idempotent — the stream writers close on their own paths
         raise
@@ -541,14 +578,16 @@ def stream_rows(
     fmt: str,
     name: str,
     sheet: str | None = None,
+    look: Presentation | None = None,
 ) -> Response:
     """Stream ``final_sql`` (spec applied) as ``fmt`` as the file ``<name>.<fmt>`` (an
     xlsx's sheet and table are named after ``sheet``, default ``name``); the writer
-    closes ``conn``.
+    closes ``conn``. A download keeps every column, hidden ones too, and has no links;
+    an xlsx carries the formats and alignment of ``look`` (the report's settings).
 
     Exports cover the full result; an explicit ``page=N`` yields just that slice.
     """
-    clauses = query_filter.build_clauses(spec, columns)
+    clauses = query_filter.build_clauses(spec, columns, hidden_columns(look))
     limit = offset = None
     if spec.page is not None:
         limit = query_filter.PAGE_SIZE
@@ -557,7 +596,13 @@ def stream_rows(
     download_name = f"{name}.{fmt}"
     if fmt == "xlsx":
         return stream_service.stream_xlsx(
-            conn, select_sql, binds + extra, download_name, [n for n, _ in columns], sheet
+            conn,
+            select_sql,
+            binds + extra,
+            download_name,
+            [n for n, _ in columns],
+            sheet,
+            xlsx_styles(columns, look),
         )
     if fmt in stream_service.COPY_FORMATS:
         return stream_service.stream_copy(conn, select_sql, binds + extra, fmt, download_name)

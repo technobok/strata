@@ -61,6 +61,12 @@ strata-admin config set build.memory_limit 6GB    # prints when it applies
 | `outbox.api_key` | — | The key for `outbox.url`. |
 | `runs.retention_days` | `30` | Days a report or check run, with its saved rows, is kept (see [Checks and runs](checks.md#how-long-runs-are-kept)). The worker's sweep and `strata-admin reconcile` delete older ones. |
 
+## Reports — apply immediately
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `links.extra_schemes` | — | Link schemes a report's [links](formatting.md#links) may use besides `http`, `https` and `mailto`, comma-separated, e.g. `navision`. A link to any other scheme shows as plain text. |
+
 ## Read audit — apply immediately
 
 | Setting | Default | Meaning |

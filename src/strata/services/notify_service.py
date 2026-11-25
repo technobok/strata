@@ -34,7 +34,7 @@ from strata.models.report import Report
 from strata.models.report_check import ReportCheck
 from strata.models.report_run import ReportRun
 from strata.models.schedule import Schedule
-from strata.services import table_view, text_format
+from strata.services import presentation, table_view, text_format
 
 log = logging.getLogger(__name__)
 
@@ -245,8 +245,9 @@ def run_link(run: ReportRun) -> str | None:
     return f"{base}/runs/{run.uuid}" if base else None
 
 
-def _first_rows(run: ReportRun, dm: Datamodule) -> table_view.TableView:
-    """The run's first INLINE_ROWS rows as the mail shows them."""
+def _first_rows(run: ReportRun, dm: Datamodule, report: Report) -> table_view.TableView:
+    """The run's first INLINE_ROWS rows as the mail shows them: the report's formats,
+    alignment and hidden columns; never links (user decision 2026-11-25)."""
     from strata.services import duck, run_service
 
     path = run_service.snapshot_file(dm.uuid, run)
@@ -259,7 +260,7 @@ def _first_rows(run: ReportRun, dm: Datamodule) -> table_view.TableView:
         rows = conn.execute(sql).fetchall()
     finally:
         conn.close()
-    return table_view.render(columns, rows)
+    return table_view.render(columns, rows, presentation.of(report), links=None)
 
 
 def _table(view: table_view.TableView) -> Markup:
@@ -308,7 +309,7 @@ def build_run_mail(
             "not in this mail: open the run in Strata."
         )
     else:
-        view = _first_rows(run, dm)
+        view = _first_rows(run, dm, report)
         shown = (
             f"The first {len(view.rows)} of {_rows_word(count)}:"
             if count > len(view.rows)

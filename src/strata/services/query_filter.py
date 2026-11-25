@@ -139,8 +139,15 @@ def parse_params(
     )
 
 
-def build_clauses(spec: QuerySpec, columns: list[tuple[str, str]]) -> Clauses:
-    """Validate the spec against the DESCRIBEd (name, type) columns and emit SQL."""
+def build_clauses(
+    spec: QuerySpec, columns: list[tuple[str, str]], unsearched: frozenset[str] = frozenset()
+) -> Clauses:
+    """Validate the spec against the DESCRIBEd (name, type) columns and emit SQL.
+
+    ``q=`` searches every column except ``unsearched`` (the report's hidden ones: a
+    match only in a column nobody sees would look like a wrong result). The page, mail
+    and every download search alike, so they all hold the same rows. Filters reach
+    every column."""
     colmap: dict[str, str] = {}
     for name, ctype in columns:
         colmap.setdefault(name, ctype)  # keep-first on duplicate output names
@@ -160,15 +167,19 @@ def build_clauses(spec: QuerySpec, columns: list[tuple[str, str]]) -> Clauses:
             )
         )
 
+    searched = [name for name in colmap if name not in unsearched]
     for fragment in spec.q:
         if not colmap:
             break
+        if not searched:
+            where_parts.append("false")  # every column is hidden: nothing to match
+            continue
         pattern = "%" + _escape_like(fragment) + "%"
         ors = " OR ".join(
-            f"CAST({_quote_ident(name)} AS VARCHAR) ILIKE ? ESCAPE '\\'" for name in colmap
+            f"CAST({_quote_ident(name)} AS VARCHAR) ILIKE ? ESCAPE '\\'" for name in searched
         )
         where_parts.append(f"({ors})")
-        binds.extend([pattern] * len(colmap))
+        binds.extend([pattern] * len(searched))
 
     sort_terms: list[SortTerm] = []
     seen: set[str] = set()

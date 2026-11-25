@@ -11,7 +11,8 @@ import logging
 import os
 import re
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
@@ -20,7 +21,7 @@ import duckdb
 from flask import Response
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 
@@ -102,6 +103,15 @@ def stream_copy(
     return _attachment(tmp_path, content_type, download_name, row_count=rows_copied)
 
 
+@dataclass(frozen=True)
+class XlsxStyle:
+    """A column's look in an xlsx download: an Excel number format code and a
+    horizontal alignment; None = Excel's own (General; numbers right, text left)."""
+
+    number_format: str | None = None
+    horizontal: str | None = None
+
+
 def _xlsx_value(value: Any) -> Any:
     """Coerce a DuckDB value to something openpyxl accepts (no tz, no STRUCTs)."""
     if isinstance(value, datetime):
@@ -132,9 +142,11 @@ def stream_xlsx(
     download_name: str,
     columns: list[str],
     sheet: str | None = None,
+    styles: Sequence[XlsxStyle] | None = None,
 ) -> Response:
     """Write the result to a temp .xlsx via openpyxl's write-only mode and stream it.
-    Its sheet and table are named after ``sheet`` (default: the file name's stem).
+    Its sheet and table are named after ``sheet`` (default: the file name's stem);
+    ``styles`` = each column's number format and alignment (the report's settings).
 
     Rows pass through in fetchmany batches (constant memory); the first
     _XLSX_PROBE_ROWS rows are buffered up front to size the columns, which
@@ -170,11 +182,30 @@ def stream_xlsx(
             header.append(cell)
         ws.append(header)
 
+        # A styled column's values go in as cells carrying the style (write-only mode
+        # styles a cell as it is appended); the rest stay plain values (faster).
+        looks: list[tuple[str | None, Alignment | None] | None] = [
+            (s.number_format, Alignment(horizontal=s.horizontal) if s.horizontal else None)
+            if s.number_format or s.horizontal
+            else None
+            for s in (styles or [XlsxStyle()] * len(columns))
+        ]
+
+        def cell(value: Any, look: tuple[str | None, Alignment | None] | None) -> Any:
+            if look is None:
+                return value
+            c = WriteOnlyCell(ws, value=value)
+            if look[0]:
+                c.number_format = look[0]
+            if look[1] is not None:
+                c.alignment = look[1]
+            return c
+
         nrows = 0
         batch = probe
         while batch:
             for row in batch:
-                ws.append([_xlsx_value(v) for v in row])
+                ws.append([cell(_xlsx_value(v), lk) for v, lk in zip(row, looks, strict=True)])
             nrows += len(batch)
             batch = cursor.fetchmany(_XLSX_CHUNK)
 
